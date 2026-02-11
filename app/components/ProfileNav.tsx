@@ -8,6 +8,18 @@ type ProfileNavProps = {
   onWallpaperClick: (wallpaper: Wallpaper) => void;
 };
 
+type MenuItem = {
+  icon: typeof Heart;
+  label: string;
+  count?: number;  // Optional count property
+  color: string;
+};
+
+type MenuSection = {
+  title: string;
+  items: MenuItem[];
+};
+
 export const ProfileNav = ({ onClose, wallpapers, onWallpaperClick }: ProfileNavProps) => {
   // Mock current user data
   const currentUser = {
