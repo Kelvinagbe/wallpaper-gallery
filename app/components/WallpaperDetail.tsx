@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronLeft, Eye, Heart, Download, Share2, Copy, Trash2, Loader2 } from 'lucide-react';
+import { ChevronLeft, Eye, Heart, Download, Share2, Copy, Trash2, Loader2, Bookmark } from 'lucide-react';
 import type { Wallpaper } from '../types';
 
 type WallpaperDetailProps = {
@@ -34,8 +34,35 @@ export const WallpaperDetail = ({
   relatedWallpapers,
   onClose,
   onUserClick,
-  onRelatedClick
+  onRelatedClick,
 }: WallpaperDetailProps) => {
+  const [liked, setLiked] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [downloaded, setDownloaded] = useState(false);
+  const [likeCount, setLikeCount] = useState(wallpaper.likes);
+  const [downloadCount, setDownloadCount] = useState(wallpaper.downloads);
+
+  const handleLike = () => {
+    setLiked((prev) => {
+      setLikeCount((c) => (prev ? c - 1 : c + 1));
+      return !prev;
+    });
+  };
+
+  const handleSave = () => {
+    setSaved((prev) => !prev);
+  };
+
+  const handleDownload = () => {
+    if (!downloaded) {
+      setDownloadCount((c) => c + 1);
+      setDownloaded(true);
+    }
+    console.log('Download:', wallpaper.title);
+  };
+
+  const fmt = (n: number) => (n > 1000 ? `${(n / 1000).toFixed(1)}k` : n);
+
   return (
     <div className="fixed inset-0 bg-black z-50 flex flex-col slide-up">
       <button
@@ -73,31 +100,73 @@ export const WallpaperDetail = ({
               <p className="text-sm text-white/70 leading-relaxed">{wallpaper.description}</p>
             </div>
 
+            {/* Stats row — like count and download count update live */}
             <div className="flex items-center gap-6 text-sm text-white/50">
-              {[
-                { icon: Eye, count: wallpaper.views },
-                { icon: Heart, count: wallpaper.likes },
-                { icon: Download, count: wallpaper.downloads }
-              ].map(({ icon: Icon, count }, i) => (
-                <span key={i} className="flex items-center gap-1.5">
-                  <Icon className="w-4 h-4" />
-                  {count > 1000 ? `${(count / 1000).toFixed(1)}k` : count}
-                </span>
-              ))}
+              <span className="flex items-center gap-1.5">
+                <Eye className="w-4 h-4" />
+                {fmt(wallpaper.views)}
+              </span>
+              <span className={`flex items-center gap-1.5 transition-colors ${liked ? 'text-rose-400' : ''}`}>
+                <Heart className={`w-4 h-4 transition-all ${liked ? 'fill-rose-400 text-rose-400 scale-110' : ''}`} />
+                {fmt(likeCount)}
+              </span>
+              <span className={`flex items-center gap-1.5 transition-colors ${downloaded ? 'text-emerald-400' : ''}`}>
+                <Download className={`w-4 h-4 transition-all ${downloaded ? 'text-emerald-400 scale-110' : ''}`} />
+                {fmt(downloadCount)}
+              </span>
             </div>
 
-            <button
-              onClick={() => console.log('Download:', wallpaper.title)}
-              className="w-full px-6 py-3 bg-white text-black rounded-full font-semibold hover:bg-gray-200 transition-colors"
-            >
-              Save
-            </button>
+            {/* Save + Like + Download CTAs */}
+            <div className="flex gap-3">
+              {/* Save button — primary CTA, reflects saved state */}
+              <button
+                onClick={handleSave}
+                className={`flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-full font-semibold transition-all ${
+                  saved
+                    ? 'bg-blue-500 text-white hover:bg-blue-600'
+                    : 'bg-white text-black hover:bg-gray-200'
+                }`}
+              >
+                <Bookmark
+                  className={`w-5 h-5 transition-all ${saved ? 'fill-white' : ''}`}
+                />
+                {saved ? 'Saved' : 'Save'}
+              </button>
+
+              {/* Like button — icon-only pill */}
+              <button
+                onClick={handleLike}
+                className={`flex items-center justify-center px-4 py-3 rounded-full border transition-all ${
+                  liked
+                    ? 'bg-rose-500/15 border-rose-500/40 text-rose-400 hover:bg-rose-500/25'
+                    : 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10'
+                }`}
+              >
+                <Heart
+                  className={`w-5 h-5 transition-all ${liked ? 'fill-rose-400 text-rose-400 scale-110' : ''}`}
+                />
+              </button>
+
+              {/* Download button — icon-only pill, one-shot action */}
+              <button
+                onClick={handleDownload}
+                className={`flex items-center justify-center px-4 py-3 rounded-full border transition-all ${
+                  downloaded
+                    ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/25'
+                    : 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10'
+                }`}
+              >
+                <Download
+                  className={`w-5 h-5 transition-all ${downloaded ? 'text-emerald-400 scale-110' : ''}`}
+                />
+              </button>
+            </div>
 
             <div className="grid grid-cols-3 gap-2">
               {[
                 { icon: Share2, label: 'Share' },
                 { icon: Copy, label: 'Copy' },
-                { icon: Trash2, label: 'Delete' }
+                { icon: Trash2, label: 'Delete' },
               ].map(({ icon: Icon, label }) => (
                 <button
                   key={label}
