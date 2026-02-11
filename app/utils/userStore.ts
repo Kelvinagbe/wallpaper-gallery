@@ -1,4 +1,3 @@
-
 // userStore.ts
 export type UserProfile = {
   name: string;
@@ -25,8 +24,23 @@ export type LikedWallpaper = {
   likedAt: number;
 };
 
-export type SavedWallpaper = LikedWallpaper & { savedAt: number; likedAt?: never };
-export type RecentWallpaper = LikedWallpaper & { viewedAt: number; likedAt?: never };
+export type SavedWallpaper = {
+  id: string;
+  url: string;
+  thumbnail: string;
+  title: string;
+  uploadedBy: string;
+  savedAt: number;
+};
+
+export type RecentWallpaper = {
+  id: string;
+  url: string;
+  thumbnail: string;
+  title: string;
+  uploadedBy: string;
+  viewedAt: number;
+};
 
 export type PasswordData = {
   hasPassword: boolean;
@@ -172,5 +186,3 @@ export const subscribeStore = (fn: StoreListener) => {
   listeners.add(fn);
   return () => listeners.delete(fn);
 };
-
-const emit = (key: string) => listeners.forEach(fn => fn(key));
