@@ -28,4 +28,4 @@ export type UserProfile = {
 };
 
 export type ActiveTab = 'home' | 'search' | 'notifications' | 'profile';
-export type Filter = 'all' | 'popular' | 'following';
+export type Filter = 'all' | 'popular' | 'recent';
