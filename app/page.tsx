@@ -19,6 +19,7 @@ export default function WallpaperGallery() {
   const [userProfiles, setUserProfiles] = useState<UserProfileType[]>([]);
   const [selectedWallpaper, setSelectedWallpaper] = useState<Wallpaper | null>(null);
   const [selectedUser, setSelectedUser] = useState<UserProfileType | null>(null);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(false);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -50,14 +51,14 @@ export default function WallpaperGallery() {
 
   const handleSearchQuery = (query: string) => {
     setSearchQuery(query);
-    
+
     // Save to recent searches if query is not empty and has actual results
     if (query.trim() && filteredWallpapers.length > 0) {
       const updated = [
         query.trim(),
         ...recentSearches.filter(s => s.toLowerCase() !== query.trim().toLowerCase())
       ].slice(0, 5); // Keep only 5 most recent
-      
+
       setRecentSearches(updated);
       localStorage.setItem('recentSearches', JSON.stringify(updated));
     }
@@ -80,15 +81,33 @@ export default function WallpaperGallery() {
         ? { ...user, isFollowing: !user.isFollowing, followers: user.isFollowing ? user.followers - 1 : user.followers + 1 }
         : user
     ));
+
+    // Also update selectedUser if it's the same user
+    if (selectedUser && selectedUser.id === userId) {
+      setSelectedUser(prev => prev ? {
+        ...prev,
+        isFollowing: !prev.isFollowing,
+        followers: prev.isFollowing ? prev.followers - 1 : prev.followers + 1
+      } : null);
+    }
   };
 
   const openUserProfile = (userId: string) => {
-    const user = userProfiles.find(u => u.id === userId);
-    if (user) setSelectedUser(user);
+    setIsLoadingProfile(true);
+    setSelectedUser(null); // Clear previous user data
+    
+    // Simulate API call delay
+    setTimeout(() => {
+      const user = userProfiles.find(u => u.id === userId);
+      if (user) {
+        setSelectedUser(user);
+      }
+      setIsLoadingProfile(false);
+    }, 800); // Simulate loading time
   };
 
   // Check if any full-screen view is open
-  const isFullScreenViewOpen = selectedWallpaper || selectedUser || activeTab === 'profile' || activeTab === 'notifications';
+  const isFullScreenViewOpen = selectedWallpaper || selectedUser || isLoadingProfile || activeTab === 'profile' || activeTab === 'notifications';
 
   return (
     <div className="min-h-screen bg-black text-white pb-16">
@@ -158,16 +177,21 @@ export default function WallpaperGallery() {
         />
       )}
 
-      {selectedUser && (
+      {(selectedUser || isLoadingProfile) && (
         <UserProfile
           user={selectedUser}
           wallpapers={wallpapers}
-          onClose={() => setSelectedUser(null)}
+          onClose={() => {
+            setSelectedUser(null);
+            setIsLoadingProfile(false);
+          }}
           onWallpaperClick={(wp) => {
             setSelectedUser(null);
+            setIsLoadingProfile(false);
             setSelectedWallpaper(wp);
           }}
           onToggleFollow={toggleFollow}
+          isLoading={isLoadingProfile}
         />
       )}
 
