@@ -1,3 +1,4 @@
+// mockData.ts
 import type { Wallpaper, UserProfile } from '../types';
 
 export const generateMockData = () => {
@@ -13,7 +14,8 @@ export const generateMockData = () => {
     followers: Math.floor(Math.random() * 10000),
     following: Math.floor(Math.random() * 1000),
     posts: Math.floor(Math.random() * 100) + 10,
-    isFollowing: false
+    isFollowing: false,
+    verified: i === 0 || i === 2 // Make first and third user verified
   }));
 
   const wallpapers: Wallpaper[] = Array.from({ length: 24 }, (_, i) => {
@@ -33,6 +35,7 @@ export const generateMockData = () => {
       userId: `user-${userIndex}`,
       userAvatar: `https://i.pravatar.cc/150?img=${userIndex * 10}`,
       aspectRatio: 1.3 + Math.random() * 0.8,
+      verified: userIndex === 0 || userIndex === 2 // Same users verified
     };
   });
 
