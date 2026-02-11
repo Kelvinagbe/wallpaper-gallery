@@ -1,5 +1,6 @@
 import { X, Bell, Volume2, Download, Camera, CheckCircle } from 'lucide-react';
 import { useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { getSettings, updateSettings, getProfile, updateProfile, type UserSettings, type UserProfile } from '../../utils/userStore';
 
 type SettingsModalProps = {
@@ -49,7 +50,7 @@ export const SettingsModal = ({ onClose, onProfileUpdate }: SettingsModalProps) 
     reader.readAsDataURL(file);
   };
 
-  return (
+  const modalContent = (
     <>
       <style jsx>{`
         @keyframes slideRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
@@ -62,8 +63,8 @@ export const SettingsModal = ({ onClose, onProfileUpdate }: SettingsModalProps) 
         .fade-out { animation: fadeOut 0.2s ease-out; }
       `}</style>
 
-      <div className={`fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4 ${isClosing ? 'fade-out' : 'fade-in'}`} onClick={handleClose}>
-        <div className={`bg-gradient-to-b from-zinc-900 to-black w-full max-w-lg rounded-2xl overflow-hidden max-h-[90vh] flex flex-col shadow-2xl ${isClosing ? 'slide-left' : 'slide-right'}`} onClick={(e) => e.stopPropagation()}>
+      <div className={`fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-0 sm:p-4 ${isClosing ? 'fade-out' : 'fade-in'}`} onClick={handleClose}>
+        <div className={`bg-gradient-to-b from-zinc-900 to-black w-full h-full sm:h-auto sm:max-w-lg sm:rounded-2xl overflow-hidden sm:max-h-[90vh] flex flex-col shadow-2xl ${isClosing ? 'slide-left' : 'slide-right'}`} onClick={(e) => e.stopPropagation()}>
           
           {/* Header */}
           <div className="sticky top-0 bg-zinc-900/95 backdrop-blur-xl border-b border-white/10 p-4 flex items-center justify-between z-10">
@@ -165,6 +166,8 @@ export const SettingsModal = ({ onClose, onProfileUpdate }: SettingsModalProps) 
       </div>
     </>
   );
+
+  return createPortal(modalContent, document.body);
 };
 
 const Toggle = ({ icon: Icon, label, sub, value, onToggle }: any) => (
