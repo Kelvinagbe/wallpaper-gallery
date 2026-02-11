@@ -1,5 +1,5 @@
 import { X, Heart, Bookmark, Clock, Trash2, Download } from 'lucide-react';
-import type { Wallpaper } from '../types';
+import type { Wallpaper } from '../../types';
 
 type ContentType = 'liked' | 'saved' | 'recent';
 
