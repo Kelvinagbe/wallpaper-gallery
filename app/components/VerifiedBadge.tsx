@@ -1,5 +1,3 @@
-import { CheckCircle } from 'lucide-react';
-
 type VerifiedBadgeProps = {
   size?: 'sm' | 'md' | 'lg';
   className?: string;
@@ -13,19 +11,19 @@ export const VerifiedBadge = ({ size = 'md', className = '' }: VerifiedBadgeProp
   };
 
   return (
-    <div className={`relative inline-flex ${className}`}>
-      {/* Blue circle background */}
-      <svg className={sizes[size]} viewBox="0 0 24 24" fill="none">
-        <circle cx="12" cy="12" r="10" fill="#1D9BF0" />
-        <path
-          d="M9 12l2 2 4-4"
-          stroke="white"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          fill="none"
-        />
-      </svg>
-    </div>
+    <svg 
+      className={`${sizes[size]} ${className}`} 
+      viewBox="0 0 22 22" 
+      fill="none"
+    >
+      <circle cx="11" cy="11" r="11" fill="#1D9BF0"/>
+      <path 
+        d="M7 11L10 14L15 8" 
+        stroke="white" 
+        strokeWidth="2" 
+        strokeLinecap="round" 
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 };
