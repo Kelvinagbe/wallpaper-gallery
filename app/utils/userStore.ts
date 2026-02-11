@@ -8,6 +8,7 @@ export type UserProfile = {
   username: string;
   bio: string;
   avatar: string;
+  verified: boolean;
 };
 
 export type UserSettings = {
@@ -114,6 +115,7 @@ const DEFAULT_PROFILE: UserProfile = {
   username: '@johndoe',
   bio: 'Digital Artist & Photographer',
   avatar: 'https://i.pravatar.cc/150?img=60',
+  verified: true, // ← Added verified field
 };
 
 const DEFAULT_SETTINGS: UserSettings = {
