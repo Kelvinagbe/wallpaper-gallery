@@ -1,8 +1,5 @@
+userStore.ts:
 // userStore.ts
-// All user data is stored in localStorage.
-// To switch to a real DB later, replace the get/set functions below
-// with API calls — the rest of the app won't need to change.
-
 export type UserProfile = {
   name: string;
   username: string;
@@ -28,205 +25,152 @@ export type LikedWallpaper = {
   likedAt: number;
 };
 
-export type SavedWallpaper = {
-  id: string;
-  url: string;
-  thumbnail: string;
-  title: string;
-  uploadedBy: string;
-  savedAt: number;
-};
-
-export type RecentWallpaper = {
-  id: string;
-  url: string;
-  thumbnail: string;
-  title: string;
-  uploadedBy: string;
-  viewedAt: number;
-};
+export type SavedWallpaper = LikedWallpaper & { savedAt: number; likedAt?: never };
+export type RecentWallpaper = LikedWallpaper & { viewedAt: number; likedAt?: never };
 
 export type PasswordData = {
   hasPassword: boolean;
   lastChanged: number | null;
 };
 
-const KEYS = {
-  profile: 'user_profile',
-  settings: 'user_settings',
-  liked: 'user_liked',
-  saved: 'user_saved',
-  recent: 'user_recent',
-  password: 'user_password',
-} as const;
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-// ─── Store Event Bus ──────────────────────────────────────────────────────────
-// Emits whenever a key is mutated so React components can re-render.
-// Subscribe via the useStoreKey() hook.
-
-type StoreKey = keyof typeof KEYS;
-type StoreListener = (key: StoreKey) => void;
-
-const listeners = new Set<StoreListener>();
-
-const emit = (key: StoreKey) => {
-  listeners.forEach(fn => fn(key));
-};
-
-export const subscribeStore = (fn: StoreListener) => {
-  listeners.add(fn);
-  return () => listeners.delete(fn);
-};
-
-// ─── Low-level helpers ────────────────────────────────────────────────────────
-
-function read<T>(key: string, fallback: T): T {
+const get = <T,>(key: string, fallback: T): T => {
   try {
     const raw = localStorage.getItem(key);
-    if (!raw) return fallback;
-    return JSON.parse(raw) as T;
+    return raw ? JSON.parse(raw) : fallback;
   } catch {
     return fallback;
   }
-}
+};
 
-function write<T>(key: string, value: T, storeKey: StoreKey): void {
+const set = <T,>(key: string, value: T): void => {
   try {
     localStorage.setItem(key, JSON.stringify(value));
-    emit(storeKey);
-  } catch {
-    console.warn(`userStore: failed to write key "${key}"`);
+  } catch (e) {
+    console.warn(`Store: failed to write "${key}"`, e);
   }
-}
-
-function remove(key: string, storeKey?: StoreKey): void {
-  try {
-    localStorage.removeItem(key);
-    if (storeKey) emit(storeKey);
-  } catch {
-    console.warn(`userStore: failed to remove key "${key}"`);
-  }
-}
+};
 
 // ─── Defaults ─────────────────────────────────────────────────────────────────
 
-const DEFAULT_PROFILE: UserProfile = {
-  name: 'John Doe',
-  username: '@johndoe',
-  bio: 'Digital Artist & Photographer',
-  avatar: 'https://i.pravatar.cc/150?img=60',
-  verified: true, // ← Added verified field
-};
-
-const DEFAULT_SETTINGS: UserSettings = {
-  theme: 'dark',
-  notifications: true,
-  soundEffects: true,
-  autoDownload: false,
-  language: 'English',
-};
-
-const DEFAULT_PASSWORD: PasswordData = {
-  hasPassword: true,
-  lastChanged: null,
+const DEFAULTS = {
+  profile: {
+    name: 'John Doe',
+    username: '@johndoe',
+    bio: 'Digital Artist & Photographer',
+    avatar: 'https://i.pravatar.cc/150?img=60',
+    verified: true,
+  } as UserProfile,
+  
+  settings: {
+    theme: 'dark',
+    notifications: true,
+    soundEffects: true,
+    autoDownload: false,
+    language: 'English',
+  } as UserSettings,
+  
+  password: {
+    hasPassword: true,
+    lastChanged: null,
+  } as PasswordData,
 };
 
 // ─── Profile ──────────────────────────────────────────────────────────────────
 
-export const getProfile = (): UserProfile =>
-  read<UserProfile>(KEYS.profile, DEFAULT_PROFILE);
+export const getProfile = (): UserProfile => {
+  const profile = get('user_profile', DEFAULTS.profile);
+  if (profile.verified === undefined) {
+    profile.verified = true;
+    set('user_profile', profile);
+  }
+  return profile;
+};
 
-export const saveProfile = (profile: UserProfile): void =>
-  write(KEYS.profile, profile, 'profile');
+export const saveProfile = (profile: UserProfile) => set('user_profile', profile);
 
 export const updateProfile = (partial: Partial<UserProfile>): UserProfile => {
-  const current = getProfile();
-  const updated = { ...current, ...partial };
+  const updated = { ...getProfile(), ...partial };
   saveProfile(updated);
   return updated;
 };
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
 
-export const getSettings = (): UserSettings =>
-  read<UserSettings>(KEYS.settings, DEFAULT_SETTINGS);
-
-export const saveSettings = (settings: UserSettings): void =>
-  write(KEYS.settings, settings, 'settings');
-
-export const updateSettings = (partial: Partial<UserSettings>): UserSettings => {
-  const current = getSettings();
-  const updated = { ...current, ...partial };
+export const getSettings = () => get('user_settings', DEFAULTS.settings);
+export const saveSettings = (settings: UserSettings) => set('user_settings', settings);
+export const updateSettings = (partial: Partial<UserSettings>) => {
+  const updated = { ...getSettings(), ...partial };
   saveSettings(updated);
   return updated;
 };
 
 // ─── Liked ────────────────────────────────────────────────────────────────────
 
-export const getLiked = (): LikedWallpaper[] =>
-  read<LikedWallpaper[]>(KEYS.liked, []);
+export const getLiked = () => get<LikedWallpaper[]>('user_liked', []);
 
-export const likeWallpaper = (wallpaper: Omit<LikedWallpaper, 'likedAt'>): void => {
-  const current = getLiked();
-  if (current.find(w => w.id === wallpaper.id)) return;
-  write(KEYS.liked, [{ ...wallpaper, likedAt: Date.now() }, ...current], 'liked');
+export const likeWallpaper = (wp: Omit<LikedWallpaper, 'likedAt'>) => {
+  const list = getLiked();
+  if (!list.find(w => w.id === wp.id)) {
+    set('user_liked', [{ ...wp, likedAt: Date.now() }, ...list]);
+  }
 };
 
-export const unlikeWallpaper = (id: string): void => {
-  write(KEYS.liked, getLiked().filter(w => w.id !== id), 'liked');
-};
+export const unlikeWallpaper = (id: string) => 
+  set('user_liked', getLiked().filter(w => w.id !== id));
 
-export const isLiked = (id: string): boolean =>
-  getLiked().some(w => w.id === id);
-
-export const clearLiked = (): void => remove(KEYS.liked, 'liked');
+export const isLiked = (id: string) => getLiked().some(w => w.id === id);
+export const clearLiked = () => localStorage.removeItem('user_liked');
 
 // ─── Saved ────────────────────────────────────────────────────────────────────
 
-export const getSaved = (): SavedWallpaper[] =>
-  read<SavedWallpaper[]>(KEYS.saved, []);
+export const getSaved = () => get<SavedWallpaper[]>('user_saved', []);
 
-export const saveWallpaper = (wallpaper: Omit<SavedWallpaper, 'savedAt'>): void => {
-  const current = getSaved();
-  if (current.find(w => w.id === wallpaper.id)) return;
-  write(KEYS.saved, [{ ...wallpaper, savedAt: Date.now() }, ...current], 'saved');
+export const saveWallpaper = (wp: Omit<SavedWallpaper, 'savedAt'>) => {
+  const list = getSaved();
+  if (!list.find(w => w.id === wp.id)) {
+    set('user_saved', [{ ...wp, savedAt: Date.now() }, ...list]);
+  }
 };
 
-export const unsaveWallpaper = (id: string): void => {
-  write(KEYS.saved, getSaved().filter(w => w.id !== id), 'saved');
-};
+export const unsaveWallpaper = (id: string) => 
+  set('user_saved', getSaved().filter(w => w.id !== id));
 
-export const isSaved = (id: string): boolean =>
-  getSaved().some(w => w.id === id);
-
-export const clearSaved = (): void => remove(KEYS.saved, 'saved');
+export const isSaved = (id: string) => getSaved().some(w => w.id === id);
+export const clearSaved = () => localStorage.removeItem('user_saved');
 
 // ─── Recent ───────────────────────────────────────────────────────────────────
 
-const MAX_RECENT = 50;
+export const getRecent = () => get<RecentWallpaper[]>('user_recent', []);
 
-export const getRecent = (): RecentWallpaper[] =>
-  read<RecentWallpaper[]>(KEYS.recent, []);
-
-export const addRecent = (wallpaper: Omit<RecentWallpaper, 'viewedAt'>): void => {
-  const current = getRecent().filter(w => w.id !== wallpaper.id);
-  const updated = [{ ...wallpaper, viewedAt: Date.now() }, ...current].slice(0, MAX_RECENT);
-  write(KEYS.recent, updated, 'recent');
+export const addRecent = (wp: Omit<RecentWallpaper, 'viewedAt'>) => {
+  const list = getRecent().filter(w => w.id !== wp.id);
+  set('user_recent', [{ ...wp, viewedAt: Date.now() }, ...list].slice(0, 50));
 };
 
-export const clearRecent = (): void => remove(KEYS.recent, 'recent');
+export const clearRecent = () => localStorage.removeItem('user_recent');
 
 // ─── Password ─────────────────────────────────────────────────────────────────
 
-export const getPasswordData = (): PasswordData =>
-  read<PasswordData>(KEYS.password, DEFAULT_PASSWORD);
-
-export const updatePassword = (_newPassword: string): void => {
-  write(KEYS.password, { hasPassword: true, lastChanged: Date.now() }, 'password');
-};
+export const getPasswordData = () => get('user_password', DEFAULTS.password);
+export const updatePassword = () => set('user_password', { hasPassword: true, lastChanged: Date.now() });
 
 // ─── Clear All ────────────────────────────────────────────────────────────────
 
-export const clearAllUserData = (): void => {
-  (Object.keys(KEYS) as StoreKey[]).forEach(k => remove(KEYS[k], k));
+export const clearAllUserData = () => {
+  ['user_profile', 'user_settings', 'user_liked', 'user_saved', 'user_recent', 'user_password']
+    .forEach(key => localStorage.removeItem(key));
 };
+
+// ─── Store Event (Optional - only if you use subscribeStore) ─────────────────
+
+type StoreListener = (key: string) => void;
+const listeners = new Set<StoreListener>();
+
+export const subscribeStore = (fn: StoreListener) => {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+};
+
+const emit = (key: string) => listeners.forEach(fn => fn(key));
