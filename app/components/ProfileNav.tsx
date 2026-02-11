@@ -1,7 +1,10 @@
-import { ChevronLeft, Settings, Share2, Heart, Bookmark, Clock, LogOut, Moon, Bell, Shield, HelpCircle } from 'lucide-react';
+import { ChevronLeft, Settings, Share2, Heart, Bookmark, Clock, LogOut, Shield } from 'lucide-react';
 import { useState } from 'react';
 import { SettingsModal } from './profile/SettingsModal';
 import { ContentListModal } from './profile/ContentListModal';
+import { PrivacyModal } from './profile/PrivacyModal';
+import { ViewAllPostsModal } from './profile/ViewAllPostsModal';
+import { getProfile, getLiked, getSaved, getRecent, type UserProfile as StoreProfile } from '../utils/userStore';
 import type { Wallpaper } from '../types';
 
 type ProfileNavProps = {
@@ -23,30 +26,39 @@ type MenuSection = {
   items: MenuItem[];
 };
 
-export const ProfileNav = ({ 
-  onClose, 
-  wallpapers, 
-  onWallpaperClick
+export const ProfileNav = ({
+  onClose,
+  wallpapers,
+  onWallpaperClick,
 }: ProfileNavProps) => {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showPrivacy, setShowPrivacy] = useState(false);
+  const [showAllPosts, setShowAllPosts] = useState(false);
   const [contentModal, setContentModal] = useState<'liked' | 'saved' | 'recent' | null>(null);
 
-  // Mock current user data
-  const currentUser = {
-    name: 'John Doe',
-    username: '@johndoe',
-    avatar: 'https://i.pravatar.cc/150?img=60',
-    bio: 'Digital Artist & Photographer',
-    followers: 12500,
-    following: 845,
-    posts: wallpapers.filter(wp => wp.userId === 'user-0').length || 24,
+  // Load profile from store — re-render when settings saves via onProfileUpdate
+  const [profile, setProfile] = useState<StoreProfile>(getProfile());
+
+  const handleProfileUpdate = (updated: StoreProfile) => {
+    setProfile(updated);
   };
 
+  // Counts from store
+  const likedCount = getLiked().length;
+  const savedCount = getSaved().length;
+  const recentCount = getRecent().length;
+
   const stats = [
-    { label: 'Posts', value: currentUser.posts },
-    { label: 'Followers', value: currentUser.followers > 1000 ? `${(currentUser.followers / 1000).toFixed(1)}k` : currentUser.followers },
-    { label: 'Following', value: currentUser.following },
+    {
+      label: 'Posts',
+      value: wallpapers.filter(wp => wp.userId === 'user-0').length || 24,
+    },
+    {
+      label: 'Followers',
+      value: 12500 > 1000 ? `${(12500 / 1000).toFixed(1)}k` : 12500,
+    },
+    { label: 'Following', value: 845 },
   ];
 
   const handleShare = () => {
@@ -57,96 +69,78 @@ export const ProfileNav = ({
         url: window.location.href,
       }).catch(() => {});
     } else {
-      alert('Share link copied to clipboard!');
+      navigator.clipboard.writeText(window.location.href).catch(() => {});
+      alert('Link copied to clipboard!');
     }
   };
 
   const handleLogout = () => {
     setShowLogoutConfirm(false);
     alert('Logged out successfully!');
-    // Implement actual logout logic here
   };
 
   const menuSections: MenuSection[] = [
     {
       title: 'My Content',
       items: [
-        { 
-          icon: Heart, 
-          label: 'Liked Wallpapers', 
-          count: 156, 
+        {
+          icon: Heart,
+          label: 'Liked Wallpapers',
+          count: likedCount,
           color: 'text-red-400',
-          onClick: () => setContentModal('liked')
+          onClick: () => setContentModal('liked'),
         },
-        { 
-          icon: Bookmark, 
-          label: 'Saved Collections', 
-          count: 23, 
+        {
+          icon: Bookmark,
+          label: 'Saved Collections',
+          count: savedCount,
           color: 'text-blue-400',
-          onClick: () => setContentModal('saved')
+          onClick: () => setContentModal('saved'),
         },
-        { 
-          icon: Clock, 
-          label: 'Recently Viewed', 
-          count: 48, 
+        {
+          icon: Clock,
+          label: 'Recently Viewed',
+          count: recentCount,
           color: 'text-purple-400',
-          onClick: () => setContentModal('recent')
+          onClick: () => setContentModal('recent'),
         },
-      ]
+      ],
     },
     {
       title: 'Settings',
       items: [
-        { 
-          icon: Settings, 
-          label: 'Account Settings', 
+        {
+          icon: Settings,
+          label: 'Account Settings',
           color: 'text-white/80',
-          onClick: () => setShowSettings(true)
+          onClick: () => setShowSettings(true),
         },
-        { 
-          icon: Bell, 
-          label: 'Notifications', 
+        {
+          icon: Shield,
+          label: 'Privacy & Security',
           color: 'text-white/80',
-          onClick: () => alert('Notification settings - Coming soon!')
+          onClick: () => setShowPrivacy(true),
         },
-        { 
-          icon: Moon, 
-          label: 'Display & Appearance', 
-          color: 'text-white/80',
-          onClick: () => setShowSettings(true)
-        },
-        { 
-          icon: Shield, 
-          label: 'Privacy & Security', 
-          color: 'text-white/80',
-          onClick: () => alert('Privacy settings - Coming soon!')
-        },
-      ]
+      ],
     },
     {
-      title: 'Support',
+      title: 'More',
       items: [
-        { 
-          icon: HelpCircle, 
-          label: 'Help & Support', 
+        {
+          icon: Share2,
+          label: 'Share App',
           color: 'text-white/80',
-          onClick: () => alert('Help center - Coming soon!')
+          onClick: handleShare,
         },
-        { 
-          icon: Share2, 
-          label: 'Share App', 
-          color: 'text-white/80',
-          onClick: handleShare
-        },
-      ]
-    }
+      ],
+    },
   ];
 
   const myWallpapers = wallpapers.filter(wp => wp.userId === 'user-0').slice(0, 6);
 
   return (
     <>
-      <div className="fixed inset-0 bg-black z-50 flex flex-col slide-up overflow-y-auto no-scrollbar">
+      <div className="fixed inset-0 bg-black z-50 flex flex-col overflow-y-auto no-scrollbar">
         {/* Header */}
         <div className="sticky top-0 z-10 bg-black/95 backdrop-blur-xl border-b border-white/10">
           <div className="flex items-center justify-between p-4">
@@ -154,7 +148,7 @@ export const ProfileNav = ({
               <ChevronLeft className="w-6 h-6" />
             </button>
             <h1 className="text-lg font-semibold">Profile</h1>
-            <button 
+            <button
               onClick={() => setShowSettings(true)}
               className="p-2 hover:bg-white/10 rounded-full transition-colors"
             >
@@ -168,18 +162,21 @@ export const ProfileNav = ({
           <div className="text-center mb-8 pt-4">
             <div className="relative inline-block mb-4">
               <img
-                src={currentUser.avatar}
-                alt={currentUser.name}
-                className="w-28 h-28 rounded-full border-4 border-white/20"
+                src={profile.avatar}
+                alt={profile.name}
+                className="w-28 h-28 rounded-full border-4 border-white/20 object-cover"
               />
-              <button className="absolute bottom-0 right-0 p-2 bg-white text-black rounded-full shadow-lg hover:bg-gray-200 transition-all">
+              <button
+                onClick={() => setShowSettings(true)}
+                className="absolute bottom-0 right-0 p-2 bg-white text-black rounded-full shadow-lg hover:bg-gray-200 transition-all"
+              >
                 <Settings className="w-4 h-4" />
               </button>
             </div>
 
-            <h2 className="text-2xl font-bold mb-1">{currentUser.name}</h2>
-            <p className="text-white/60 mb-2">{currentUser.username}</p>
-            <p className="text-sm text-white/70 mb-6 max-w-xs mx-auto">{currentUser.bio}</p>
+            <h2 className="text-2xl font-bold mb-1">{profile.name}</h2>
+            <p className="text-white/60 mb-2">{profile.username}</p>
+            <p className="text-sm text-white/70 mb-6 max-w-xs mx-auto">{profile.bio}</p>
 
             {/* Stats */}
             <div className="flex items-center justify-center gap-8 mb-6">
@@ -193,13 +190,13 @@ export const ProfileNav = ({
 
             {/* Action Buttons */}
             <div className="flex gap-3 justify-center">
-              <button 
-                onClick={() => alert('Edit profile - Coming soon!')}
+              <button
+                onClick={() => setShowSettings(true)}
                 className="flex-1 max-w-[200px] px-6 py-2.5 bg-white text-black rounded-full font-semibold hover:bg-gray-200 transition-all"
               >
                 Edit Profile
               </button>
-              <button 
+              <button
                 onClick={handleShare}
                 className="px-6 py-2.5 bg-white/10 hover:bg-white/20 rounded-full font-semibold transition-all border border-white/20"
               >
@@ -213,8 +210,8 @@ export const ProfileNav = ({
             <div className="mb-8">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold">My Recent Posts</h3>
-                <button 
-                  onClick={() => alert('View all posts - Coming soon!')}
+                <button
+                  onClick={() => setShowAllPosts(true)}
                   className="text-sm text-white/60 hover:text-white transition-colors"
                 >
                   View All
@@ -238,7 +235,9 @@ export const ProfileNav = ({
           <div className="space-y-6">
             {menuSections.map((section) => (
               <div key={section.title}>
-                <h3 className="text-sm font-semibold text-white/60 mb-3 px-2">{section.title.toUpperCase()}</h3>
+                <h3 className="text-sm font-semibold text-white/60 mb-3 px-2">
+                  {section.title.toUpperCase()}
+                </h3>
                 <div className="space-y-1">
                   {section.items.map((item) => (
                     <button
@@ -246,13 +245,13 @@ export const ProfileNav = ({
                       onClick={item.onClick}
                       className="w-full flex items-center gap-4 p-4 bg-white/5 hover:bg-white/10 rounded-xl transition-all group"
                     >
-                      <div className={`p-2 rounded-lg bg-white/5 group-hover:bg-white/10 transition-colors`}>
+                      <div className="p-2 rounded-lg bg-white/5 group-hover:bg-white/10 transition-colors">
                         <item.icon className={`w-5 h-5 ${item.color}`} />
                       </div>
                       <div className="flex-1 text-left">
                         <p className="font-medium text-white">{item.label}</p>
                       </div>
-                      {item.count && (
+                      {item.count !== undefined && item.count > 0 && (
                         <span className="text-sm text-white/60 font-medium">{item.count}</span>
                       )}
                       <ChevronLeft className="w-5 h-5 rotate-180 text-white/40 group-hover:text-white/60 transition-colors" />
@@ -264,7 +263,7 @@ export const ProfileNav = ({
           </div>
 
           {/* Logout Button */}
-          <button 
+          <button
             onClick={() => setShowLogoutConfirm(true)}
             className="w-full flex items-center justify-center gap-3 p-4 mt-8 mb-4 bg-red-500/10 hover:bg-red-500/20 rounded-xl transition-all border border-red-500/20"
           >
@@ -280,10 +279,10 @@ export const ProfileNav = ({
         </div>
       </div>
 
-      {/* Logout Confirmation Modal */}
+      {/* Logout Confirmation */}
       {showLogoutConfirm && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
-          <div className="bg-zinc-900 rounded-2xl p-6 max-w-sm w-full border border-white/10 scale-in">
+          <div className="bg-zinc-900 rounded-2xl p-6 max-w-sm w-full border border-white/10">
             <div className="text-center mb-6">
               <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
                 <LogOut className="w-8 h-8 text-red-400" />
@@ -313,7 +312,28 @@ export const ProfileNav = ({
 
       {/* Settings Modal */}
       {showSettings && (
-        <SettingsModal onClose={() => setShowSettings(false)} />
+        <SettingsModal
+          onClose={() => setShowSettings(false)}
+          onProfileUpdate={handleProfileUpdate}
+        />
+      )}
+
+      {/* Privacy Modal */}
+      {showPrivacy && (
+        <PrivacyModal onClose={() => setShowPrivacy(false)} />
+      )}
+
+      {/* View All Posts */}
+      {showAllPosts && (
+        <ViewAllPostsModal
+          onClose={() => setShowAllPosts(false)}
+          wallpapers={wallpapers.filter(wp => wp.userId === 'user-0')}
+          onWallpaperClick={(wp) => {
+            setShowAllPosts(false);
+            onWallpaperClick(wp);
+          }}
+          userName={profile.name}
+        />
       )}
 
       {/* Content List Modal */}
@@ -321,7 +341,6 @@ export const ProfileNav = ({
         <ContentListModal
           type={contentModal}
           onClose={() => setContentModal(null)}
-          wallpapers={wallpapers}
           onWallpaperClick={(wp) => {
             setContentModal(null);
             onWallpaperClick(wp);
