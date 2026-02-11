@@ -13,9 +13,19 @@ export const VerifiedBadge = ({ size = 'md', className = '' }: VerifiedBadgeProp
   };
 
   return (
-    <CheckCircle 
-      className={`${sizes[size]} text-blue-500 fill-blue-500 ${className}`}
-      strokeWidth={0}
-    />
+    <div className={`relative inline-flex ${className}`}>
+      {/* Blue circle background */}
+      <svg className={sizes[size]} viewBox="0 0 24 24" fill="none">
+        <circle cx="12" cy="12" r="10" fill="#1D9BF0" />
+        <path
+          d="M9 12l2 2 4-4"
+          stroke="white"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          fill="none"
+        />
+      </svg>
+    </div>
   );
 };
