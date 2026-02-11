@@ -7,6 +7,9 @@ type SearchModalProps = {
   onClose: () => void;
   searchQuery: string;
   setSearchQuery: (query: string) => void;
+  recentSearches: string[];
+  onClearRecentSearch: (searchTerm: string) => void;
+  onClearAllRecentSearches: () => void;
   filteredWallpapers: Wallpaper[];
   userProfiles: UserProfile[];
   onWallpaperClick: (wallpaper: Wallpaper) => void;
@@ -18,15 +21,15 @@ export const SearchModal = ({
   onClose,
   searchQuery,
   setSearchQuery,
+  recentSearches,
+  onClearRecentSearch,
+  onClearAllRecentSearches,
   filteredWallpapers,
   userProfiles,
   onWallpaperClick,
   onUserClick
 }: SearchModalProps) => {
   if (!isOpen) return null;
-
-  // Mock recent searches - in a real app, this would come from localStorage
-  const recentSearches = ['Nature', 'Dark', 'Abstract'];
 
   return (
     <div className="fixed inset-0 z-50 bg-black slide-up">
@@ -62,17 +65,38 @@ export const SearchModal = ({
           <div className="p-4">
             {recentSearches.length > 0 && (
               <>
-                <h3 className="text-xs font-semibold text-white/50 mb-2 px-1">RECENT</h3>
+                <div className="flex items-center justify-between mb-2 px-1">
+                  <h3 className="text-xs font-semibold text-white/50">RECENT</h3>
+                  <button
+                    onClick={onClearAllRecentSearches}
+                    className="text-xs text-white/40 hover:text-white/60 transition-colors"
+                  >
+                    Clear all
+                  </button>
+                </div>
                 <div className="space-y-1 mb-5">
                   {recentSearches.map((term, idx) => (
-                    <button
+                    <div
                       key={idx}
-                      onClick={() => setSearchQuery(term)}
-                      className="w-full flex items-center gap-3 p-2 hover:bg-white/5 rounded-lg transition-colors group"
+                      className="flex items-center gap-3 p-2 hover:bg-white/5 rounded-lg transition-colors group"
                     >
-                      <Clock className="w-4 h-4 text-white/40 group-hover:text-white/60" />
-                      <span className="text-sm text-white/80">{term}</span>
-                    </button>
+                      <button
+                        onClick={() => setSearchQuery(term)}
+                        className="flex-1 flex items-center gap-3 text-left"
+                      >
+                        <Clock className="w-4 h-4 text-white/40 group-hover:text-white/60" />
+                        <span className="text-sm text-white/80">{term}</span>
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onClearRecentSearch(term);
+                        }}
+                        className="p-1 hover:bg-white/10 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <X className="w-3.5 h-3.5 text-white/40" />
+                      </button>
+                    </div>
                   ))}
                 </div>
               </>
@@ -108,3 +132,4 @@ export const SearchModal = ({
       </div>
     </div>
   );
+};
