@@ -1,4 +1,4 @@
-import { ChevronLeft, Settings, Share2, Heart, Bookmark, Clock, LogOut, Shield } from 'lucide-react';
+import { ChevronLeft, Settings, Share2, Heart, Bookmark, Clock, LogOut, Shield, CheckCircle } from 'lucide-react';
 import { useState } from 'react';
 import { SettingsModal } from './profile/SettingsModal';
 import { ContentListModal } from './profile/ContentListModal';
@@ -92,7 +92,15 @@ export const ProfileNav = ({ onClose, wallpapers, onWallpaperClick }: ProfileNav
               <img src={profile.avatar} alt={profile.name} className="w-28 h-28 rounded-full border-4 border-white/20 object-cover"/>
               <button onClick={()=>setModals(m=>({...m,settings:true}))} className="absolute bottom-0 right-0 p-2 bg-white text-black rounded-full shadow-lg hover:bg-gray-200 active:scale-95 transition-all"><Settings className="w-4 h-4"/></button>
             </div>
-            <h2 className="text-2xl font-bold mb-1">{profile.name}</h2>
+
+            {/* Name with Verified Badge */}
+            <div className="flex items-center justify-center gap-2 mb-1">
+              <h2 className="text-2xl font-bold">{profile.name}</h2>
+              {profile.verified && (
+                <CheckCircle className="w-6 h-6 text-blue-500 fill-blue-500" strokeWidth={0} />
+              )}
+            </div>
+
             <p className="text-white/60 mb-2">{profile.username}</p>
             <p className="text-sm text-white/70 mb-6 max-w-xs mx-auto">{profile.bio}</p>
 
