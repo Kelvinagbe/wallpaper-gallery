@@ -1,5 +1,5 @@
 import { ChevronLeft, Heart, CheckCheck } from 'lucide-react';
-import { useNotifications } from './useNotifications';
+import { useNotifications } from '../hooks/useNotifications';
 
 type NotificationNavProps = {
   onClose: () => void;
