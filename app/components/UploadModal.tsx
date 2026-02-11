@@ -1,5 +1,5 @@
-import { useState, useRef } from 'react';
-import { X, ImageIcon, Type, FileText } from 'lucide-react';
+import { useState, useRef, useCallback } from 'react';
+import { X, Upload, Image as ImageIcon } from 'lucide-react';
 
 type UploadModalProps = {
   isOpen: boolean;
@@ -10,6 +10,9 @@ export const UploadModal = ({ isOpen, onClose }: UploadModalProps) => {
   const [isClosing, setIsClosing] = useState(false);
   const [uploadTitle, setUploadTitle] = useState('');
   const [uploadDescription, setUploadDescription] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string>('');
+  const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleClose = () => {
@@ -19,11 +22,39 @@ export const UploadModal = ({ isOpen, onClose }: UploadModalProps) => {
       setIsClosing(false);
       setUploadTitle('');
       setUploadDescription('');
+      setSelectedFile(null);
+      setPreviewUrl('');
     }, 300);
   };
 
+  const handleFileSelect = useCallback((file: File) => {
+    if (file && file.type.startsWith('image/')) {
+      setSelectedFile(file);
+      const url = URL.createObjectURL(file);
+      setPreviewUrl(url);
+    }
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleFileSelect(file);
+  }, [handleFileSelect]);
+
   const handlePost = () => {
-    console.log('Posting:', { title: uploadTitle, description: uploadDescription });
+    if (!selectedFile || !uploadTitle) return;
+    console.log('Posting:', { title: uploadTitle, description: uploadDescription, file: selectedFile });
     handleClose();
   };
 
@@ -31,100 +62,146 @@ export const UploadModal = ({ isOpen, onClose }: UploadModalProps) => {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md"
       style={{ animation: isClosing ? 'fadeOut 0.3s ease-out forwards' : 'fadeIn 0.3s ease-out forwards' }}
       onClick={handleClose}
     >
       <div
-        className={`w-full sm:max-w-lg bg-gradient-to-b from-gray-900 to-black border-t sm:border border-white/10 sm:rounded-3xl rounded-t-3xl overflow-hidden ${
+        className={`w-full max-w-2xl mx-4 bg-black border border-white/10 rounded-2xl overflow-hidden shadow-2xl ${
           isClosing ? 'slide-down' : 'slide-up'
         }`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="p-6 sm:p-8">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h2 className="text-2xl font-bold">Upload Wallpaper</h2>
-              <p className="text-sm text-white/50 mt-1">Share your amazing wallpapers</p>
-            </div>
-            <button onClick={handleClose} className="p-2 rounded-xl hover:bg-white/10 transition-colors">
-              <X className="w-6 h-6" />
-            </button>
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
+          <div>
+            <h2 className="text-lg font-semibold">Upload Wallpaper</h2>
+            <p className="text-xs text-white/50 mt-0.5">Share your creation with the community</p>
           </div>
-
-          <div
-            onClick={() => fileInputRef.current?.click()}
-            className="relative border-2 border-dashed border-white/20 rounded-2xl p-8 text-center cursor-pointer hover:border-white/50 hover:bg-white/5 transition-all group mb-4"
+          <button
+            onClick={handleClose}
+            className="p-2 rounded-lg hover:bg-white/5 transition-colors"
           >
-            <div className="absolute inset-0 bg-white/5 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
-            <div className="relative">
-              <div className="w-16 h-16 mx-auto mb-3 bg-white/10 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
-                <ImageIcon className="w-8 h-8 text-white" />
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="p-6 max-h-[70vh] overflow-y-auto">
+          {/* Upload Area */}
+          <div
+            onClick={() => !previewUrl && fileInputRef.current?.click()}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            className={`relative border-2 border-dashed rounded-xl transition-all overflow-hidden mb-6 ${
+              isDragging
+                ? 'border-white/50 bg-white/5'
+                : previewUrl
+                ? 'border-white/20'
+                : 'border-white/10 hover:border-white/30 cursor-pointer'
+            }`}
+          >
+            {previewUrl ? (
+              <div className="relative aspect-video">
+                <img
+                  src={previewUrl}
+                  alt="Preview"
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setPreviewUrl('');
+                    setSelectedFile(null);
+                  }}
+                  className="absolute top-3 right-3 p-2 rounded-lg bg-black/80 hover:bg-black transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    fileInputRef.current?.click();
+                  }}
+                  className="absolute bottom-3 right-3 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 backdrop-blur-sm text-sm font-medium transition-colors flex items-center gap-2"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  Change
+                </button>
               </div>
-              <p className="text-base font-semibold mb-1">Choose image</p>
-              <p className="text-xs text-white/60 mb-2">or drag and drop here</p>
-              <div className="flex items-center justify-center gap-3 text-xs text-white/40">
-                <span className="flex items-center gap-1">
-                  <div className="w-1.5 h-1.5 rounded-full bg-white"></div>PNG, JPG, WEBP
-                </span>
-                <span className="flex items-center gap-1">
-                  <div className="w-1.5 h-1.5 rounded-full bg-white"></div>Max 10MB
-                </span>
+            ) : (
+              <div className="py-12 text-center">
+                <div className="w-14 h-14 mx-auto mb-4 bg-white/5 rounded-full flex items-center justify-center">
+                  <ImageIcon className="w-7 h-7 text-white/60" />
+                </div>
+                <p className="text-sm font-medium mb-1">Click to upload or drag and drop</p>
+                <p className="text-xs text-white/40">PNG, JPG, WEBP up to 10MB</p>
               </div>
-            </div>
+            )}
           </div>
 
           <input
             ref={fileInputRef}
             type="file"
             accept="image/*"
-            onChange={(e) => e.target.files?.[0] && handleClose()}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) handleFileSelect(file);
+            }}
             className="hidden"
           />
 
-          {[
-            { icon: Type, label: 'Title', value: uploadTitle, setter: setUploadTitle, placeholder: 'Enter wallpaper title...', rows: 1 },
-            { icon: FileText, label: 'Description', value: uploadDescription, setter: setUploadDescription, placeholder: 'Describe your wallpaper...', rows: 3 }
-          ].map(({ icon: Icon, label, value, setter, placeholder, rows }) => (
-            <div key={label} className="mb-4">
-              <label className="flex items-center gap-2 text-sm font-medium text-white/80 mb-2">
-                <Icon className="w-4 h-4" />
-                {label}
+          {/* Form Fields */}
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-white/80 mb-2">
+                Title <span className="text-red-400">*</span>
               </label>
-              {rows === 1 ? (
-                <input
-                  type="text"
-                  value={value}
-                  onChange={(e) => setter(e.target.value)}
-                  placeholder={placeholder}
-                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder:text-white/40 focus:outline-none focus:border-white/30 focus:bg-white/10 transition-all"
-                />
-              ) : (
-                <textarea
-                  value={value}
-                  onChange={(e) => setter(e.target.value)}
-                  placeholder={placeholder}
-                  rows={rows}
-                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder:text-white/40 focus:outline-none focus:border-white/30 focus:bg-white/10 transition-all resize-none"
-                />
-              )}
+              <input
+                type="text"
+                value={uploadTitle}
+                onChange={(e) => setUploadTitle(e.target.value)}
+                placeholder="e.g., Minimal Dark Abstract"
+                className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-white/30 focus:bg-white/[0.07] transition-all"
+                maxLength={100}
+              />
+              <p className="text-xs text-white/30 mt-1.5">{uploadTitle.length}/100</p>
             </div>
-          ))}
 
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              onClick={handleClose}
-              className="px-4 py-3 rounded-xl bg-white/5 hover:bg-white/10 font-medium transition-all border border-white/10"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handlePost}
-              className="px-4 py-3 rounded-xl bg-white text-black hover:bg-gray-200 font-semibold transition-all"
-            >
-              Post
-            </button>
+            <div>
+              <label className="block text-sm font-medium text-white/80 mb-2">
+                Description <span className="text-white/40 text-xs font-normal">(optional)</span>
+              </label>
+              <textarea
+                value={uploadDescription}
+                onChange={(e) => setUploadDescription(e.target.value)}
+                placeholder="Add details about your wallpaper, inspiration, or usage..."
+                rows={3}
+                className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-white/30 focus:bg-white/[0.07] transition-all resize-none"
+                maxLength={500}
+              />
+              <p className="text-xs text-white/30 mt-1.5">{uploadDescription.length}/500</p>
+            </div>
           </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-white/10">
+          <button
+            onClick={handleClose}
+            className="px-4 py-2 rounded-lg text-sm font-medium text-white/80 hover:bg-white/5 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handlePost}
+            disabled={!selectedFile || !uploadTitle}
+            className="px-4 py-2 rounded-lg text-sm font-medium bg-white text-black hover:bg-white/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white"
+          >
+            Upload
+          </button>
         </div>
       </div>
     </div>
