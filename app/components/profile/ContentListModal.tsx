@@ -1,18 +1,11 @@
 import { X, Heart, Bookmark, Clock, Trash2, Download } from 'lucide-react';
-import { useState, useEffect } from 'react';
 import {
-  getLiked,
-  getSaved,
-  getRecent,
-  unlikeWallpaper,
-  unsaveWallpaper,
-  clearLiked,
-  clearSaved,
-  clearRecent,
-  type LikedWallpaper,
-  type SavedWallpaper,
-  type RecentWallpaper,
+  getLiked, getSaved, getRecent,
+  unlikeWallpaper, unsaveWallpaper,
+  clearLiked, clearSaved, clearRecent,
+  type LikedWallpaper, type SavedWallpaper, type RecentWallpaper,
 } from '../../utils/userStore';
+import { useStoreKey } from '../../hooks/useStoreKey';
 import type { Wallpaper } from '../../types';
 
 type ContentType = 'liked' | 'saved' | 'recent';
@@ -41,13 +34,6 @@ const toWallpaper = (item: StoreItem): Wallpaper => ({
   aspectRatio: 1.5,
 });
 
-// Extracted outside component so it's stable and not recreated on every render
-const loadItemsForType = (type: ContentType): StoreItem[] => {
-  if (type === 'liked') return getLiked();
-  if (type === 'saved') return getSaved();
-  return getRecent();
-};
-
 export const ContentListModal = ({ type, onClose, onWallpaperClick }: ContentListModalProps) => {
   const config = {
     liked: {
@@ -75,46 +61,42 @@ export const ContentListModal = ({ type, onClose, onWallpaperClick }: ContentLis
 
   const { title, icon: Icon, iconColor, emptyMessage, emptySubtext } = config[type];
 
-  // ─── State ────────────────────────────────────────────────────────────────
-  // Initialize with a function reference — React calls this ONCE at mount.
-  // Using useEffect to re-sync if `type` prop changes (e.g. modal reuse).
-  const [items, setItems] = useState<StoreItem[]>(() => loadItemsForType(type));
+  // Live — re-renders automatically whenever liked/saved/recent changes anywhere
+  const likedItems  = useStoreKey('liked',  getLiked);
+  const savedItems  = useStoreKey('saved',  getSaved);
+  const recentItems = useStoreKey('recent', getRecent);
 
-  useEffect(() => {
-    // Re-load whenever the modal opens or type switches
-    setItems(loadItemsForType(type));
-  }, [type]);
-
-  // ─── Handlers ─────────────────────────────────────────────────────────────
+  const items: StoreItem[] =
+    type === 'liked'  ? likedItems  :
+    type === 'saved'  ? savedItems  :
+    recentItems;
 
   const handleClearAll = () => {
     if (!confirm(`Are you sure you want to clear all ${title.toLowerCase()}?`)) return;
-    if (type === 'liked') clearLiked();
-    if (type === 'saved') clearSaved();
+    if (type === 'liked')  clearLiked();
+    if (type === 'saved')  clearSaved();
     if (type === 'recent') clearRecent();
-    setItems([]);
   };
 
   const handleRemove = (id: string) => {
     if (type === 'liked') unlikeWallpaper(id);
     if (type === 'saved') unsaveWallpaper(id);
-    setItems(prev => prev.filter(w => w.id !== id));
   };
 
   const getTimestamp = (item: StoreItem): number => {
-    if ('likedAt' in item) return item.likedAt;
-    if ('savedAt' in item) return item.savedAt;
+    if ('likedAt'  in item) return item.likedAt;
+    if ('savedAt'  in item) return item.savedAt;
     if ('viewedAt' in item) return item.viewedAt;
     return 0;
   };
 
   const formatTime = (ts: number): string => {
-    const diff = Date.now() - ts;
-    const mins = Math.floor(diff / 60000);
-    const hours = Math.floor(diff / 3600000);
-    const days = Math.floor(diff / 86400000);
-    if (mins < 1) return 'Just now';
-    if (mins < 60) return `${mins}m ago`;
+    const diff  = Date.now() - ts;
+    const mins  = Math.floor(diff / 60_000);
+    const hours = Math.floor(diff / 3_600_000);
+    const days  = Math.floor(diff / 86_400_000);
+    if (mins  < 1)  return 'Just now';
+    if (mins  < 60) return `${mins}m ago`;
     if (hours < 24) return `${hours}h ago`;
     return `${days}d ago`;
   };
@@ -123,7 +105,6 @@ export const ContentListModal = ({ type, onClose, onWallpaperClick }: ContentLis
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
       <div className="bg-gradient-to-b from-zinc-900 to-black w-full sm:max-w-4xl sm:rounded-2xl overflow-hidden max-h-[90vh] flex flex-col">
 
-        {/* Header */}
         <div className="sticky top-0 bg-zinc-900/95 backdrop-blur-xl border-b border-white/10 p-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -144,17 +125,13 @@ export const ContentListModal = ({ type, onClose, onWallpaperClick }: ContentLis
                   Clear All
                 </button>
               )}
-              <button
-                onClick={onClose}
-                className="p-2 hover:bg-white/10 rounded-full transition-colors"
-              >
+              <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </div>
           </div>
         </div>
 
-        {/* Content */}
         <div className="overflow-y-auto flex-1 p-4">
           {items.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-center">
@@ -221,7 +198,6 @@ const WallpaperItem = ({ item, type, timestamp, onClick, onRemove }: WallpaperIt
         className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
       />
 
-      {/* Overlay */}
       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
         <div className="absolute bottom-0 left-0 right-0 p-3">
           <h3 className="font-semibold text-sm mb-1 line-clamp-1">{item.title}</h3>
@@ -229,7 +205,6 @@ const WallpaperItem = ({ item, type, timestamp, onClick, onRemove }: WallpaperIt
         </div>
       </div>
 
-      {/* Action Buttons */}
       <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
         <button
           onClick={handleDownload}
@@ -247,7 +222,6 @@ const WallpaperItem = ({ item, type, timestamp, onClick, onRemove }: WallpaperIt
         )}
       </div>
 
-      {/* Type badge */}
       <div className="absolute top-2 left-2">
         {type === 'liked' && (
           <div className="p-1.5 bg-red-500/20 backdrop-blur-sm rounded-full border border-red-500/30">
