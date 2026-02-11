@@ -12,6 +12,7 @@ export type Wallpaper = {
   userId: string;
   userAvatar: string;
   aspectRatio: number;
+  verified?: boolean;
 };
 
 export type UserProfile = {
@@ -23,6 +24,7 @@ export type UserProfile = {
   following: number;
   posts: number;
   isFollowing: boolean;
+  verified?: boolean;
 };
 
 export type ActiveTab = 'home' | 'search' | 'notifications' | 'profile';
