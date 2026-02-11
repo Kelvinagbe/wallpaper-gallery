@@ -1,6 +1,6 @@
 import { createPortal } from 'react-dom';
 import { ChevronLeft, UserPlus, UserMinus, Grid } from 'lucide-react';
-import { WallpaperCard } from './WallpaperCard';
+import { CompactWallpaperCard } from './CompactWallpaperCard';
 import type { UserProfile as UserProfileType, Wallpaper } from '../types';
 
 type UserProfileProps = {
@@ -78,11 +78,9 @@ export const UserProfile = ({ user, wallpapers, onClose, onWallpaperClick, onTog
             </button>
           </div>
 
-          <div className="masonry">
+          <div className="grid grid-cols-4 gap-2">
             {userWallpapers.map((wp) => (
-              <div key={wp.id}>
-                <WallpaperCard wp={wp} onClick={() => onWallpaperClick(wp)} />
-              </div>
+              <CompactWallpaperCard key={wp.id} wp={wp} onClick={() => onWallpaperClick(wp)} />
             ))}
           </div>
         </div>
