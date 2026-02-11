@@ -9,6 +9,8 @@ import { UserProfile } from './components/UserProfile';
 import { WallpaperDetail } from './components/WallpaperDetail';
 import { WallpaperGrid } from './components/WallpaperGrid';
 import { GlobalStyles } from './components/GlobalStyles';
+import { ProfileNav } from './components/ProfileNav';
+import { NotificationNav } from './components/NotificationNav';
 import { generateMockData } from './utils/mockData';
 import type { Wallpaper, UserProfile as UserProfileType, ActiveTab, Filter } from './types';
 
@@ -52,11 +54,14 @@ export default function WallpaperGallery() {
     if (user) setSelectedUser(user);
   };
 
+  // Check if any full-screen view is open
+  const isFullScreenViewOpen = selectedWallpaper || selectedUser || activeTab === 'profile' || activeTab === 'notifications';
+
   return (
     <div className="min-h-screen bg-black text-white pb-16">
       <GlobalStyles />
 
-      {!selectedWallpaper && !selectedUser && (
+      {!isFullScreenViewOpen && (
         <Header filter={filter} setFilter={setFilter} />
       )}
 
@@ -96,6 +101,23 @@ export default function WallpaperGallery() {
         isOpen={isUploadOpen}
         onClose={() => setIsUploadOpen(false)}
       />
+
+      {activeTab === 'profile' && (
+        <ProfileNav
+          onClose={() => setActiveTab('home')}
+          wallpapers={wallpapers}
+          onWallpaperClick={(wp) => {
+            setActiveTab('home');
+            setSelectedWallpaper(wp);
+          }}
+        />
+      )}
+
+      {activeTab === 'notifications' && (
+        <NotificationNav
+          onClose={() => setActiveTab('home')}
+        />
+      )}
 
       {selectedUser && (
         <UserProfile
