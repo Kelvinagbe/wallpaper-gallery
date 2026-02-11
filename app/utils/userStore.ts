@@ -168,7 +168,11 @@ export const clearRecent = () => localStorage.removeItem('user_recent');
 // ─── Password ─────────────────────────────────────────────────────────────────
 
 export const getPasswordData = () => get('user_password', DEFAULTS.password);
-export const updatePassword = () => set('user_password', { hasPassword: true, lastChanged: Date.now() });
+
+export const updatePassword = (newPassword: string) => {
+  // NOTE: In production, hash and validate the password here
+  set('user_password', { hasPassword: true, lastChanged: Date.now() });
+};
 
 // ─── Clear All ────────────────────────────────────────────────────────────────
 
