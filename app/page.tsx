@@ -22,6 +22,7 @@ export default function WallpaperGallery() {
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [filter, setFilter] = useState<Filter>('all');
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<ActiveTab>('home');
@@ -33,6 +34,12 @@ export default function WallpaperGallery() {
       setUserProfiles(mockProfiles);
       setIsLoading(false);
     }, 1000);
+
+    // Load recent searches from localStorage
+    const savedSearches = localStorage.getItem('recentSearches');
+    if (savedSearches) {
+      setRecentSearches(JSON.parse(savedSearches));
+    }
   }, []);
 
   const filteredWallpapers = wallpapers.filter(wp =>
@@ -40,6 +47,32 @@ export default function WallpaperGallery() {
     wp.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase())) ||
     wp.uploadedBy.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const handleSearchQuery = (query: string) => {
+    setSearchQuery(query);
+    
+    // Save to recent searches if query is not empty and has actual results
+    if (query.trim() && filteredWallpapers.length > 0) {
+      const updated = [
+        query.trim(),
+        ...recentSearches.filter(s => s.toLowerCase() !== query.trim().toLowerCase())
+      ].slice(0, 5); // Keep only 5 most recent
+      
+      setRecentSearches(updated);
+      localStorage.setItem('recentSearches', JSON.stringify(updated));
+    }
+  };
+
+  const clearRecentSearch = (searchTerm: string) => {
+    const updated = recentSearches.filter(s => s !== searchTerm);
+    setRecentSearches(updated);
+    localStorage.setItem('recentSearches', JSON.stringify(updated));
+  };
+
+  const clearAllRecentSearches = () => {
+    setRecentSearches([]);
+    localStorage.removeItem('recentSearches');
+  };
 
   const toggleFollow = (userId: string) => {
     setUserProfiles(prev => prev.map(user =>
@@ -82,9 +115,15 @@ export default function WallpaperGallery() {
 
       <SearchModal
         isOpen={isSearchOpen}
-        onClose={() => setIsSearchOpen(false)}
+        onClose={() => {
+          setIsSearchOpen(false);
+          setSearchQuery('');
+        }}
         searchQuery={searchQuery}
-        setSearchQuery={setSearchQuery}
+        setSearchQuery={handleSearchQuery}
+        recentSearches={recentSearches}
+        onClearRecentSearch={clearRecentSearch}
+        onClearAllRecentSearches={clearAllRecentSearches}
         filteredWallpapers={filteredWallpapers}
         userProfiles={userProfiles}
         onWallpaperClick={(wp) => {
