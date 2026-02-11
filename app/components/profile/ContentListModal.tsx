@@ -1,5 +1,5 @@
 import { X, Heart, Bookmark, Clock, Trash2, Download } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   getLiked,
   getSaved,
@@ -25,7 +25,6 @@ type ContentListModalProps = {
 
 type StoreItem = LikedWallpaper | SavedWallpaper | RecentWallpaper;
 
-// Convert a store item to the minimal Wallpaper shape needed for the detail view
 const toWallpaper = (item: StoreItem): Wallpaper => ({
   id: item.id,
   url: item.url,
@@ -41,6 +40,13 @@ const toWallpaper = (item: StoreItem): Wallpaper => ({
   userAvatar: '',
   aspectRatio: 1.5,
 });
+
+// Extracted outside component so it's stable and not recreated on every render
+const loadItemsForType = (type: ContentType): StoreItem[] => {
+  if (type === 'liked') return getLiked();
+  if (type === 'saved') return getSaved();
+  return getRecent();
+};
 
 export const ContentListModal = ({ type, onClose, onWallpaperClick }: ContentListModalProps) => {
   const config = {
@@ -70,15 +76,16 @@ export const ContentListModal = ({ type, onClose, onWallpaperClick }: ContentLis
   const { title, icon: Icon, iconColor, emptyMessage, emptySubtext } = config[type];
 
   // ─── State ────────────────────────────────────────────────────────────────
-  // We keep a local copy so removals update the UI immediately
+  // Initialize with a function reference — React calls this ONCE at mount.
+  // Using useEffect to re-sync if `type` prop changes (e.g. modal reuse).
+  const [items, setItems] = useState<StoreItem[]>(() => loadItemsForType(type));
 
-  const loadItems = (): StoreItem[] => {
-    if (type === 'liked') return getLiked();
-    if (type === 'saved') return getSaved();
-    return getRecent();
-  };
+  useEffect(() => {
+    // Re-load whenever the modal opens or type switches
+    setItems(loadItemsForType(type));
+  }, [type]);
 
-  const [items, setItems] = useState<StoreItem[]>(loadItems);
+  // ─── Handlers ─────────────────────────────────────────────────────────────
 
   const handleClearAll = () => {
     if (!confirm(`Are you sure you want to clear all ${title.toLowerCase()}?`)) return;
@@ -91,7 +98,6 @@ export const ContentListModal = ({ type, onClose, onWallpaperClick }: ContentLis
   const handleRemove = (id: string) => {
     if (type === 'liked') unlikeWallpaper(id);
     if (type === 'saved') unsaveWallpaper(id);
-    // recent: we don't remove individual items (only clear all)
     setItems(prev => prev.filter(w => w.id !== id));
   };
 
@@ -126,7 +132,7 @@ export const ContentListModal = ({ type, onClose, onWallpaperClick }: ContentLis
               </div>
               <div>
                 <h2 className="text-xl font-bold">{title}</h2>
-                <p className="text-sm text-white/60">{items.length} items</p>
+                <p className="text-sm text-white/60">{items.length} item{items.length !== 1 ? 's' : ''}</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -191,7 +197,7 @@ type WallpaperItemProps = {
 const WallpaperItem = ({ item, type, timestamp, onClick, onRemove }: WallpaperItemProps) => {
   const handleRemove = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (type === 'recent') return; // can't remove individual recent items
+    if (type === 'recent') return;
     if (confirm('Remove this wallpaper?')) onRemove();
   };
 
@@ -241,7 +247,7 @@ const WallpaperItem = ({ item, type, timestamp, onClick, onRemove }: WallpaperIt
         )}
       </div>
 
-      {/* Type indicator */}
+      {/* Type badge */}
       <div className="absolute top-2 left-2">
         {type === 'liked' && (
           <div className="p-1.5 bg-red-500/20 backdrop-blur-sm rounded-full border border-red-500/30">
