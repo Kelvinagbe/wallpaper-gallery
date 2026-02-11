@@ -1,5 +1,7 @@
 import { ChevronLeft, Settings, Share2, Heart, Bookmark, Clock, LogOut, Moon, Bell, Shield, HelpCircle } from 'lucide-react';
-import { WallpaperCard } from './WallpaperCard';
+import { useState } from 'react';
+import { SettingsModal } from './profile/SettingsModal';
+import { ContentListModal } from './profile/ContentListModal';
 import type { Wallpaper } from '../types';
 
 type ProfileNavProps = {
@@ -13,6 +15,7 @@ type MenuItem = {
   label: string;
   count?: number;
   color: string;
+  onClick?: () => void;
 };
 
 type MenuSection = {
@@ -20,7 +23,15 @@ type MenuSection = {
   items: MenuItem[];
 };
 
-export const ProfileNav = ({ onClose, wallpapers, onWallpaperClick }: ProfileNavProps) => {
+export const ProfileNav = ({ 
+  onClose, 
+  wallpapers, 
+  onWallpaperClick
+}: ProfileNavProps) => {
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [contentModal, setContentModal] = useState<'liked' | 'saved' | 'recent' | null>(null);
+
   // Mock current user data
   const currentUser = {
     name: 'John Doe',
@@ -38,29 +49,95 @@ export const ProfileNav = ({ onClose, wallpapers, onWallpaperClick }: ProfileNav
     { label: 'Following', value: currentUser.following },
   ];
 
+  const handleShare = () => {
+    if (navigator.share) {
+      navigator.share({
+        title: 'Gallery App',
+        text: 'Check out this amazing wallpaper gallery app!',
+        url: window.location.href,
+      }).catch(() => {});
+    } else {
+      alert('Share link copied to clipboard!');
+    }
+  };
+
+  const handleLogout = () => {
+    setShowLogoutConfirm(false);
+    alert('Logged out successfully!');
+    // Implement actual logout logic here
+  };
+
   const menuSections: MenuSection[] = [
     {
       title: 'My Content',
       items: [
-        { icon: Heart, label: 'Liked Wallpapers', count: 156, color: 'text-red-400' },
-        { icon: Bookmark, label: 'Saved Collections', count: 23, color: 'text-blue-400' },
-        { icon: Clock, label: 'Recently Viewed', count: 48, color: 'text-purple-400' },
+        { 
+          icon: Heart, 
+          label: 'Liked Wallpapers', 
+          count: 156, 
+          color: 'text-red-400',
+          onClick: () => setContentModal('liked')
+        },
+        { 
+          icon: Bookmark, 
+          label: 'Saved Collections', 
+          count: 23, 
+          color: 'text-blue-400',
+          onClick: () => setContentModal('saved')
+        },
+        { 
+          icon: Clock, 
+          label: 'Recently Viewed', 
+          count: 48, 
+          color: 'text-purple-400',
+          onClick: () => setContentModal('recent')
+        },
       ]
     },
     {
       title: 'Settings',
       items: [
-        { icon: Settings, label: 'Account Settings', color: 'text-white/80' },
-        { icon: Bell, label: 'Notifications', color: 'text-white/80' },
-        { icon: Moon, label: 'Display & Appearance', color: 'text-white/80' },
-        { icon: Shield, label: 'Privacy & Security', color: 'text-white/80' },
+        { 
+          icon: Settings, 
+          label: 'Account Settings', 
+          color: 'text-white/80',
+          onClick: () => setShowSettings(true)
+        },
+        { 
+          icon: Bell, 
+          label: 'Notifications', 
+          color: 'text-white/80',
+          onClick: () => alert('Notification settings - Coming soon!')
+        },
+        { 
+          icon: Moon, 
+          label: 'Display & Appearance', 
+          color: 'text-white/80',
+          onClick: () => setShowSettings(true)
+        },
+        { 
+          icon: Shield, 
+          label: 'Privacy & Security', 
+          color: 'text-white/80',
+          onClick: () => alert('Privacy settings - Coming soon!')
+        },
       ]
     },
     {
       title: 'Support',
       items: [
-        { icon: HelpCircle, label: 'Help & Support', color: 'text-white/80' },
-        { icon: Share2, label: 'Share App', color: 'text-white/80' },
+        { 
+          icon: HelpCircle, 
+          label: 'Help & Support', 
+          color: 'text-white/80',
+          onClick: () => alert('Help center - Coming soon!')
+        },
+        { 
+          icon: Share2, 
+          label: 'Share App', 
+          color: 'text-white/80',
+          onClick: handleShare
+        },
       ]
     }
   ];
@@ -68,122 +145,189 @@ export const ProfileNav = ({ onClose, wallpapers, onWallpaperClick }: ProfileNav
   const myWallpapers = wallpapers.filter(wp => wp.userId === 'user-0').slice(0, 6);
 
   return (
-    <div className="fixed inset-0 bg-black z-50 flex flex-col slide-up overflow-y-auto no-scrollbar">
-      {/* Header */}
-      <div className="sticky top-0 z-10 bg-black/95 backdrop-blur-xl border-b border-white/10">
-        <div className="flex items-center justify-between p-4">
-          <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors">
-            <ChevronLeft className="w-6 h-6" />
-          </button>
-          <h1 className="text-lg font-semibold">Profile</h1>
-          <button className="p-2 hover:bg-white/10 rounded-full transition-colors">
-            <Settings className="w-6 h-6" />
-          </button>
-        </div>
-      </div>
-
-      <div className="max-w-2xl mx-auto w-full p-4">
-        {/* Profile Header */}
-        <div className="text-center mb-8 pt-4">
-          <div className="relative inline-block mb-4">
-            <img
-              src={currentUser.avatar}
-              alt={currentUser.name}
-              className="w-28 h-28 rounded-full border-4 border-white/20"
-            />
-            <button className="absolute bottom-0 right-0 p-2 bg-white text-black rounded-full shadow-lg hover:bg-gray-200 transition-all">
-              <Settings className="w-4 h-4" />
+    <>
+      <div className="fixed inset-0 bg-black z-50 flex flex-col slide-up overflow-y-auto no-scrollbar">
+        {/* Header */}
+        <div className="sticky top-0 z-10 bg-black/95 backdrop-blur-xl border-b border-white/10">
+          <div className="flex items-center justify-between p-4">
+            <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+              <ChevronLeft className="w-6 h-6" />
+            </button>
+            <h1 className="text-lg font-semibold">Profile</h1>
+            <button 
+              onClick={() => setShowSettings(true)}
+              className="p-2 hover:bg-white/10 rounded-full transition-colors"
+            >
+              <Settings className="w-6 h-6" />
             </button>
           </div>
-          
-          <h2 className="text-2xl font-bold mb-1">{currentUser.name}</h2>
-          <p className="text-white/60 mb-2">{currentUser.username}</p>
-          <p className="text-sm text-white/70 mb-6 max-w-xs mx-auto">{currentUser.bio}</p>
+        </div>
 
-          {/* Stats */}
-          <div className="flex items-center justify-center gap-8 mb-6">
-            {stats.map(({ label, value }) => (
-              <div key={label} className="text-center">
-                <p className="text-2xl font-bold">{value}</p>
-                <p className="text-sm text-white/60">{label}</p>
+        <div className="max-w-2xl mx-auto w-full p-4">
+          {/* Profile Header */}
+          <div className="text-center mb-8 pt-4">
+            <div className="relative inline-block mb-4">
+              <img
+                src={currentUser.avatar}
+                alt={currentUser.name}
+                className="w-28 h-28 rounded-full border-4 border-white/20"
+              />
+              <button className="absolute bottom-0 right-0 p-2 bg-white text-black rounded-full shadow-lg hover:bg-gray-200 transition-all">
+                <Settings className="w-4 h-4" />
+              </button>
+            </div>
+
+            <h2 className="text-2xl font-bold mb-1">{currentUser.name}</h2>
+            <p className="text-white/60 mb-2">{currentUser.username}</p>
+            <p className="text-sm text-white/70 mb-6 max-w-xs mx-auto">{currentUser.bio}</p>
+
+            {/* Stats */}
+            <div className="flex items-center justify-center gap-8 mb-6">
+              {stats.map(({ label, value }) => (
+                <div key={label} className="text-center">
+                  <p className="text-2xl font-bold">{value}</p>
+                  <p className="text-sm text-white/60">{label}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3 justify-center">
+              <button 
+                onClick={() => alert('Edit profile - Coming soon!')}
+                className="flex-1 max-w-[200px] px-6 py-2.5 bg-white text-black rounded-full font-semibold hover:bg-gray-200 transition-all"
+              >
+                Edit Profile
+              </button>
+              <button 
+                onClick={handleShare}
+                className="px-6 py-2.5 bg-white/10 hover:bg-white/20 rounded-full font-semibold transition-all border border-white/20"
+              >
+                Share
+              </button>
+            </div>
+          </div>
+
+          {/* My Recent Posts */}
+          {myWallpapers.length > 0 && (
+            <div className="mb-8">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold">My Recent Posts</h3>
+                <button 
+                  onClick={() => alert('View all posts - Coming soon!')}
+                  className="text-sm text-white/60 hover:text-white transition-colors"
+                >
+                  View All
+                </button>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {myWallpapers.map((wp) => (
+                  <div
+                    key={wp.id}
+                    onClick={() => onWallpaperClick(wp)}
+                    className="relative aspect-[3/4] rounded-lg overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
+                  >
+                    <img src={wp.thumbnail} alt={wp.title} className="w-full h-full object-cover" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Menu Sections */}
+          <div className="space-y-6">
+            {menuSections.map((section) => (
+              <div key={section.title}>
+                <h3 className="text-sm font-semibold text-white/60 mb-3 px-2">{section.title.toUpperCase()}</h3>
+                <div className="space-y-1">
+                  {section.items.map((item) => (
+                    <button
+                      key={item.label}
+                      onClick={item.onClick}
+                      className="w-full flex items-center gap-4 p-4 bg-white/5 hover:bg-white/10 rounded-xl transition-all group"
+                    >
+                      <div className={`p-2 rounded-lg bg-white/5 group-hover:bg-white/10 transition-colors`}>
+                        <item.icon className={`w-5 h-5 ${item.color}`} />
+                      </div>
+                      <div className="flex-1 text-left">
+                        <p className="font-medium text-white">{item.label}</p>
+                      </div>
+                      {item.count && (
+                        <span className="text-sm text-white/60 font-medium">{item.count}</span>
+                      )}
+                      <ChevronLeft className="w-5 h-5 rotate-180 text-white/40 group-hover:text-white/60 transition-colors" />
+                    </button>
+                  ))}
+                </div>
               </div>
             ))}
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex gap-3 justify-center">
-            <button className="flex-1 max-w-[200px] px-6 py-2.5 bg-white text-black rounded-full font-semibold hover:bg-gray-200 transition-all">
-              Edit Profile
-            </button>
-            <button className="px-6 py-2.5 bg-white/10 hover:bg-white/20 rounded-full font-semibold transition-all border border-white/20">
-              Share
-            </button>
+          {/* Logout Button */}
+          <button 
+            onClick={() => setShowLogoutConfirm(true)}
+            className="w-full flex items-center justify-center gap-3 p-4 mt-8 mb-4 bg-red-500/10 hover:bg-red-500/20 rounded-xl transition-all border border-red-500/20"
+          >
+            <LogOut className="w-5 h-5 text-red-400" />
+            <span className="font-semibold text-red-400">Log Out</span>
+          </button>
+
+          {/* Version Info */}
+          <div className="text-center text-xs text-white/40 py-6">
+            <p>Gallery App v1.0.0</p>
+            <p className="mt-1">Made with ❤️ for wallpaper lovers</p>
           </div>
-        </div>
-
-        {/* My Recent Posts */}
-        {myWallpapers.length > 0 && (
-          <div className="mb-8">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">My Recent Posts</h3>
-              <button className="text-sm text-white/60 hover:text-white transition-colors">
-                View All
-              </button>
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              {myWallpapers.map((wp) => (
-                <div
-                  key={wp.id}
-                  onClick={() => onWallpaperClick(wp)}
-                  className="relative aspect-[3/4] rounded-lg overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
-                >
-                  <img src={wp.thumbnail} alt={wp.title} className="w-full h-full object-cover" />
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Menu Sections */}
-        <div className="space-y-6">
-          {menuSections.map((section) => (
-            <div key={section.title}>
-              <h3 className="text-sm font-semibold text-white/60 mb-3 px-2">{section.title.toUpperCase()}</h3>
-              <div className="space-y-1">
-                {section.items.map((item) => (
-                  <button
-                    key={item.label}
-                    className="w-full flex items-center gap-4 p-4 bg-white/5 hover:bg-white/10 rounded-xl transition-all group"
-                  >
-                    <div className={`p-2 rounded-lg bg-white/5 group-hover:bg-white/10 transition-colors`}>
-                      <item.icon className={`w-5 h-5 ${item.color}`} />
-                    </div>
-                    <div className="flex-1 text-left">
-                      <p className="font-medium text-white">{item.label}</p>
-                    </div>
-                    {item.count && (
-                      <span className="text-sm text-white/60 font-medium">{item.count}</span>
-                    )}
-                    <ChevronLeft className="w-5 h-5 rotate-180 text-white/40 group-hover:text-white/60 transition-colors" />
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Logout Button */}
-        <button className="w-full flex items-center justify-center gap-3 p-4 mt-8 mb-4 bg-red-500/10 hover:bg-red-500/20 rounded-xl transition-all border border-red-500/20">
-          <LogOut className="w-5 h-5 text-red-400" />
-          <span className="font-semibold text-red-400">Log Out</span>
-        </button>
-
-        {/* Version Info */}
-        <div className="text-center text-xs text-white/40 py-6">
-          <p>Gallery App v1.0.0</p>
-          <p className="mt-1">Made with ❤️ for wallpaper lovers</p>
         </div>
       </div>
-    </div>
+
+      {/* Logout Confirmation Modal */}
+      {showLogoutConfirm && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div className="bg-zinc-900 rounded-2xl p-6 max-w-sm w-full border border-white/10 scale-in">
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                <LogOut className="w-8 h-8 text-red-400" />
+              </div>
+              <h3 className="text-xl font-bold mb-2">Log Out?</h3>
+              <p className="text-white/60 text-sm">
+                Are you sure you want to log out of your account?
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowLogoutConfirm(false)}
+                className="flex-1 px-4 py-3 bg-white/5 hover:bg-white/10 rounded-xl font-semibold transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleLogout}
+                className="flex-1 px-4 py-3 bg-red-500 hover:bg-red-600 rounded-xl font-semibold transition-colors"
+              >
+                Log Out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <SettingsModal onClose={() => setShowSettings(false)} />
+      )}
+
+      {/* Content List Modal */}
+      {contentModal && (
+        <ContentListModal
+          type={contentModal}
+          onClose={() => setContentModal(null)}
+          wallpapers={wallpapers}
+          onWallpaperClick={(wp) => {
+            setContentModal(null);
+            onWallpaperClick(wp);
+          }}
+        />
+      )}
+    </>
   );
 };
