@@ -11,7 +11,7 @@ type ProfileNavProps = {
 type MenuItem = {
   icon: typeof Heart;
   label: string;
-  count?: number;  // Optional count property
+  count?: number;
   color: string;
 };
 
@@ -38,7 +38,7 @@ export const ProfileNav = ({ onClose, wallpapers, onWallpaperClick }: ProfileNav
     { label: 'Following', value: currentUser.following },
   ];
 
-  const menuSections = [
+  const menuSections: MenuSection[] = [
     {
       title: 'My Content',
       items: [
