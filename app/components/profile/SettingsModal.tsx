@@ -18,9 +18,7 @@ export const SettingsModal = ({ onClose, onProfileUpdate }: SettingsModalProps) 
   const [isClosing, setIsClosing] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const isMobile = window.innerWidth < 640;
-
-  const handleClose = () => { setIsClosing(true); setTimeout(onClose, 350); };
+  const handleClose = () => { setIsClosing(true); setTimeout(onClose, 300); };
   const flash = () => { setSaved(true); setTimeout(() => setSaved(false), 2500); };
   
   const saveName = () => {
@@ -53,81 +51,115 @@ export const SettingsModal = ({ onClose, onProfileUpdate }: SettingsModalProps) 
 
   return (
     <>
-      <style>{`
-        @keyframes su{0%{transform:translateY(100%);opacity:0}100%{transform:translateY(0);opacity:1}}
-        @keyframes sd{0%{transform:translateY(0);opacity:1}100%{transform:translateY(100%);opacity:0}}
-        @keyframes si{0%{transform:scale(.9)translateY(20px);opacity:0}100%{transform:scale(1)translateY(0);opacity:1}}
-        @keyframes so{0%{transform:scale(1);opacity:1}100%{transform:scale(.9)translateY(20px);opacity:0}}
-        @keyframes fi{0%{opacity:0}100%{opacity:1}}
-        @keyframes fo{0%{opacity:1}100%{opacity:0}}
-        @keyframes bounce{0%{transform:scale(0)}50%{transform:scale(1.1)}100%{transform:scale(1)}}
-        @media(min-width:640px){.m{animation:${isClosing?'so':'si'} .35s cubic-bezier(.34,1.56,.64,1)}}
-        @media(max-width:639px){.m{animation:${isClosing?'sd':'su'} .35s cubic-bezier(.34,1.56,.64,1)}}
+      <style jsx>{`
+        @keyframes slideRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
+        @keyframes slideLeft { from { transform: translateX(0); } to { transform: translateX(100%); } }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+        .slide-right { animation: slideRight 0.3s ease-out; }
+        .slide-left { animation: slideLeft 0.3s ease-out; }
+        .fade-in { animation: fadeIn 0.2s ease-out; }
+        .fade-out { animation: fadeOut 0.2s ease-out; }
       `}</style>
 
-      <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.8)',backdropFilter:'blur(8px)',zIndex:50,display:'flex',alignItems:isMobile?'flex-end':'center',justifyContent:'center',padding:isMobile?0:'1rem',animation:`${isClosing?'fo':'fi'} .3s`}} onClick={handleClose}>
-        <div className="m" style={{background:'linear-gradient(to bottom,rgb(24,24,27),rgb(0,0,0))',width:'100%',maxWidth:isMobile?'100%':'32rem',borderRadius:isMobile?0:'1rem',overflow:'hidden',maxHeight:'90vh',display:'flex',flexDirection:'column',boxShadow:'0 25px 50px -12px rgba(0,0,0,.5)'}} onClick={e=>e.stopPropagation()}>
+      <div className={`fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4 ${isClosing ? 'fade-out' : 'fade-in'}`} onClick={handleClose}>
+        <div className={`bg-gradient-to-b from-zinc-900 to-black w-full max-w-lg rounded-2xl overflow-hidden max-h-[90vh] flex flex-col shadow-2xl ${isClosing ? 'slide-left' : 'slide-right'}`} onClick={(e) => e.stopPropagation()}>
           
           {/* Header */}
-          <div style={{position:'sticky',top:0,background:'rgba(24,24,27,.95)',backdropFilter:'blur(24px)',borderBottom:'1px solid rgba(255,255,255,.1)',padding:'1rem',display:'flex',alignItems:'center',justifyContent:'space-between',zIndex:10}}>
-            <h2 style={{fontSize:'1.25rem',fontWeight:'bold',margin:0}}>Settings</h2>
-            <div style={{display:'flex',alignItems:'center',gap:'.5rem'}}>
-              {saved&&<div style={{display:'flex',alignItems:'center',gap:'.375rem',color:'rgb(74,222,128)',fontSize:'.875rem',animation:'bounce .4s cubic-bezier(.34,1.56,.64,1)'}}><CheckCircle style={{width:'1rem',height:'1rem'}}/><span>Saved</span></div>}
-              <button onClick={handleClose} style={{padding:'.5rem',background:'transparent',border:'none',borderRadius:'9999px',color:'white',cursor:'pointer',transition:'all .2s'}} onMouseOver={e=>e.currentTarget.style.background='rgba(255,255,255,.1)'} onMouseOut={e=>e.currentTarget.style.background='transparent'} onMouseDown={e=>e.currentTarget.style.transform='scale(.97)'} onMouseUp={e=>e.currentTarget.style.transform='scale(1)'}><X style={{width:'1.25rem',height:'1.25rem'}}/></button>
+          <div className="sticky top-0 bg-zinc-900/95 backdrop-blur-xl border-b border-white/10 p-4 flex items-center justify-between z-10">
+            <h2 className="text-xl font-bold">Settings</h2>
+            <div className="flex items-center gap-2">
+              {saved && (
+                <div className="flex items-center gap-1.5 text-green-400 text-sm animate-pulse">
+                  <CheckCircle className="w-4 h-4" />
+                  <span>Saved</span>
+                </div>
+              )}
+              <button onClick={handleClose} className="p-2 hover:bg-white/10 rounded-full transition-all active:scale-95">
+                <X className="w-5 h-5" />
+              </button>
             </div>
           </div>
 
-          <div style={{overflowY:'auto',flex:1,padding:'1rem'}}>
+          <div className="overflow-y-auto flex-1 p-4 space-y-6">
             
             {/* Profile */}
-            <div style={{marginBottom:'1.5rem'}}>
-              <h3 style={{fontSize:'.875rem',fontWeight:600,color:'rgba(255,255,255,.6)',marginBottom:'.75rem'}}>PROFILE</h3>
-              <div style={{background:'rgba(255,255,255,.05)',borderRadius:'.75rem',border:'1px solid rgba(255,255,255,.05)',padding:'1rem'}}>
-                <div style={{display:'flex',alignItems:'center',gap:'1rem',marginBottom:'1rem'}}>
-                  <div style={{position:'relative'}}>
-                    <img src={profile.avatar} alt={profile.name} style={{width:'4rem',height:'4rem',borderRadius:'9999px',objectFit:'cover',border:'2px solid rgba(255,255,255,.2)',transition:'transform .2s'}} onMouseOver={e=>e.currentTarget.style.transform='scale(1.05)'} onMouseOut={e=>e.currentTarget.style.transform='scale(1)'}/>
-                    <button onClick={()=>fileRef.current?.click()} style={{position:'absolute',bottom:0,right:0,padding:'.375rem',background:'rgb(59,130,246)',border:'none',borderRadius:'9999px',boxShadow:'0 10px 15px -3px rgba(0,0,0,.3)',color:'white',cursor:'pointer',transition:'all .2s'}} onMouseDown={e=>e.currentTarget.style.transform='scale(.97)'} onMouseUp={e=>e.currentTarget.style.transform='scale(1)'}><Camera style={{width:'.75rem',height:'.75rem'}}/></button>
-                    <input ref={fileRef} type="file" accept="image/*" style={{display:'none'}} onChange={changeAvatar}/>
+            <div>
+              <h3 className="text-sm font-semibold text-white/60 mb-3">PROFILE</h3>
+              <div className="bg-white/5 rounded-xl border border-white/5 p-4 space-y-4">
+                <div className="flex items-center gap-4">
+                  <div className="relative group">
+                    <img src={profile.avatar} alt={profile.name} className="w-16 h-16 rounded-full object-cover border-2 border-white/20 transition-transform group-hover:scale-105" />
+                    <button onClick={() => fileRef.current?.click()} className="absolute bottom-0 right-0 p-1.5 bg-blue-500 hover:bg-blue-600 rounded-full transition-all active:scale-95 shadow-lg">
+                      <Camera className="w-3 h-3" />
+                    </button>
+                    <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={changeAvatar} />
                   </div>
                   <div>
-                    <p style={{fontWeight:600,margin:0}}>{profile.name}</p>
-                    <p style={{fontSize:'.875rem',color:'rgba(255,255,255,.5)',margin:'.25rem 0'}}>{profile.username}</p>
-                    <button onClick={()=>fileRef.current?.click()} style={{fontSize:'.75rem',color:'rgb(96,165,250)',background:'none',border:'none',cursor:'pointer',padding:0,marginTop:'.25rem'}}>Change photo</button>
+                    <p className="font-semibold">{profile.name}</p>
+                    <p className="text-sm text-white/50">{profile.username}</p>
+                    <button onClick={() => fileRef.current?.click()} className="text-xs text-blue-400 hover:text-blue-300 transition-colors mt-1">
+                      Change photo
+                    </button>
                   </div>
                 </div>
 
                 {/* Name */}
-                <div style={{marginTop:'1rem'}}>
-                  <label style={{fontSize:'.75rem',color:'rgba(255,255,255,.6)',marginBottom:'.375rem',display:'block'}}>Display Name</label>
-                  {editingName?<div style={{display:'flex',gap:'.5rem'}}><input value={tempName} onChange={e=>setTempName(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')saveName();if(e.key==='Escape')setEditingName(false);}} autoFocus style={{flex:1,background:'rgba(255,255,255,.1)',border:'1px solid rgba(59,130,246,.5)',borderRadius:'.5rem',padding:'.5rem .75rem',fontSize:'.875rem',outline:'none',color:'white'}}/><button onClick={saveName} style={{padding:'.5rem .75rem',background:'rgb(59,130,246)',border:'none',borderRadius:'.5rem',fontSize:'.875rem',fontWeight:500,color:'white',cursor:'pointer',transition:'all .2s'}} onMouseDown={e=>e.currentTarget.style.transform='scale(.97)'} onMouseUp={e=>e.currentTarget.style.transform='scale(1)'}>Save</button><button onClick={()=>{setEditingName(false);setTempName(profile.name);}} style={{padding:'.5rem .75rem',background:'rgba(255,255,255,.1)',border:'none',borderRadius:'.5rem',fontSize:'.875rem',color:'white',cursor:'pointer',transition:'all .2s'}} onMouseDown={e=>e.currentTarget.style.transform='scale(.97)'} onMouseUp={e=>e.currentTarget.style.transform='scale(1)'}>Cancel</button></div>:<button onClick={()=>setEditingName(true)} style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',background:'rgba(255,255,255,.05)',border:'1px solid rgba(255,255,255,.1)',borderRadius:'.5rem',padding:'.625rem .75rem',color:'white',cursor:'pointer',transition:'all .2s'}} onMouseOver={e=>e.currentTarget.style.background='rgba(255,255,255,.1)'} onMouseOut={e=>e.currentTarget.style.background='rgba(255,255,255,.05)'} onMouseDown={e=>e.currentTarget.style.transform='scale(.98)'} onMouseUp={e=>e.currentTarget.style.transform='scale(1)'}><span style={{fontSize:'.875rem'}}>{profile.name}</span><span style={{fontSize:'.75rem',color:'rgb(96,165,250)'}}>Edit</span></button>}
+                <div>
+                  <label className="text-xs text-white/60 mb-1.5 block">Display Name</label>
+                  {editingName ? (
+                    <div className="flex gap-2">
+                      <input value={tempName} onChange={e => setTempName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') setEditingName(false); }} autoFocus className="flex-1 bg-white/10 border border-blue-500/50 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 transition-colors" />
+                      <button onClick={saveName} className="px-3 py-2 bg-blue-500 hover:bg-blue-600 rounded-lg text-sm font-medium transition-all active:scale-95">Save</button>
+                      <button onClick={() => { setEditingName(false); setTempName(profile.name); }} className="px-3 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm transition-all active:scale-95">Cancel</button>
+                    </div>
+                  ) : (
+                    <button onClick={() => setEditingName(true)} className="w-full flex items-center justify-between bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg px-3 py-2.5 transition-all active:scale-[0.98] group">
+                      <span className="text-sm">{profile.name}</span>
+                      <span className="text-xs text-blue-400 group-hover:text-blue-300 transition-colors">Edit</span>
+                    </button>
+                  )}
                 </div>
 
                 {/* Bio */}
-                <div style={{marginTop:'1rem'}}>
-                  <label style={{fontSize:'.75rem',color:'rgba(255,255,255,.6)',marginBottom:'.375rem',display:'block'}}>Bio</label>
-                  {editingBio?<div><textarea value={tempBio} onChange={e=>setTempBio(e.target.value)} autoFocus rows={3} maxLength={150} style={{width:'100%',background:'rgba(255,255,255,.1)',border:'1px solid rgba(59,130,246,.5)',borderRadius:'.5rem',padding:'.5rem .75rem',fontSize:'.875rem',outline:'none',resize:'none',color:'white'}}/><div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:'.5rem'}}><span style={{fontSize:'.75rem',color:'rgba(255,255,255,.4)'}}>{tempBio.length}/150</span><div style={{display:'flex',gap:'.5rem'}}><button onClick={()=>{setEditingBio(false);setTempBio(profile.bio);}} style={{padding:'.375rem .75rem',background:'rgba(255,255,255,.1)',border:'none',borderRadius:'.5rem',fontSize:'.875rem',color:'white',cursor:'pointer',transition:'all .2s'}} onMouseDown={e=>e.currentTarget.style.transform='scale(.97)'} onMouseUp={e=>e.currentTarget.style.transform='scale(1)'}>Cancel</button><button onClick={saveBio} style={{padding:'.375rem .75rem',background:'rgb(59,130,246)',border:'none',borderRadius:'.5rem',fontSize:'.875rem',fontWeight:500,color:'white',cursor:'pointer',transition:'all .2s'}} onMouseDown={e=>e.currentTarget.style.transform='scale(.97)'} onMouseUp={e=>e.currentTarget.style.transform='scale(1)'}>Save</button></div></div></div>:<button onClick={()=>setEditingBio(true)} style={{width:'100%',display:'flex',alignItems:'flex-start',justifyContent:'space-between',background:'rgba(255,255,255,.05)',border:'1px solid rgba(255,255,255,.1)',borderRadius:'.5rem',padding:'.625rem .75rem',color:'white',cursor:'pointer',transition:'all .2s'}} onMouseOver={e=>e.currentTarget.style.background='rgba(255,255,255,.1)'} onMouseOut={e=>e.currentTarget.style.background='rgba(255,255,255,.05)'} onMouseDown={e=>e.currentTarget.style.transform='scale(.98)'} onMouseUp={e=>e.currentTarget.style.transform='scale(1)'}><span style={{fontSize:'.875rem',textAlign:'left',color:'rgba(255,255,255,.8)'}}>{profile.bio||'Add a bio…'}</span><span style={{fontSize:'.75rem',color:'rgb(96,165,250)',marginLeft:'.5rem',flexShrink:0}}>Edit</span></button>}
+                <div>
+                  <label className="text-xs text-white/60 mb-1.5 block">Bio</label>
+                  {editingBio ? (
+                    <div className="space-y-2">
+                      <textarea value={tempBio} onChange={e => setTempBio(e.target.value)} autoFocus rows={3} maxLength={150} className="w-full bg-white/10 border border-blue-500/50 rounded-lg px-3 py-2 text-sm outline-none resize-none focus:border-blue-500 transition-colors" />
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-white/40">{tempBio.length}/150</span>
+                        <div className="flex gap-2">
+                          <button onClick={() => { setEditingBio(false); setTempBio(profile.bio); }} className="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-sm transition-all active:scale-95">Cancel</button>
+                          <button onClick={saveBio} className="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 rounded-lg text-sm font-medium transition-all active:scale-95">Save</button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <button onClick={() => setEditingBio(true)} className="w-full flex items-start justify-between bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg px-3 py-2.5 transition-all active:scale-[0.98] group">
+                      <span className="text-sm text-left text-white/80">{profile.bio || 'Add a bio…'}</span>
+                      <span className="text-xs text-blue-400 group-hover:text-blue-300 ml-2 shrink-0 transition-colors">Edit</span>
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
 
             {/* Toggles */}
-            <div style={{marginBottom:'1.5rem'}}>
-              <h3 style={{fontSize:'.875rem',fontWeight:600,color:'rgba(255,255,255,.6)',marginBottom:'.75rem'}}>NOTIFICATIONS & SOUNDS</h3>
-              <div style={{background:'rgba(255,255,255,.05)',borderRadius:'.75rem',border:'1px solid rgba(255,255,255,.05)',overflow:'hidden'}}>
-                <T icon={Bell} label="Push Notifications" sub="Get notified about new content" value={settings.notifications} onToggle={()=>setSettings(updateSettings({notifications:!settings.notifications}))}/>
-                <div style={{borderTop:'1px solid rgba(255,255,255,.05)'}}/>
-                <T icon={Volume2} label="Sound Effects" sub="Play sounds for actions" value={settings.soundEffects} onToggle={()=>setSettings(updateSettings({soundEffects:!settings.soundEffects}))}/>
+            <div>
+              <h3 className="text-sm font-semibold text-white/60 mb-3">NOTIFICATIONS & SOUNDS</h3>
+              <div className="bg-white/5 rounded-xl border border-white/5 overflow-hidden divide-y divide-white/5">
+                <Toggle icon={Bell} label="Push Notifications" sub="Get notified about new content" value={settings.notifications} onToggle={() => setSettings(updateSettings({ notifications: !settings.notifications }))} />
+                <Toggle icon={Volume2} label="Sound Effects" sub="Play sounds for actions" value={settings.soundEffects} onToggle={() => setSettings(updateSettings({ soundEffects: !settings.soundEffects }))} />
               </div>
             </div>
 
-            <div style={{marginBottom:'1.5rem'}}>
-              <h3 style={{fontSize:'.875rem',fontWeight:600,color:'rgba(255,255,255,.6)',marginBottom:'.75rem'}}>DOWNLOADS</h3>
-              <div style={{background:'rgba(255,255,255,.05)',borderRadius:'.75rem',border:'1px solid rgba(255,255,255,.05)',overflow:'hidden'}}>
-                <T icon={Download} label="Auto-save to Gallery" sub="Save downloads automatically" value={settings.autoDownload} onToggle={()=>setSettings(updateSettings({autoDownload:!settings.autoDownload}))}/>
+            <div>
+              <h3 className="text-sm font-semibold text-white/60 mb-3">DOWNLOADS</h3>
+              <div className="bg-white/5 rounded-xl border border-white/5 overflow-hidden">
+                <Toggle icon={Download} label="Auto-save to Gallery" sub="Save downloads automatically" value={settings.autoDownload} onToggle={() => setSettings(updateSettings({ autoDownload: !settings.autoDownload }))} />
               </div>
             </div>
-
-            <div style={{height:isMobile?'1rem':0}}/>
           </div>
         </div>
       </div>
@@ -135,9 +167,17 @@ export const SettingsModal = ({ onClose, onProfileUpdate }: SettingsModalProps) 
   );
 };
 
-const T=({icon:I,label,sub,value,onToggle}:any)=>(
-  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'1rem',transition:'background .2s'}} onMouseOver={e=>e.currentTarget.style.background='rgba(255,255,255,.05)'} onMouseOut={e=>e.currentTarget.style.background='transparent'}>
-    <div style={{display:'flex',alignItems:'center',gap:'.75rem'}}><I style={{width:'1.25rem',height:'1.25rem',color:'rgba(255,255,255,.6)'}}/><div><p style={{fontWeight:500,margin:0}}>{label}</p><p style={{fontSize:'.75rem',color:'rgba(255,255,255,.6)',margin:0}}>{sub}</p></div></div>
-    <button onClick={onToggle} style={{position:'relative',width:'3rem',height:'1.75rem',borderRadius:'9999px',background:value?'rgb(59,130,246)':'rgba(255,255,255,.2)',border:'none',boxShadow:value?'0 10px 15px -3px rgba(59,130,246,.3)':'none',cursor:'pointer',transition:'all .3s'}} onMouseDown={e=>e.currentTarget.style.transform='scale(.97)'} onMouseUp={e=>e.currentTarget.style.transform='scale(1)'}><div style={{position:'absolute',top:'.25rem',width:'1.25rem',height:'1.25rem',background:'white',borderRadius:'9999px',boxShadow:'0 4px 6px -1px rgba(0,0,0,.2)',transform:value?'translateX(1.5rem)':'translateX(.25rem)',transition:'transform .3s cubic-bezier(.34,1.56,.64,1)'}}/></button>
+const Toggle = ({ icon: Icon, label, sub, value, onToggle }: any) => (
+  <div className="flex items-center justify-between p-4 hover:bg-white/5 transition-colors">
+    <div className="flex items-center gap-3">
+      <Icon className="w-5 h-5 text-white/60" />
+      <div>
+        <p className="font-medium">{label}</p>
+        <p className="text-xs text-white/60">{sub}</p>
+      </div>
+    </div>
+    <button onClick={onToggle} className={`relative w-12 h-7 rounded-full transition-all duration-300 active:scale-95 ${value ? 'bg-blue-500 shadow-lg shadow-blue-500/30' : 'bg-white/20'}`}>
+      <div className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow-md transition-transform duration-300 ${value ? 'translate-x-6' : 'translate-x-1'}`} />
+    </button>
   </div>
 );
