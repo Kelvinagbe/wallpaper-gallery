@@ -16,10 +16,8 @@ export const SettingsModal = ({ onClose, onProfileUpdate }: SettingsModalProps) 
   const [tempName, setTempName] = useState(profile.name);
   const [tempBio, setTempBio] = useState(profile.bio);
   const [saved, setSaved] = useState(false);
-  const [isClosing, setIsClosing] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const handleClose = () => { setIsClosing(true); setTimeout(onClose, 300); };
   const flash = () => { setSaved(true); setTimeout(() => setSaved(false), 2500); };
   
   const saveName = () => {
@@ -54,17 +52,13 @@ export const SettingsModal = ({ onClose, onProfileUpdate }: SettingsModalProps) 
     <>
       <style jsx>{`
         @keyframes slideRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
-        @keyframes slideLeft { from { transform: translateX(0); } to { transform: translateX(100%); } }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
         .slide-right { animation: slideRight 0.3s ease-out; }
-        .slide-left { animation: slideLeft 0.3s ease-out; }
         .fade-in { animation: fadeIn 0.2s ease-out; }
-        .fade-out { animation: fadeOut 0.2s ease-out; }
       `}</style>
 
-      <div className={`fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-0 sm:p-4 ${isClosing ? 'fade-out' : 'fade-in'}`} onClick={handleClose}>
-        <div className={`bg-gradient-to-b from-zinc-900 to-black w-full h-full sm:h-auto sm:max-w-lg sm:rounded-2xl overflow-hidden sm:max-h-[90vh] flex flex-col shadow-2xl ${isClosing ? 'slide-left' : 'slide-right'}`} onClick={(e) => e.stopPropagation()}>
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-0 sm:p-4 fade-in" onClick={onClose}>
+        <div className="bg-gradient-to-b from-zinc-900 to-black w-full h-full sm:h-auto sm:max-w-lg sm:rounded-2xl overflow-hidden sm:max-h-[90vh] flex flex-col shadow-2xl slide-right" onClick={(e) => e.stopPropagation()}>
           
           {/* Header */}
           <div className="sticky top-0 bg-zinc-900/95 backdrop-blur-xl border-b border-white/10 p-4 flex items-center justify-between z-10">
@@ -76,7 +70,7 @@ export const SettingsModal = ({ onClose, onProfileUpdate }: SettingsModalProps) 
                   <span>Saved</span>
                 </div>
               )}
-              <button onClick={handleClose} className="p-2 hover:bg-white/10 rounded-full transition-all active:scale-95">
+              <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-all active:scale-95">
                 <X className="w-5 h-5" />
               </button>
             </div>
