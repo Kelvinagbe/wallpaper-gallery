@@ -1,5 +1,5 @@
 import { createPortal } from 'react-dom';
-import { ChevronLeft, UserPlus, UserMinus, Grid, Heart, Bookmark } from 'lucide-react';
+import { ChevronLeft, UserPlus, UserMinus, Grid, Heart, Bookmark, CheckCircle } from 'lucide-react';
 import { useState } from 'react';
 import { CompactWallpaperCard } from './CompactWallpaperCard';
 import type { UserProfile as UserProfileType, Wallpaper } from '../types';
@@ -26,8 +26,8 @@ export const UserProfile = ({
   const [activeTab, setActiveTab] = useState<TabType>('posts');
 
   const userWallpapers = user ? wallpapers.filter(wp => wp.userId === user.id) : [];
-  const likedWallpapers = user ? wallpapers.filter(wp => Math.random() > 0.7) : []; // Mock liked
-  const savedWallpapers = user ? wallpapers.filter(wp => Math.random() > 0.8) : []; // Mock saved
+  const likedWallpapers = user ? wallpapers.filter(wp => Math.random() > 0.7) : [];
+  const savedWallpapers = user ? wallpapers.filter(wp => Math.random() > 0.8) : [];
 
   const getTabWallpapers = () => {
     switch (activeTab) {
@@ -55,18 +55,10 @@ export const UserProfile = ({
 
       <div className="max-w-2xl mx-auto w-full p-4 -mt-14">
         {isLoading || !user ? (
-          // Skeleton Loader
           <div className="text-center mb-6 pt-16 animate-pulse">
-            {/* Avatar Skeleton */}
             <div className="w-24 h-24 rounded-full mx-auto mb-4 bg-white/10" />
-            
-            {/* Name Skeleton */}
             <div className="h-8 w-48 bg-white/10 rounded-lg mx-auto mb-2" />
-            
-            {/* Bio Skeleton */}
             <div className="h-4 w-64 bg-white/10 rounded-lg mx-auto mb-4" />
-
-            {/* Stats Skeleton */}
             <div className="flex items-center justify-center gap-6 mb-6">
               {[1, 2, 3].map((i) => (
                 <div key={i} className="text-center">
@@ -75,19 +67,13 @@ export const UserProfile = ({
                 </div>
               ))}
             </div>
-
-            {/* Button Skeleton */}
             <div className="h-10 w-32 bg-white/10 rounded-full mx-auto mb-6" />
-
-            {/* Tabs Skeleton */}
             <div className="border-t border-white/10 pt-6">
               <div className="flex items-center gap-4 mb-4">
                 {[1, 2, 3].map((i) => (
                   <div key={i} className="h-10 w-24 bg-white/10 rounded-full" />
                 ))}
               </div>
-
-              {/* Grid Skeleton */}
               <div className="grid grid-cols-4 gap-2">
                 {[...Array(12)].map((_, i) => (
                   <div key={i} className="aspect-[9/16] bg-white/10 rounded-lg" />
@@ -96,7 +82,6 @@ export const UserProfile = ({
             </div>
           </div>
         ) : (
-          // Actual Content
           <>
             <div className="text-center mb-6 pt-16">
               <img
@@ -104,7 +89,15 @@ export const UserProfile = ({
                 alt={user.name}
                 className="w-24 h-24 rounded-full mx-auto mb-4 border-2 border-white/20"
               />
-              <h2 className="text-2xl font-bold mb-1">{user.name}</h2>
+
+              {/* Name with Verified Badge */}
+              <div className="flex items-center justify-center gap-2 mb-1">
+                <h2 className="text-2xl font-bold">{user.name}</h2>
+                {user.verified && (
+                  <CheckCircle className="w-6 h-6 text-blue-500 fill-blue-500" strokeWidth={0} />
+                )}
+              </div>
+
               <p className="text-white/60 mb-4">{user.bio}</p>
 
               <div className="flex items-center justify-center gap-6 mb-6">
@@ -145,7 +138,6 @@ export const UserProfile = ({
             </div>
 
             <div className="border-t border-white/10 pt-6">
-              {/* Tabs */}
               <div className="flex items-center gap-2 mb-4 overflow-x-auto no-scrollbar">
                 <button
                   onClick={() => setActiveTab('posts')}
@@ -187,7 +179,6 @@ export const UserProfile = ({
                 </button>
               </div>
 
-              {/* Wallpapers Grid */}
               {currentWallpapers.length > 0 ? (
                 <div className="grid grid-cols-4 gap-2">
                   {currentWallpapers.map((wp) => (
