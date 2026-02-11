@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ChevronLeft, Eye, Heart, Download, Share2, Copy, Trash2, Loader2, Bookmark } from 'lucide-react';
 import type { Wallpaper } from '../types';
 
@@ -30,6 +30,43 @@ const ImageWithLoader = ({ src, alt }: { src: string; alt: string }) => {
   );
 };
 
+const SkeletonLoader = () => (
+  <div className="space-y-4 animate-pulse">
+    <div className="relative rounded-2xl overflow-hidden bg-white/10 aspect-[9/16] flex items-center justify-center">
+      <Loader2 className="w-10 h-10 text-white/40 animate-spin" />
+    </div>
+    <div className="flex items-center gap-3 p-2">
+      <div className="w-10 h-10 rounded-full bg-white/10" />
+      <div className="flex-1 space-y-2">
+        <div className="h-4 w-32 bg-white/10 rounded" />
+        <div className="h-3 w-20 bg-white/10 rounded" />
+      </div>
+    </div>
+    <div className="space-y-2">
+      <div className="h-5 w-48 bg-white/10 rounded" />
+      <div className="h-4 w-full bg-white/10 rounded" />
+      <div className="h-4 w-3/4 bg-white/10 rounded" />
+    </div>
+    <div className="flex items-center gap-6">
+      {[1, 2, 3].map((i) => <div key={i} className="h-4 w-16 bg-white/10 rounded" />)}
+    </div>
+    <div className="flex gap-3">
+      <div className="flex-1 h-12 bg-white/10 rounded-full" />
+      <div className="w-12 h-12 bg-white/10 rounded-full" />
+      <div className="w-12 h-12 bg-white/10 rounded-full" />
+    </div>
+    <div className="grid grid-cols-3 gap-2">
+      {[1, 2, 3].map((i) => <div key={i} className="h-20 bg-white/10 rounded-lg" />)}
+    </div>
+    <div className="bg-white/5 rounded-2xl p-4">
+      <div className="h-5 w-40 bg-white/10 rounded mb-3" />
+      <div className="grid grid-cols-2 gap-3">
+        {[1, 2].map((i) => <div key={i} className="aspect-[9/16] bg-white/10 rounded-xl" />)}
+      </div>
+    </div>
+  </div>
+);
+
 export const WallpaperDetail = ({
   wallpaper,
   relatedWallpapers,
@@ -43,32 +80,50 @@ export const WallpaperDetail = ({
   const [downloaded, setDownloaded] = useState(false);
   const [likeCount, setLikeCount] = useState(wallpaper?.likes || 0);
   const [downloadCount, setDownloadCount] = useState(wallpaper?.downloads || 0);
+  const [isClosing, setIsClosing] = useState(false);
 
-  const handleLike = () => {
-    setLiked((prev) => {
-      setLikeCount((c) => (prev ? c - 1 : c + 1));
-      return !prev;
-    });
+  const handleClose = () => {
+    setIsClosing(true);
+    setTimeout(onClose, 300); // Match animation duration
   };
 
-  const handleSave = () => {
-    setSaved((prev) => !prev);
-  };
+  const handleLike = () => setLiked((prev) => {
+    setLikeCount((c) => (prev ? c - 1 : c + 1));
+    return !prev;
+  });
 
   const handleDownload = () => {
     if (!downloaded) {
       setDownloadCount((c) => c + 1);
       setDownloaded(true);
     }
-    console.log('Download:', wallpaper?.title);
   };
 
-  const fmt = (n: number) => (n > 1000 ? `${(n / 1000).toFixed(1)}k` : n);
+  const fmt = (n: number) => n > 1000 ? `${(n / 1000).toFixed(1)}k` : n;
+
+  const actionButtons = [
+    { icon: Share2, label: 'Share' },
+    { icon: Copy, label: 'Copy' },
+    { icon: Trash2, label: 'Delete' },
+  ];
 
   return (
-    <div className="fixed inset-0 bg-black z-50 flex flex-col slide-up">
+    <div className={`fixed inset-0 bg-black z-50 flex flex-col ${isClosing ? 'slide-down' : 'slide-up'}`}>
+      <style jsx>{`
+        @keyframes slideUp {
+          from { transform: translateY(100%); }
+          to { transform: translateY(0); }
+        }
+        @keyframes slideDown {
+          from { transform: translateY(0); }
+          to { transform: translateY(100%); }
+        }
+        .slide-up { animation: slideUp 0.3s ease-out; }
+        .slide-down { animation: slideDown 0.3s ease-out; }
+      `}</style>
+
       <button
-        onClick={onClose}
+        onClick={handleClose}
         className="absolute top-4 left-4 z-10 p-3 bg-black/60 backdrop-blur-md hover:bg-black/80 rounded-full transition-all"
       >
         <ChevronLeft className="w-6 h-6" />
@@ -76,63 +131,7 @@ export const WallpaperDetail = ({
 
       <div className="flex-1 overflow-y-auto no-scrollbar">
         <div className="max-w-2xl mx-auto p-4">
-          {isLoading || !wallpaper ? (
-            // Skeleton Loader
-            <div className="space-y-4 animate-pulse">
-              {/* Image Skeleton */}
-              <div className="relative rounded-2xl overflow-hidden bg-white/10 aspect-[9/16] flex items-center justify-center">
-                <Loader2 className="w-10 h-10 text-white/40 animate-spin" />
-              </div>
-
-              {/* User Info Skeleton */}
-              <div className="flex items-center gap-3 p-2">
-                <div className="w-10 h-10 rounded-full bg-white/10" />
-                <div className="flex-1">
-                  <div className="h-4 w-32 bg-white/10 rounded mb-2" />
-                  <div className="h-3 w-20 bg-white/10 rounded" />
-                </div>
-              </div>
-
-              {/* Title & Description Skeleton */}
-              <div>
-                <div className="h-5 w-48 bg-white/10 rounded mb-2" />
-                <div className="h-4 w-full bg-white/10 rounded mb-1" />
-                <div className="h-4 w-3/4 bg-white/10 rounded" />
-              </div>
-
-              {/* Stats Skeleton */}
-              <div className="flex items-center gap-6">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-4 w-16 bg-white/10 rounded" />
-                ))}
-              </div>
-
-              {/* Buttons Skeleton */}
-              <div className="flex gap-3">
-                <div className="flex-1 h-12 bg-white/10 rounded-full" />
-                <div className="w-12 h-12 bg-white/10 rounded-full" />
-                <div className="w-12 h-12 bg-white/10 rounded-full" />
-              </div>
-
-              {/* Action Grid Skeleton */}
-              <div className="grid grid-cols-3 gap-2">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-20 bg-white/10 rounded-lg" />
-                ))}
-              </div>
-
-              {/* Related Wallpapers Skeleton */}
-              <div className="bg-white/5 rounded-2xl p-4">
-                <div className="h-5 w-40 bg-white/10 rounded mb-3" />
-                <div className="grid grid-cols-2 gap-3">
-                  {[1, 2].map((i) => (
-                    <div key={i} className="aspect-[9/16] bg-white/10 rounded-xl" />
-                  ))}
-                </div>
-              </div>
-            </div>
-          ) : (
-            // Actual Content
+          {isLoading || !wallpaper ? <SkeletonLoader /> : (
             <>
               <div className="relative rounded-2xl overflow-hidden">
                 <ImageWithLoader src={wallpaper.url} alt={wallpaper.title} />
@@ -160,7 +159,6 @@ export const WallpaperDetail = ({
                   <p className="text-sm text-white/70 leading-relaxed">{wallpaper.description}</p>
                 </div>
 
-                {/* Stats row */}
                 <div className="flex items-center gap-6 text-sm text-white/50">
                   <span className="flex items-center gap-1.5">
                     <Eye className="w-4 h-4" />
@@ -176,14 +174,11 @@ export const WallpaperDetail = ({
                   </span>
                 </div>
 
-                {/* Save + Like + Download CTAs */}
                 <div className="flex gap-3">
                   <button
-                    onClick={handleSave}
+                    onClick={() => setSaved(!saved)}
                     className={`flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-full font-semibold transition-all ${
-                      saved
-                        ? 'bg-blue-500 text-white hover:bg-blue-600'
-                        : 'bg-white text-black hover:bg-gray-200'
+                      saved ? 'bg-blue-500 text-white hover:bg-blue-600' : 'bg-white text-black hover:bg-gray-200'
                     }`}
                   >
                     <Bookmark className={`w-5 h-5 transition-all ${saved ? 'fill-white' : ''}`} />
@@ -214,11 +209,7 @@ export const WallpaperDetail = ({
                 </div>
 
                 <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { icon: Share2, label: 'Share' },
-                    { icon: Copy, label: 'Copy' },
-                    { icon: Trash2, label: 'Delete' },
-                  ].map(({ icon: Icon, label }) => (
+                  {actionButtons.map(({ icon: Icon, label }) => (
                     <button
                       key={label}
                       className="flex flex-col items-center gap-1.5 p-3 bg-white/5 rounded-lg hover:bg-white/10 transition-colors"
