@@ -1,66 +1,44 @@
-import { X, ChevronRight, Moon, Sun, Monitor, Globe, Bell, Volume2, Download, Camera, CheckCircle } from 'lucide-react';
+import { X, Bell, Volume2, Download, Camera, CheckCircle } from 'lucide-react';
 import { useState, useRef } from 'react';
-import {
-  getSettings,
-  updateSettings,
-  getProfile,
-  updateProfile,
-  type UserSettings,
-  type UserProfile,
-} from '../../utils/userStore';
+import { getSettings, updateSettings, getProfile, updateProfile, type UserSettings, type UserProfile } from '../../utils/userStore';
 
 type SettingsModalProps = {
   onClose: () => void;
   onProfileUpdate?: (profile: UserProfile) => void;
 };
 
-type ThemeOption = 'light' | 'dark' | 'system';
-
 export const SettingsModal = ({ onClose, onProfileUpdate }: SettingsModalProps) => {
-  const [settings, setSettings] = useState<UserSettings>(getSettings());
-  const [profile, setProfile] = useState<UserProfile>(getProfile());
+  const [settings, setSettings] = useState(getSettings());
+  const [profile, setProfile] = useState(getProfile());
   const [editingName, setEditingName] = useState(false);
   const [editingBio, setEditingBio] = useState(false);
   const [tempName, setTempName] = useState(profile.name);
   const [tempBio, setTempBio] = useState(profile.bio);
   const [saved, setSaved] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
-  const [showLanguagePicker, setShowLanguagePicker] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
-  const themeOptions: { value: ThemeOption; label: string; icon: typeof Sun }[] = [
-    { value: 'light', label: 'Light', icon: Sun },
-    { value: 'dark', label: 'Dark', icon: Moon },
-    { value: 'system', label: 'System', icon: Monitor },
-  ];
+  const isMobile = window.innerWidth < 640;
 
-  const languages = ['English', 'Spanish', 'French', 'German', 'Japanese', 'Chinese'];
-
-  const handleClose = () => { setIsClosing(true); setTimeout(onClose, 300); };
-  const handleToggle = (key: keyof UserSettings) => setSettings(updateSettings({ [key]: !settings[key] } as Partial<UserSettings>));
-  const handleTheme = (theme: ThemeOption) => setSettings(updateSettings({ theme }));
-  const handleLanguage = (language: string) => { setSettings(updateSettings({ language })); setShowLanguagePicker(false); };
+  const handleClose = () => { setIsClosing(true); setTimeout(onClose, 350); };
+  const flash = () => { setSaved(true); setTimeout(() => setSaved(false), 2500); };
   
-  const flash = () => { setSaved(true); setTimeout(() => setSaved(false), 2000); };
-
-  const handleSaveName = () => {
+  const saveName = () => {
     if (!tempName.trim()) return;
-    const updated = updateProfile({ name: tempName.trim() });
-    setProfile(updated);
-    onProfileUpdate?.(updated);
+    setProfile(updateProfile({ name: tempName.trim() }));
+    onProfileUpdate?.(updateProfile({ name: tempName.trim() }));
     setEditingName(false);
     flash();
   };
 
-  const handleSaveBio = () => {
-    const updated = updateProfile({ bio: tempBio.trim() });
-    setProfile(updated);
-    onProfileUpdate?.(updated);
+  const saveBio = () => {
+    setProfile(updateProfile({ bio: tempBio.trim() }));
+    onProfileUpdate?.(updateProfile({ bio: tempBio.trim() }));
     setEditingBio(false);
     flash();
   };
 
-  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const changeAvatar = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
@@ -73,165 +51,83 @@ export const SettingsModal = ({ onClose, onProfileUpdate }: SettingsModalProps) 
     reader.readAsDataURL(file);
   };
 
-  const btnBase = "transition-all active:scale-95";
-  const inputBase = "bg-white/10 border rounded-lg px-3 py-2 text-sm outline-none transition-colors";
-  const sectionBox = "bg-white/5 rounded-xl border border-white/5";
-
   return (
     <>
       <style>{`
-        @keyframes slideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-        @keyframes slideDown { from { transform: translateY(0); opacity: 1; } to { transform: translateY(100%); opacity: 0; } }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
-        @keyframes scaleIn { from { transform: scale(0.95) translateY(10px); opacity: 0; } to { transform: scale(1) translateY(0); opacity: 1; } }
-        @keyframes scaleOut { from { transform: scale(1); opacity: 1; } to { transform: scale(0.95) translateY(10px); opacity: 0; } }
-        @media (min-width: 640px) {
-          .modal-animate { animation: ${!isClosing ? 'scaleIn' : 'scaleOut'} 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
-        }
-        @media (max-width: 639px) {
-          .modal-animate { animation: ${!isClosing ? 'slideUp' : 'slideDown'} 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
-        }
+        @keyframes su{0%{transform:translateY(100%);opacity:0}100%{transform:translateY(0);opacity:1}}
+        @keyframes sd{0%{transform:translateY(0);opacity:1}100%{transform:translateY(100%);opacity:0}}
+        @keyframes si{0%{transform:scale(.9)translateY(20px);opacity:0}100%{transform:scale(1)translateY(0);opacity:1}}
+        @keyframes so{0%{transform:scale(1);opacity:1}100%{transform:scale(.9)translateY(20px);opacity:0}}
+        @keyframes fi{0%{opacity:0}100%{opacity:1}}
+        @keyframes fo{0%{opacity:1}100%{opacity:0}}
+        @keyframes bounce{0%{transform:scale(0)}50%{transform:scale(1.1)}100%{transform:scale(1)}}
+        @media(min-width:640px){.m{animation:${isClosing?'so':'si'} .35s cubic-bezier(.34,1.56,.64,1)}}
+        @media(max-width:639px){.m{animation:${isClosing?'sd':'su'} .35s cubic-bezier(.34,1.56,.64,1)}}
       `}</style>
 
-      <div 
-        style={{ animation: `${isClosing ? 'fadeOut' : 'fadeIn'} 0.2s ease-out` }}
-        className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
-        onClick={handleClose}
-      >
-        <div 
-          className="modal-animate bg-gradient-to-b from-zinc-900 to-black w-full sm:max-w-lg sm:rounded-2xl overflow-hidden max-h-[90vh] flex flex-col"
-          onClick={(e) => e.stopPropagation()}
-        >
+      <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.8)',backdropFilter:'blur(8px)',zIndex:50,display:'flex',alignItems:isMobile?'flex-end':'center',justifyContent:'center',padding:isMobile?0:'1rem',animation:`${isClosing?'fo':'fi'} .3s`}} onClick={handleClose}>
+        <div className="m" style={{background:'linear-gradient(to bottom,rgb(24,24,27),rgb(0,0,0))',width:'100%',maxWidth:isMobile?'100%':'32rem',borderRadius:isMobile?0:'1rem',overflow:'hidden',maxHeight:'90vh',display:'flex',flexDirection:'column',boxShadow:'0 25px 50px -12px rgba(0,0,0,.5)'}} onClick={e=>e.stopPropagation()}>
+          
           {/* Header */}
-          <div className="sticky top-0 bg-zinc-900/95 backdrop-blur-xl border-b border-white/10 p-4 flex items-center justify-between">
-            <h2 className="text-xl font-bold">Settings</h2>
-            <div className="flex items-center gap-2">
-              {saved && (
-                <div className="flex items-center gap-1.5 text-green-400 text-sm" style={{ animation: 'fadeIn 0.2s' }}>
-                  <CheckCircle className="w-4 h-4" />
-                  <span>Saved</span>
-                </div>
-              )}
-              <button onClick={handleClose} className={`p-2 hover:bg-white/10 rounded-full ${btnBase}`}>
-                <X className="w-5 h-5" />
-              </button>
+          <div style={{position:'sticky',top:0,background:'rgba(24,24,27,.95)',backdropFilter:'blur(24px)',borderBottom:'1px solid rgba(255,255,255,.1)',padding:'1rem',display:'flex',alignItems:'center',justifyContent:'space-between',zIndex:10}}>
+            <h2 style={{fontSize:'1.25rem',fontWeight:'bold',margin:0}}>Settings</h2>
+            <div style={{display:'flex',alignItems:'center',gap:'.5rem'}}>
+              {saved&&<div style={{display:'flex',alignItems:'center',gap:'.375rem',color:'rgb(74,222,128)',fontSize:'.875rem',animation:'bounce .4s cubic-bezier(.34,1.56,.64,1)'}}><CheckCircle style={{width:'1rem',height:'1rem'}}/><span>Saved</span></div>}
+              <button onClick={handleClose} style={{padding:'.5rem',background:'transparent',border:'none',borderRadius:'9999px',color:'white',cursor:'pointer',transition:'all .2s'}} onMouseOver={e=>e.currentTarget.style.background='rgba(255,255,255,.1)'} onMouseOut={e=>e.currentTarget.style.background='transparent'} onMouseDown={e=>e.currentTarget.style.transform='scale(.97)'} onMouseUp={e=>e.currentTarget.style.transform='scale(1)'}><X style={{width:'1.25rem',height:'1.25rem'}}/></button>
             </div>
           </div>
 
-          <div className="overflow-y-auto flex-1 p-4 space-y-6">
+          <div style={{overflowY:'auto',flex:1,padding:'1rem'}}>
+            
             {/* Profile */}
-            <Section title="PROFILE">
-              <div className={`${sectionBox} p-4 space-y-4`}>
-                <div className="flex items-center gap-4">
-                  <div className="relative group">
-                    <img src={profile.avatar} alt={profile.name} className="w-16 h-16 rounded-full object-cover border-2 border-white/20 transition-transform group-hover:scale-105" />
-                    <button onClick={() => fileInputRef.current?.click()} className={`absolute bottom-0 right-0 p-1.5 bg-blue-500 hover:bg-blue-600 rounded-full shadow-lg ${btnBase}`}>
-                      <Camera className="w-3 h-3" />
-                    </button>
-                    <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
+            <div style={{marginBottom:'1.5rem'}}>
+              <h3 style={{fontSize:'.875rem',fontWeight:600,color:'rgba(255,255,255,.6)',marginBottom:'.75rem'}}>PROFILE</h3>
+              <div style={{background:'rgba(255,255,255,.05)',borderRadius:'.75rem',border:'1px solid rgba(255,255,255,.05)',padding:'1rem'}}>
+                <div style={{display:'flex',alignItems:'center',gap:'1rem',marginBottom:'1rem'}}>
+                  <div style={{position:'relative'}}>
+                    <img src={profile.avatar} alt={profile.name} style={{width:'4rem',height:'4rem',borderRadius:'9999px',objectFit:'cover',border:'2px solid rgba(255,255,255,.2)',transition:'transform .2s'}} onMouseOver={e=>e.currentTarget.style.transform='scale(1.05)'} onMouseOut={e=>e.currentTarget.style.transform='scale(1)'}/>
+                    <button onClick={()=>fileRef.current?.click()} style={{position:'absolute',bottom:0,right:0,padding:'.375rem',background:'rgb(59,130,246)',border:'none',borderRadius:'9999px',boxShadow:'0 10px 15px -3px rgba(0,0,0,.3)',color:'white',cursor:'pointer',transition:'all .2s'}} onMouseDown={e=>e.currentTarget.style.transform='scale(.97)'} onMouseUp={e=>e.currentTarget.style.transform='scale(1)'}><Camera style={{width:'.75rem',height:'.75rem'}}/></button>
+                    <input ref={fileRef} type="file" accept="image/*" style={{display:'none'}} onChange={changeAvatar}/>
                   </div>
                   <div>
-                    <p className="font-semibold">{profile.name}</p>
-                    <p className="text-sm text-white/50">{profile.username}</p>
-                    <button onClick={() => fileInputRef.current?.click()} className="text-xs text-blue-400 hover:text-blue-300 transition-colors mt-1">
-                      Change photo
-                    </button>
+                    <p style={{fontWeight:600,margin:0}}>{profile.name}</p>
+                    <p style={{fontSize:'.875rem',color:'rgba(255,255,255,.5)',margin:'.25rem 0'}}>{profile.username}</p>
+                    <button onClick={()=>fileRef.current?.click()} style={{fontSize:'.75rem',color:'rgb(96,165,250)',background:'none',border:'none',cursor:'pointer',padding:0,marginTop:'.25rem'}}>Change photo</button>
                   </div>
                 </div>
 
-                <EditField
-                  label="Display Name"
-                  value={profile.name}
-                  editing={editingName}
-                  tempValue={tempName}
-                  onEdit={() => setEditingName(true)}
-                  onSave={handleSaveName}
-                  onCancel={() => { setEditingName(false); setTempName(profile.name); }}
-                  onChange={setTempName}
-                  btnBase={btnBase}
-                  inputBase={inputBase}
-                />
+                {/* Name */}
+                <div style={{marginTop:'1rem'}}>
+                  <label style={{fontSize:'.75rem',color:'rgba(255,255,255,.6)',marginBottom:'.375rem',display:'block'}}>Display Name</label>
+                  {editingName?<div style={{display:'flex',gap:'.5rem'}}><input value={tempName} onChange={e=>setTempName(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')saveName();if(e.key==='Escape')setEditingName(false);}} autoFocus style={{flex:1,background:'rgba(255,255,255,.1)',border:'1px solid rgba(59,130,246,.5)',borderRadius:'.5rem',padding:'.5rem .75rem',fontSize:'.875rem',outline:'none',color:'white'}}/><button onClick={saveName} style={{padding:'.5rem .75rem',background:'rgb(59,130,246)',border:'none',borderRadius:'.5rem',fontSize:'.875rem',fontWeight:500,color:'white',cursor:'pointer',transition:'all .2s'}} onMouseDown={e=>e.currentTarget.style.transform='scale(.97)'} onMouseUp={e=>e.currentTarget.style.transform='scale(1)'}>Save</button><button onClick={()=>{setEditingName(false);setTempName(profile.name);}} style={{padding:'.5rem .75rem',background:'rgba(255,255,255,.1)',border:'none',borderRadius:'.5rem',fontSize:'.875rem',color:'white',cursor:'pointer',transition:'all .2s'}} onMouseDown={e=>e.currentTarget.style.transform='scale(.97)'} onMouseUp={e=>e.currentTarget.style.transform='scale(1)'}>Cancel</button></div>:<button onClick={()=>setEditingName(true)} style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',background:'rgba(255,255,255,.05)',border:'1px solid rgba(255,255,255,.1)',borderRadius:'.5rem',padding:'.625rem .75rem',color:'white',cursor:'pointer',transition:'all .2s'}} onMouseOver={e=>e.currentTarget.style.background='rgba(255,255,255,.1)'} onMouseOut={e=>e.currentTarget.style.background='rgba(255,255,255,.05)'} onMouseDown={e=>e.currentTarget.style.transform='scale(.98)'} onMouseUp={e=>e.currentTarget.style.transform='scale(1)'}><span style={{fontSize:'.875rem'}}>{profile.name}</span><span style={{fontSize:'.75rem',color:'rgb(96,165,250)'}}>Edit</span></button>}
+                </div>
 
-                <div>
-                  <label className="text-xs text-white/60 mb-1.5 block">Bio</label>
-                  {editingBio ? (
-                    <div className="space-y-2">
-                      <textarea value={tempBio} onChange={e => setTempBio(e.target.value)} autoFocus rows={3} maxLength={150} className={`${inputBase} w-full border-blue-500/50 focus:border-blue-500 resize-none`} />
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs text-white/40">{tempBio.length}/150</span>
-                        <div className="flex gap-2">
-                          <button onClick={() => { setEditingBio(false); setTempBio(profile.bio); }} className={`px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-sm ${btnBase}`}>Cancel</button>
-                          <button onClick={handleSaveBio} className={`px-3 py-1.5 bg-blue-500 hover:bg-blue-600 rounded-lg text-sm font-medium ${btnBase}`}>Save</button>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <button onClick={() => setEditingBio(true)} className={`w-full flex items-start justify-between bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg px-3 py-2.5 group ${btnBase}`}>
-                      <span className="text-sm text-left text-white/80">{profile.bio || 'Add a bio…'}</span>
-                      <span className="text-xs text-blue-400 group-hover:text-blue-300 ml-2 shrink-0 transition-colors">Edit</span>
-                    </button>
-                  )}
+                {/* Bio */}
+                <div style={{marginTop:'1rem'}}>
+                  <label style={{fontSize:'.75rem',color:'rgba(255,255,255,.6)',marginBottom:'.375rem',display:'block'}}>Bio</label>
+                  {editingBio?<div><textarea value={tempBio} onChange={e=>setTempBio(e.target.value)} autoFocus rows={3} maxLength={150} style={{width:'100%',background:'rgba(255,255,255,.1)',border:'1px solid rgba(59,130,246,.5)',borderRadius:'.5rem',padding:'.5rem .75rem',fontSize:'.875rem',outline:'none',resize:'none',color:'white'}}/><div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:'.5rem'}}><span style={{fontSize:'.75rem',color:'rgba(255,255,255,.4)'}}>{tempBio.length}/150</span><div style={{display:'flex',gap:'.5rem'}}><button onClick={()=>{setEditingBio(false);setTempBio(profile.bio);}} style={{padding:'.375rem .75rem',background:'rgba(255,255,255,.1)',border:'none',borderRadius:'.5rem',fontSize:'.875rem',color:'white',cursor:'pointer',transition:'all .2s'}} onMouseDown={e=>e.currentTarget.style.transform='scale(.97)'} onMouseUp={e=>e.currentTarget.style.transform='scale(1)'}>Cancel</button><button onClick={saveBio} style={{padding:'.375rem .75rem',background:'rgb(59,130,246)',border:'none',borderRadius:'.5rem',fontSize:'.875rem',fontWeight:500,color:'white',cursor:'pointer',transition:'all .2s'}} onMouseDown={e=>e.currentTarget.style.transform='scale(.97)'} onMouseUp={e=>e.currentTarget.style.transform='scale(1)'}>Save</button></div></div></div>:<button onClick={()=>setEditingBio(true)} style={{width:'100%',display:'flex',alignItems:'flex-start',justifyContent:'space-between',background:'rgba(255,255,255,.05)',border:'1px solid rgba(255,255,255,.1)',borderRadius:'.5rem',padding:'.625rem .75rem',color:'white',cursor:'pointer',transition:'all .2s'}} onMouseOver={e=>e.currentTarget.style.background='rgba(255,255,255,.1)'} onMouseOut={e=>e.currentTarget.style.background='rgba(255,255,255,.05)'} onMouseDown={e=>e.currentTarget.style.transform='scale(.98)'} onMouseUp={e=>e.currentTarget.style.transform='scale(1)'}><span style={{fontSize:'.875rem',textAlign:'left',color:'rgba(255,255,255,.8)'}}>{profile.bio||'Add a bio…'}</span><span style={{fontSize:'.75rem',color:'rgb(96,165,250)',marginLeft:'.5rem',flexShrink:0}}>Edit</span></button>}
                 </div>
               </div>
-            </Section>
-
-            {/* Theme */}
-            <Section title="DISPLAY & APPEARANCE">
-              <div className={`${sectionBox} p-4`}>
-                <p className="text-sm text-white/80 mb-3">Theme</p>
-                <div className="grid grid-cols-3 gap-2">
-                  {themeOptions.map((opt) => (
-                    <button key={opt.value} onClick={() => handleTheme(opt.value)} className={`p-3 rounded-lg border-2 ${btnBase} ${settings.theme === opt.value ? 'border-blue-500 bg-blue-500/10 shadow-lg shadow-blue-500/20' : 'border-white/10 bg-white/5 hover:bg-white/10'}`}>
-                      <opt.icon className={`w-5 h-5 mx-auto mb-1 transition-colors ${settings.theme === opt.value ? 'text-blue-400' : 'text-white/60'}`} />
-                      <p className="text-xs font-medium">{opt.label}</p>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </Section>
-
-            {/* Language */}
-            <Section title="LANGUAGE & REGION">
-              <div className={`${sectionBox} overflow-hidden`}>
-                <button onClick={() => setShowLanguagePicker(v => !v)} className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-all">
-                  <div className="flex items-center gap-3">
-                    <Globe className="w-5 h-5 text-white/60" />
-                    <div className="text-left">
-                      <p className="font-medium">Language</p>
-                      <p className="text-sm text-white/60">{settings.language}</p>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-5 h-5 text-white/40" style={{ transform: showLanguagePicker ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.3s' }} />
-                </button>
-                {showLanguagePicker && (
-                  <div className="border-t border-white/10" style={{ animation: 'fadeIn 0.2s' }}>
-                    {languages.map(lang => (
-                      <button key={lang} onClick={() => handleLanguage(lang)} className={`w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 transition-all ${settings.language === lang ? 'text-blue-400 bg-blue-500/5' : 'text-white/80'}`}>
-                        <span className="text-sm">{lang}</span>
-                        {settings.language === lang && <CheckCircle className="w-4 h-4 text-blue-400" />}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </Section>
+            </div>
 
             {/* Toggles */}
-            <Section title="NOTIFICATIONS & SOUNDS">
-              <div className={`${sectionBox} overflow-hidden divide-y divide-white/5`}>
-                <Toggle icon={Bell} label="Push Notifications" sub="Get notified about new content" value={settings.notifications} onToggle={() => handleToggle('notifications')} />
-                <Toggle icon={Volume2} label="Sound Effects" sub="Play sounds for actions" value={settings.soundEffects} onToggle={() => handleToggle('soundEffects')} />
+            <div style={{marginBottom:'1.5rem'}}>
+              <h3 style={{fontSize:'.875rem',fontWeight:600,color:'rgba(255,255,255,.6)',marginBottom:'.75rem'}}>NOTIFICATIONS & SOUNDS</h3>
+              <div style={{background:'rgba(255,255,255,.05)',borderRadius:'.75rem',border:'1px solid rgba(255,255,255,.05)',overflow:'hidden'}}>
+                <T icon={Bell} label="Push Notifications" sub="Get notified about new content" value={settings.notifications} onToggle={()=>setSettings(updateSettings({notifications:!settings.notifications}))}/>
+                <div style={{borderTop:'1px solid rgba(255,255,255,.05)'}}/>
+                <T icon={Volume2} label="Sound Effects" sub="Play sounds for actions" value={settings.soundEffects} onToggle={()=>setSettings(updateSettings({soundEffects:!settings.soundEffects}))}/>
               </div>
-            </Section>
+            </div>
 
-            <Section title="DOWNLOADS">
-              <div className={`${sectionBox} overflow-hidden`}>
-                <Toggle icon={Download} label="Auto-save to Gallery" sub="Save downloads automatically" value={settings.autoDownload} onToggle={() => handleToggle('autoDownload')} />
+            <div style={{marginBottom:'1.5rem'}}>
+              <h3 style={{fontSize:'.875rem',fontWeight:600,color:'rgba(255,255,255,.6)',marginBottom:'.75rem'}}>DOWNLOADS</h3>
+              <div style={{background:'rgba(255,255,255,.05)',borderRadius:'.75rem',border:'1px solid rgba(255,255,255,.05)',overflow:'hidden'}}>
+                <T icon={Download} label="Auto-save to Gallery" sub="Save downloads automatically" value={settings.autoDownload} onToggle={()=>setSettings(updateSettings({autoDownload:!settings.autoDownload}))}/>
               </div>
-            </Section>
+            </div>
 
-            <div className="h-4 sm:h-0" />
+            <div style={{height:isMobile?'1rem':0}}/>
           </div>
         </div>
       </div>
@@ -239,43 +135,9 @@ export const SettingsModal = ({ onClose, onProfileUpdate }: SettingsModalProps) 
   );
 };
 
-// Helper Components
-const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
-  <div>
-    <h3 className="text-sm font-semibold text-white/60 mb-3">{title}</h3>
-    {children}
-  </div>
-);
-
-const EditField = ({ label, value, editing, tempValue, onEdit, onSave, onCancel, onChange, btnBase, inputBase }: any) => (
-  <div>
-    <label className="text-xs text-white/60 mb-1.5 block">{label}</label>
-    {editing ? (
-      <div className="flex gap-2">
-        <input value={tempValue} onChange={e => onChange(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') onSave(); if (e.key === 'Escape') onCancel(); }} autoFocus className={`${inputBase} flex-1 border-blue-500/50 focus:border-blue-500`} />
-        <button onClick={onSave} className={`px-3 py-2 bg-blue-500 hover:bg-blue-600 rounded-lg text-sm font-medium ${btnBase}`}>Save</button>
-        <button onClick={onCancel} className={`px-3 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm ${btnBase}`}>Cancel</button>
-      </div>
-    ) : (
-      <button onClick={onEdit} className={`w-full flex items-center justify-between bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg px-3 py-2.5 group ${btnBase}`}>
-        <span className="text-sm">{value}</span>
-        <span className="text-xs text-blue-400 group-hover:text-blue-300 transition-colors">Edit</span>
-      </button>
-    )}
-  </div>
-);
-
-const Toggle = ({ icon: Icon, label, sub, value, onToggle }: any) => (
-  <div className="flex items-center justify-between p-4 hover:bg-white/5 transition-colors">
-    <div className="flex items-center gap-3">
-      <Icon className="w-5 h-5 text-white/60" />
-      <div>
-        <p className="font-medium">{label}</p>
-        <p className="text-xs text-white/60">{sub}</p>
-      </div>
-    </div>
-    <button onClick={onToggle} className={`relative w-12 h-7 rounded-full transition-all duration-300 active:scale-95 ${value ? 'bg-blue-500 shadow-lg shadow-blue-500/30' : 'bg-white/20'}`}>
-      <div className="absolute top-1 w-5 h-5 bg-white rounded-full shadow-md" style={{ transform: value ? 'translateX(1.5rem)' : 'translateX(0.25rem)', transition: 'transform 0.3s' }} />
-    </button>
+const T=({icon:I,label,sub,value,onToggle}:any)=>(
+  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'1rem',transition:'background .2s'}} onMouseOver={e=>e.currentTarget.style.background='rgba(255,255,255,.05)'} onMouseOut={e=>e.currentTarget.style.background='transparent'}>
+    <div style={{display:'flex',alignItems:'center',gap:'.75rem'}}><I style={{width:'1.25rem',height:'1.25rem',color:'rgba(255,255,255,.6)'}}/><div><p style={{fontWeight:500,margin:0}}>{label}</p><p style={{fontSize:'.75rem',color:'rgba(255,255,255,.6)',margin:0}}>{sub}</p></div></div>
+    <button onClick={onToggle} style={{position:'relative',width:'3rem',height:'1.75rem',borderRadius:'9999px',background:value?'rgb(59,130,246)':'rgba(255,255,255,.2)',border:'none',boxShadow:value?'0 10px 15px -3px rgba(59,130,246,.3)':'none',cursor:'pointer',transition:'all .3s'}} onMouseDown={e=>e.currentTarget.style.transform='scale(.97)'} onMouseUp={e=>e.currentTarget.style.transform='scale(1)'}><div style={{position:'absolute',top:'.25rem',width:'1.25rem',height:'1.25rem',background:'white',borderRadius:'9999px',boxShadow:'0 4px 6px -1px rgba(0,0,0,.2)',transform:value?'translateX(1.5rem)':'translateX(.25rem)',transition:'transform .3s cubic-bezier(.34,1.56,.64,1)'}}/></button>
   </div>
 );
