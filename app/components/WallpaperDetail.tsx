@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { ChevronLeft, Eye, Heart, Download, Share2, Copy, Trash2, Loader2, Bookmark } from 'lucide-react';
+import { useState } from 'react';
+import { ChevronLeft, Eye, Heart, Download, Share2, Bookmark, Check, Link as LinkIcon } from 'lucide-react';
 import type { Wallpaper } from '../types';
 
 type WallpaperDetailProps = {
@@ -15,17 +15,8 @@ const ImageWithLoader = ({ src, alt }: { src: string; alt: string }) => {
   const [loaded, setLoaded] = useState(false);
   return (
     <div className="relative">
-      {!loaded && (
-        <div className="absolute inset-0 skeleton flex items-center justify-center">
-          <Loader2 className="w-10 h-10 text-white animate-spin" />
-        </div>
-      )}
-      <img
-        src={src}
-        alt={alt}
-        className={`w-full h-auto transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`}
-        onLoad={() => setLoaded(true)}
-      />
+      {!loaded && <div className="absolute inset-0 skeleton flex items-center justify-center"><div className="w-10 h-10 border-4 border-white/20 border-t-white rounded-full animate-spin" /></div>}
+      <img src={src} alt={alt} className={`w-full h-auto transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`} onLoad={() => setLoaded(true)} />
     </div>
   );
 };
@@ -33,7 +24,7 @@ const ImageWithLoader = ({ src, alt }: { src: string; alt: string }) => {
 const SkeletonLoader = () => (
   <div className="space-y-4 animate-pulse">
     <div className="relative rounded-2xl overflow-hidden bg-white/10 aspect-[9/16] flex items-center justify-center">
-      <Loader2 className="w-10 h-10 text-white/40 animate-spin" />
+      <div className="w-10 h-10 border-4 border-white/20 border-t-white/40 rounded-full animate-spin" />
     </div>
     <div className="flex items-center gap-3 p-2">
       <div className="w-10 h-10 rounded-full bg-white/10" />
@@ -43,203 +34,171 @@ const SkeletonLoader = () => (
       </div>
     </div>
     <div className="space-y-2">
-      <div className="h-5 w-48 bg-white/10 rounded" />
-      <div className="h-4 w-full bg-white/10 rounded" />
-      <div className="h-4 w-3/4 bg-white/10 rounded" />
+      {[48, 'full', '75%'].map((w, i) => <div key={i} className={`h-${i ? 4 : 5} bg-white/10 rounded`} style={{ width: typeof w === 'number' ? `${w * 4}px` : w }} />)}
     </div>
-    <div className="flex items-center gap-6">
-      {[1, 2, 3].map((i) => <div key={i} className="h-4 w-16 bg-white/10 rounded" />)}
-    </div>
+    <div className="flex items-center gap-6">{[1, 2, 3].map((i) => <div key={i} className="h-4 w-16 bg-white/10 rounded" />)}</div>
     <div className="flex gap-3">
       <div className="flex-1 h-12 bg-white/10 rounded-full" />
-      <div className="w-12 h-12 bg-white/10 rounded-full" />
-      <div className="w-12 h-12 bg-white/10 rounded-full" />
-    </div>
-    <div className="grid grid-cols-3 gap-2">
-      {[1, 2, 3].map((i) => <div key={i} className="h-20 bg-white/10 rounded-lg" />)}
-    </div>
-    <div className="bg-white/5 rounded-2xl p-4">
-      <div className="h-5 w-40 bg-white/10 rounded mb-3" />
-      <div className="grid grid-cols-2 gap-3">
-        {[1, 2].map((i) => <div key={i} className="aspect-[9/16] bg-white/10 rounded-xl" />)}
-      </div>
+      {[1, 2].map((i) => <div key={i} className="w-12 h-12 bg-white/10 rounded-full" />)}
     </div>
   </div>
 );
 
-export const WallpaperDetail = ({
-  wallpaper,
-  relatedWallpapers,
-  onClose,
-  onUserClick,
-  onRelatedClick,
-  isLoading = false,
-}: WallpaperDetailProps) => {
+const CopyLinkModal = ({ isOpen, onClose, link }: { isOpen: boolean; onClose: () => void; link: string }) => {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(link);
+    setCopied(true);
+    setTimeout(() => { setCopied(false); setTimeout(onClose, 500); }, 1500);
+  };
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex items-end animate-slideUp" onClick={onClose}>
+      <div className="w-full bg-gradient-to-b from-zinc-900 to-black rounded-t-3xl p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+        <div className="w-12 h-1.5 bg-white/20 rounded-full mx-auto mb-2" />
+        <h3 className="text-xl font-bold text-white text-center">Copy Link</h3>
+        <div className="bg-white/5 rounded-xl p-4 flex items-center gap-3 border border-white/10">
+          <LinkIcon className="w-5 h-5 text-white/60 flex-shrink-0" />
+          <p className="text-sm text-white/80 flex-1 truncate">{link}</p>
+        </div>
+        <button onClick={handleCopy} className={`w-full py-4 rounded-full font-semibold transition-all ${copied ? 'bg-emerald-500 text-white' : 'bg-white text-black hover:bg-gray-200'}`}>
+          {copied ? <span className="flex items-center justify-center gap-2"><Check className="w-5 h-5" />Copied!</span> : 'Copy Link'}
+        </button>
+        <button onClick={onClose} className="w-full py-4 bg-white/5 hover:bg-white/10 rounded-full font-semibold text-white transition-all">Cancel</button>
+      </div>
+    </div>
+  );
+};
+
+export const WallpaperDetail = ({ wallpaper, relatedWallpapers, onClose, onUserClick, onRelatedClick, isLoading = false }: WallpaperDetailProps) => {
   const [liked, setLiked] = useState(false);
   const [saved, setSaved] = useState(false);
   const [downloaded, setDownloaded] = useState(false);
+  const [following, setFollowing] = useState(false);
   const [likeCount, setLikeCount] = useState(wallpaper?.likes || 0);
   const [downloadCount, setDownloadCount] = useState(wallpaper?.downloads || 0);
   const [isClosing, setIsClosing] = useState(false);
+  const [showHearts, setShowHearts] = useState<number[]>([]);
+  const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
 
-  const handleClose = () => {
-    setIsClosing(true);
-    setTimeout(onClose, 300); // Match animation duration
-  };
-
-  const handleLike = () => setLiked((prev) => {
-    setLikeCount((c) => (prev ? c - 1 : c + 1));
-    return !prev;
-  });
-
-  const handleDownload = () => {
-    if (!downloaded) {
-      setDownloadCount((c) => c + 1);
-      setDownloaded(true);
-    }
-  };
-
+  const handleClose = () => { setIsClosing(true); setTimeout(onClose, 300); };
+  const vibrate = (duration: number) => navigator.vibrate?.(duration);
   const fmt = (n: number) => n > 1000 ? `${(n / 1000).toFixed(1)}k` : n;
 
-  const actionButtons = [
-    { icon: Share2, label: 'Share' },
-    { icon: Copy, label: 'Copy' },
-    { icon: Trash2, label: 'Delete' },
-  ];
+  const handleLike = () => {
+    if (!liked) {
+      setShowHearts(Array.from({ length: 5 }, (_, i) => Date.now() + i));
+      setTimeout(() => setShowHearts([]), 1000);
+    }
+    setLiked((prev) => { setLikeCount((c) => prev ? c - 1 : c + 1); return !prev; });
+  };
+
+  const handleSave = () => { setSaved(!saved); vibrate(50); };
+  const handleDownload = () => { if (!downloaded) { setDownloadCount((c) => c + 1); setDownloaded(true); vibrate(100); } };
+  const handleShare = () => navigator.share ? navigator.share({ title: wallpaper?.title, text: wallpaper?.description, url: window.location.href }).catch(() => setIsCopyModalOpen(true)) : setIsCopyModalOpen(true);
+
+  const actionButton = (onClick: () => void, active: boolean, activeClass: string, icon: any, activeIcon?: boolean) => (
+    <button onClick={onClick} className={`flex items-center justify-center px-4 py-3 rounded-full border transition-all ${active ? `${activeClass} ${active === saved ? 'animate-pulse' : 'animate-bounce'}` : 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10'}`}>
+      {icon}
+    </button>
+  );
 
   return (
-    <div className={`fixed inset-0 bg-black z-50 flex flex-col ${isClosing ? 'slide-down' : 'slide-up'}`}>
+    <>
       <style jsx>{`
-        @keyframes slideUp {
-          from { transform: translateY(100%); }
-          to { transform: translateY(0); }
-        }
-        @keyframes slideDown {
-          from { transform: translateY(0); }
-          to { transform: translateY(100%); }
-        }
-        .slide-up { animation: slideUp 0.3s ease-out; }
-        .slide-down { animation: slideDown 0.3s ease-out; }
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        @keyframes slideDown { from { transform: translateY(0); } to { transform: translateY(100%); } }
+        @keyframes floatHeart { 0% { transform: translateY(0) translateX(0) scale(0); opacity: 0; } 10% { opacity: 1; } 50% { transform: translateY(-100px) translateX(var(--tx)) scale(1); opacity: 0.8; } 100% { transform: translateY(-200px) translateX(var(--tx)) scale(0.5); opacity: 0; } }
+        .animate-slideUp { animation: slideUp 0.3s ease-out; }
+        .animate-slideDown { animation: slideDown 0.3s ease-out; }
+        .heart-float { animation: floatHeart 1s ease-out forwards; pointer-events: none; }
       `}</style>
 
-      <button
-        onClick={handleClose}
-        className="absolute top-4 left-4 z-10 p-3 bg-black/60 backdrop-blur-md hover:bg-black/80 rounded-full transition-all"
-      >
-        <ChevronLeft className="w-6 h-6" />
-      </button>
+      <div className={`fixed inset-0 bg-black z-50 flex flex-col ${isClosing ? 'animate-slideDown' : 'animate-slideUp'}`}>
+        <button onClick={handleClose} className="absolute top-4 left-4 z-10 p-3 bg-white rounded-xl hover:bg-gray-100 transition-all shadow-lg">
+          <ChevronLeft className="w-6 h-6 text-black" />
+        </button>
 
-      <div className="flex-1 overflow-y-auto no-scrollbar">
-        <div className="max-w-2xl mx-auto p-4">
-          {isLoading || !wallpaper ? <SkeletonLoader /> : (
-            <>
-              <div className="relative rounded-2xl overflow-hidden">
-                <ImageWithLoader src={wallpaper.url} alt={wallpaper.title} />
-              </div>
-
-              <div className="space-y-4 mt-4">
-                <button
-                  onClick={onUserClick}
-                  className="flex items-center gap-3 w-full hover:bg-white/5 p-2 rounded-xl transition-colors"
-                >
-                  <img
-                    src={wallpaper.userAvatar}
-                    alt={wallpaper.uploadedBy}
-                    className="w-10 h-10 rounded-full border border-white/20"
-                  />
-                  <div className="flex-1 text-left">
-                    <p className="font-semibold text-white">{wallpaper.uploadedBy}</p>
-                    <p className="text-sm text-white/60">Just now</p>
-                  </div>
-                  <ChevronLeft className="w-5 h-5 rotate-180 text-white/40" />
-                </button>
-
-                <div>
-                  <h3 className="font-semibold text-white mb-1">{wallpaper.title}</h3>
-                  <p className="text-sm text-white/70 leading-relaxed">{wallpaper.description}</p>
-                </div>
-
-                <div className="flex items-center gap-6 text-sm text-white/50">
-                  <span className="flex items-center gap-1.5">
-                    <Eye className="w-4 h-4" />
-                    {fmt(wallpaper.views)}
-                  </span>
-                  <span className={`flex items-center gap-1.5 transition-colors ${liked ? 'text-rose-400' : ''}`}>
-                    <Heart className={`w-4 h-4 transition-all ${liked ? 'fill-rose-400 text-rose-400 scale-110' : ''}`} />
-                    {fmt(likeCount)}
-                  </span>
-                  <span className={`flex items-center gap-1.5 transition-colors ${downloaded ? 'text-emerald-400' : ''}`}>
-                    <Download className={`w-4 h-4 transition-all ${downloaded ? 'text-emerald-400 scale-110' : ''}`} />
-                    {fmt(downloadCount)}
-                  </span>
-                </div>
-
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => setSaved(!saved)}
-                    className={`flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-full font-semibold transition-all ${
-                      saved ? 'bg-blue-500 text-white hover:bg-blue-600' : 'bg-white text-black hover:bg-gray-200'
-                    }`}
-                  >
-                    <Bookmark className={`w-5 h-5 transition-all ${saved ? 'fill-white' : ''}`} />
-                    {saved ? 'Saved' : 'Save'}
-                  </button>
-
-                  <button
-                    onClick={handleLike}
-                    className={`flex items-center justify-center px-4 py-3 rounded-full border transition-all ${
-                      liked
-                        ? 'bg-rose-500/15 border-rose-500/40 text-rose-400 hover:bg-rose-500/25'
-                        : 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10'
-                    }`}
-                  >
-                    <Heart className={`w-5 h-5 transition-all ${liked ? 'fill-rose-400 text-rose-400 scale-110' : ''}`} />
-                  </button>
-
-                  <button
-                    onClick={handleDownload}
-                    className={`flex items-center justify-center px-4 py-3 rounded-full border transition-all ${
-                      downloaded
-                        ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/25'
-                        : 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10'
-                    }`}
-                  >
-                    <Download className={`w-5 h-5 transition-all ${downloaded ? 'text-emerald-400 scale-110' : ''}`} />
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-3 gap-2">
-                  {actionButtons.map(({ icon: Icon, label }) => (
-                    <button
-                      key={label}
-                      className="flex flex-col items-center gap-1.5 p-3 bg-white/5 rounded-lg hover:bg-white/10 transition-colors"
-                    >
-                      <Icon className="w-5 h-5" />
-                      <span className="text-xs text-white/60">{label}</span>
-                    </button>
-                  ))}
-                </div>
-
-                <div className="bg-white/5 rounded-2xl p-4">
-                  <h4 className="font-semibold text-white mb-3">More to explore</h4>
-                  <div className="grid grid-cols-2 gap-3">
-                    {relatedWallpapers.map((img) => (
-                      <div
-                        key={img.id}
-                        onClick={() => onRelatedClick(img)}
-                        className="relative rounded-xl overflow-hidden cursor-pointer"
-                        style={{ aspectRatio: `1/${img.aspectRatio}` }}
-                      >
-                        <img src={img.thumbnail} alt={img.title} className="w-full h-full object-cover" />
-                      </div>
+        <div className="flex-1 overflow-y-auto no-scrollbar">
+          <div className="max-w-2xl mx-auto p-4">
+            {isLoading || !wallpaper ? <SkeletonLoader /> : (
+              <>
+                <div className="relative rounded-2xl overflow-hidden">
+                  <ImageWithLoader src={wallpaper.url} alt={wallpaper.title} />
+                  <div className="absolute inset-0 pointer-events-none">
+                    {showHearts.map((id, index) => (
+                      <Heart key={id} className="absolute heart-float text-rose-500 fill-rose-500" style={{ left: `${45 + Math.random() * 10}%`, top: '50%', width: '40px', height: '40px', '--tx': `${(Math.random() - 0.5) * 100}px`, animationDelay: `${index * 0.1}s` } as any} />
                     ))}
                   </div>
                 </div>
-              </div>
-            </>
-          )}
+
+                <div className="space-y-4 mt-4">
+                  <button onClick={onUserClick} className="flex items-center gap-3 w-full hover:bg-white/5 p-2 rounded-xl transition-colors">
+                    <img src={wallpaper.userAvatar} alt={wallpaper.uploadedBy} className="w-10 h-10 rounded-full border border-white/20" />
+                    <div className="flex-1 text-left">
+                      <p className="font-semibold text-white">{wallpaper.uploadedBy}</p>
+                      <p className="text-sm text-white/60">Just now</p>
+                    </div>
+                    <button onClick={(e) => { e.stopPropagation(); setFollowing(!following); vibrate(50); }} className={`px-4 py-1.5 rounded-full text-sm font-semibold transition-all ${following ? 'bg-white/10 text-white border border-white/20 hover:bg-white/15' : 'bg-white text-black hover:bg-gray-200'}`}>
+                      {following ? 'Following' : 'Follow'}
+                    </button>
+                  </button>
+
+                  <div>
+                    <h3 className="font-semibold text-white mb-1">{wallpaper.title}</h3>
+                    <p className="text-sm text-white/70 leading-relaxed">{wallpaper.description}</p>
+                  </div>
+
+                  <div className="flex items-center gap-6 text-sm text-white/50">
+                    {[{ icon: Eye, value: wallpaper.views, active: false }, { icon: Heart, value: likeCount, active: liked, color: 'rose' }, { icon: Download, value: downloadCount, active: downloaded, color: 'emerald' }].map(({ icon: Icon, value, active, color }, i) => (
+                      <span key={i} className={`flex items-center gap-1.5 transition-colors ${active ? `text-${color}-400` : ''}`}>
+                        <Icon className={`w-4 h-4 transition-all ${active ? `fill-${color}-400 text-${color}-400` : ''}`} />
+                        {fmt(value)}
+                      </span>
+                    ))}
+                  </div>
+
+                  <div className="flex gap-3">
+                    <button onClick={handleSave} className={`flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-full font-semibold transition-all ${saved ? 'bg-blue-500 text-white hover:bg-blue-600 animate-pulse' : 'bg-white text-black hover:bg-gray-200'}`}>
+                      <Bookmark className={`w-5 h-5 transition-all ${saved ? 'fill-white' : ''}`} />
+                      {saved ? 'Saved' : 'Save'}
+                    </button>
+                    <button onClick={handleLike} className={`flex items-center justify-center px-4 py-3 rounded-full border transition-all ${liked ? 'bg-rose-500/20 border-rose-500/50 text-rose-400 hover:bg-rose-500/30 animate-bounce' : 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10'}`}>
+                      <Heart className={`w-5 h-5 transition-all ${liked ? 'fill-rose-400 text-rose-400' : ''}`} />
+                    </button>
+                    <button onClick={handleDownload} className={`flex items-center justify-center px-4 py-3 rounded-full border transition-all ${downloaded ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/30 animate-pulse' : 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10'}`}>
+                      <Download className={`w-5 h-5 transition-all ${downloaded ? 'text-emerald-400' : ''}`} />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    {[{ icon: Share2, label: 'Share', onClick: handleShare }, { icon: LinkIcon, label: 'Copy Link', onClick: () => setIsCopyModalOpen(true) }].map(({ icon: Icon, label, onClick }) => (
+                      <button key={label} onClick={onClick} className="flex items-center justify-center gap-2 py-4 bg-white/5 rounded-xl hover:bg-white/10 transition-colors">
+                        <Icon className="w-5 h-5" />
+                        <span className="font-medium">{label}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="bg-white/5 rounded-2xl p-4">
+                    <h4 className="font-semibold text-white mb-3">More to explore</h4>
+                    <div className="grid grid-cols-2 gap-3">
+                      {relatedWallpapers.map((img) => (
+                        <div key={img.id} onClick={() => onRelatedClick(img)} className="relative rounded-xl overflow-hidden cursor-pointer hover:scale-105 transition-transform" style={{ aspectRatio: `1/${img.aspectRatio}` }}>
+                          <img src={img.thumbnail} alt={img.title} className="w-full h-full object-cover" />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+
+      <CopyLinkModal isOpen={isCopyModalOpen} onClose={() => setIsCopyModalOpen(false)} link={`https://wallpapers.app/${wallpaper?.id || ''}`} />
+    </>
   );
 };
