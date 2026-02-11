@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 
 export type Notification = {
   id: string;
-  type: 'like' | 'follow';
+  type: 'like';
   user: {
     name: string;
     avatar: string;
@@ -46,19 +46,16 @@ function saveNotifications(notifications: Notification[]): void {
 }
 
 export function addNotification(
-  type: 'like' | 'follow',
   user: { name: string; avatar: string },
   wallpaper?: { id: string; thumbnail: string; title: string }
 ): void {
   const notifications = getNotifications();
   
-  const message = type === 'like' 
-    ? `liked your wallpaper${wallpaper?.title ? ` "${wallpaper.title}"` : ''}`
-    : 'started following you';
+  const message = `liked your wallpaper${wallpaper?.title ? ` "${wallpaper.title}"` : ''}`;
 
   const newNotification: Notification = {
     id: `${Date.now()}-${Math.random()}`,
-    type,
+    type: 'like',
     user,
     message,
     time: 'Just now',
@@ -105,14 +102,13 @@ export function useNotifications() {
   useEffect(() => {
     const load = () => {
       const data = getNotifications();
-      // Update relative times
       const updated = data.map(n => ({ ...n, time: formatTime(n.timestamp) }));
       setNotifications(updated);
     };
 
     load();
     const unsub = subscribeNotifications(load);
-    const interval = setInterval(load, 60000); // Update times every minute
+    const interval = setInterval(load, 60000);
 
     return () => {
       unsub();
