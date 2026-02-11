@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronLeft, Eye, Heart, Download, Share2, Bookmark, Check, Link as LinkIcon, Loader2 } from 'lucide-react';
+import { VerifiedBadge } from './VerifiedBadge';
 import type { Wallpaper } from '../types';
 
 type WallpaperDetailProps = {
@@ -125,7 +126,13 @@ export const WallpaperDetail = ({ wallpaper, relatedWallpapers, onClose, onUserC
                 <div className="space-y-4 mt-4">
                   <button onClick={onUserClick} className="flex items-center gap-3 w-full hover:bg-white/5 p-2 rounded-xl transition-colors active:scale-[0.98]">
                     <img src={wallpaper.userAvatar} alt={wallpaper.uploadedBy} className="w-10 h-10 rounded-full border border-white/20" />
-                    <div className="flex-1 text-left"><p className="font-semibold text-white">{wallpaper.uploadedBy}</p><p className="text-sm text-white/60">Just now</p></div>
+                    <div className="flex-1 text-left">
+                      <div className="flex items-center gap-1.5">
+                        <p className="font-semibold text-white">{wallpaper.uploadedBy}</p>
+                        {wallpaper.verified && <VerifiedBadge size="sm" />}
+                      </div>
+                      <p className="text-sm text-white/60">Just now</p>
+                    </div>
                     <button onClick={e => { e.stopPropagation(); setFollowing(!following); vibrate(50); }} className={`px-4 py-1.5 rounded-full text-sm font-semibold transition-all active:scale-95 ${following ? 'bg-white/10 text-white border border-white/20 hover:bg-white/15' : 'bg-white text-black hover:bg-gray-200'}`}>{following ? 'Following' : 'Follow'}</button>
                   </button>
                   <div><h3 className="font-semibold text-white mb-1">{wallpaper.title}</h3><p className="text-sm text-white/70 leading-relaxed">{wallpaper.description}</p></div>
