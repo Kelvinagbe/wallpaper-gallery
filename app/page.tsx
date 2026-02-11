@@ -36,11 +36,8 @@ export default function WallpaperGallery() {
       setIsLoading(false);
     }, 1000);
 
-    // Load recent searches from localStorage
     const savedSearches = localStorage.getItem('recentSearches');
-    if (savedSearches) {
-      setRecentSearches(JSON.parse(savedSearches));
-    }
+    if (savedSearches) setRecentSearches(JSON.parse(savedSearches));
   }, []);
 
   const filteredWallpapers = wallpapers.filter(wp =>
@@ -51,14 +48,8 @@ export default function WallpaperGallery() {
 
   const handleSearchQuery = (query: string) => {
     setSearchQuery(query);
-
-    // Save to recent searches if query is not empty and has actual results
     if (query.trim() && filteredWallpapers.length > 0) {
-      const updated = [
-        query.trim(),
-        ...recentSearches.filter(s => s.toLowerCase() !== query.trim().toLowerCase())
-      ].slice(0, 5); // Keep only 5 most recent
-
+      const updated = [query.trim(), ...recentSearches.filter(s => s.toLowerCase() !== query.trim().toLowerCase())].slice(0, 5);
       setRecentSearches(updated);
       localStorage.setItem('recentSearches', JSON.stringify(updated));
     }
@@ -81,9 +72,7 @@ export default function WallpaperGallery() {
         ? { ...user, isFollowing: !user.isFollowing, followers: user.isFollowing ? user.followers - 1 : user.followers + 1 }
         : user
     ));
-
-    // Also update selectedUser if it's the same user
-    if (selectedUser && selectedUser.id === userId) {
+    if (selectedUser?.id === userId) {
       setSelectedUser(prev => prev ? {
         ...prev,
         isFollowing: !prev.isFollowing,
@@ -94,35 +83,24 @@ export default function WallpaperGallery() {
 
   const openUserProfile = (userId: string) => {
     setIsLoadingProfile(true);
-    setSelectedUser(null); // Clear previous user data
-    
-    // Simulate API call delay
+    setSelectedUser(null);
     setTimeout(() => {
       const user = userProfiles.find(u => u.id === userId);
-      if (user) {
-        setSelectedUser(user);
-      }
+      if (user) setSelectedUser(user);
       setIsLoadingProfile(false);
-    }, 800); // Simulate loading time
+    }, 800);
   };
 
-  // Check if any full-screen view is open
   const isFullScreenViewOpen = selectedWallpaper || selectedUser || isLoadingProfile || activeTab === 'profile' || activeTab === 'notifications';
 
   return (
     <div className="min-h-screen bg-black text-white pb-16">
       <GlobalStyles />
 
-      {!isFullScreenViewOpen && (
-        <Header filter={filter} setFilter={setFilter} />
-      )}
+      {!isFullScreenViewOpen && <Header filter={filter} setFilter={setFilter} />}
 
       <main className="max-w-7xl mx-auto px-4 py-8">
-        <WallpaperGrid
-          wallpapers={filteredWallpapers}
-          isLoading={isLoading}
-          onWallpaperClick={setSelectedWallpaper}
-        />
+        <WallpaperGrid wallpapers={filteredWallpapers} isLoading={isLoading} onWallpaperClick={setSelectedWallpaper} />
       </main>
 
       <Navigation
@@ -134,10 +112,7 @@ export default function WallpaperGallery() {
 
       <SearchModal
         isOpen={isSearchOpen}
-        onClose={() => {
-          setIsSearchOpen(false);
-          setSearchQuery('');
-        }}
+        onClose={() => { setIsSearchOpen(false); setSearchQuery(''); }}
         searchQuery={searchQuery}
         setSearchQuery={handleSearchQuery}
         recentSearches={recentSearches}
@@ -145,51 +120,28 @@ export default function WallpaperGallery() {
         onClearAllRecentSearches={clearAllRecentSearches}
         filteredWallpapers={filteredWallpapers}
         userProfiles={userProfiles}
-        onWallpaperClick={(wp) => {
-          setIsSearchOpen(false);
-          setSelectedWallpaper(wp);
-        }}
-        onUserClick={(userId) => {
-          setIsSearchOpen(false);
-          openUserProfile(userId);
-        }}
+        onWallpaperClick={(wp) => { setIsSearchOpen(false); setSelectedWallpaper(wp); }}
+        onUserClick={(userId) => { setIsSearchOpen(false); openUserProfile(userId); }}
       />
 
-      <UploadModal
-        isOpen={isUploadOpen}
-        onClose={() => setIsUploadOpen(false)}
-      />
+      <UploadModal isOpen={isUploadOpen} onClose={() => setIsUploadOpen(false)} />
 
       {activeTab === 'profile' && (
         <ProfileNav
           onClose={() => setActiveTab('home')}
           wallpapers={wallpapers}
-          onWallpaperClick={(wp) => {
-            setActiveTab('home');
-            setSelectedWallpaper(wp);
-          }}
+          onWallpaperClick={(wp) => { setActiveTab('home'); setSelectedWallpaper(wp); }}
         />
       )}
 
-      {activeTab === 'notifications' && (
-        <NotificationNav
-          onClose={() => setActiveTab('home')}
-        />
-      )}
+      {activeTab === 'notifications' && <NotificationNav onClose={() => setActiveTab('home')} />}
 
       {(selectedUser || isLoadingProfile) && (
         <UserProfile
           user={selectedUser}
           wallpapers={wallpapers}
-          onClose={() => {
-            setSelectedUser(null);
-            setIsLoadingProfile(false);
-          }}
-          onWallpaperClick={(wp) => {
-            setSelectedUser(null);
-            setIsLoadingProfile(false);
-            setSelectedWallpaper(wp);
-          }}
+          onClose={() => { setSelectedUser(null); setIsLoadingProfile(false); }}
+          onWallpaperClick={(wp) => { setSelectedUser(null); setIsLoadingProfile(false); setSelectedWallpaper(wp); }}
           onToggleFollow={toggleFollow}
           isLoading={isLoadingProfile}
         />
