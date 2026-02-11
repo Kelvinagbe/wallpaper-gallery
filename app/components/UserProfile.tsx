@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { ChevronLeft, UserPlus, UserMinus, Grid } from 'lucide-react';
 import { WallpaperCard } from './WallpaperCard';
 import type { UserProfile as UserProfileType, Wallpaper } from '../types';
@@ -13,7 +14,7 @@ type UserProfileProps = {
 export const UserProfile = ({ user, wallpapers, onClose, onWallpaperClick, onToggleFollow }: UserProfileProps) => {
   const userWallpapers = wallpapers.filter(wp => wp.userId === user.id);
 
-  return (
+  const modalContent = (
     <div className="fixed inset-0 bg-black z-50 flex flex-col slide-up overflow-y-auto no-scrollbar">
       <button
         onClick={onClose}
@@ -88,4 +89,6 @@ export const UserProfile = ({ user, wallpapers, onClose, onWallpaperClick, onTog
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 };
