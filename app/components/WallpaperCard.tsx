@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Heart, Download, Loader2 } from 'lucide-react';
+import { VerifiedBadge } from './VerifiedBadge';
 import type { Wallpaper } from '../types';
 
 type WallpaperCardProps = {
@@ -51,6 +52,7 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
               <div className="flex items-center gap-1.5">
                 <img src={wp.userAvatar} alt={wp.uploadedBy} className="w-5 h-5 rounded-full" />
                 <span className="text-[11px] text-white/80">{wp.uploadedBy}</span>
+                {wp.verified && <VerifiedBadge size="sm" />}
               </div>
               <span className="text-[11px] text-white/70">
                 {wp.views > 1000 ? `${(wp.views / 1000).toFixed(1)}k` : wp.views}
