@@ -1,9 +1,10 @@
-import { ChevronLeft, Settings, Share2, Heart, Bookmark, Clock, LogOut, Shield, CheckCircle } from 'lucide-react';
+import { ChevronLeft, Settings, Share2, Heart, Bookmark, Clock, LogOut, Shield } from 'lucide-react';
 import { useState } from 'react';
 import { SettingsModal } from './profile/SettingsModal';
 import { ContentListModal } from './profile/ContentListModal';
 import { PrivacyModal } from './profile/PrivacyModal';
 import { ViewAllPostsModal } from './profile/ViewAllPostsModal';
+import { VerifiedBadge } from './VerifiedBadge';
 import { getProfile, getLiked, getSaved, getRecent, type UserProfile as StoreProfile } from '../utils/userStore';
 import type { Wallpaper } from '../types';
 
@@ -96,9 +97,7 @@ export const ProfileNav = ({ onClose, wallpapers, onWallpaperClick }: ProfileNav
             {/* Name with Verified Badge */}
             <div className="flex items-center justify-center gap-2 mb-1">
               <h2 className="text-2xl font-bold">{profile.name}</h2>
-              {profile.verified && (
-                <CheckCircle className="w-6 h-6 text-blue-500 fill-blue-500" strokeWidth={0} />
-              )}
+              {profile.verified && <VerifiedBadge size="lg" />}
             </div>
 
             <p className="text-white/60 mb-2">{profile.username}</p>
