@@ -1,4 +1,4 @@
-userStore.ts:
+
 // userStore.ts
 export type UserProfile = {
   name: string;
