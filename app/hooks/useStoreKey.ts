@@ -12,9 +12,13 @@ export function useStoreKey<T>(key: StoreKeyName, reader: () => T): T {
     const unsub = subscribeStore((changedKey) => {
       if (changedKey === key) refresh();
     });
+    
     // Refresh immediately in case store changed between render and effect
     refresh();
-    return unsub;
+    
+    return () => {
+      unsub();
+    };
   }, [key, refresh]);
 
   return value;
