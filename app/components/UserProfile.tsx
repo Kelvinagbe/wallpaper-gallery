@@ -1,7 +1,8 @@
 import { createPortal } from 'react-dom';
-import { ChevronLeft, UserPlus, UserMinus, Grid, Heart, Bookmark, CheckCircle } from 'lucide-react';
+import { ChevronLeft, UserPlus, UserMinus, Grid, Heart, Bookmark } from 'lucide-react';
 import { useState } from 'react';
 import { CompactWallpaperCard } from './CompactWallpaperCard';
+import { VerifiedBadge } from './VerifiedBadge';
 import type { UserProfile as UserProfileType, Wallpaper } from '../types';
 
 type UserProfileProps = {
@@ -93,9 +94,7 @@ export const UserProfile = ({
               {/* Name with Verified Badge */}
               <div className="flex items-center justify-center gap-2 mb-1">
                 <h2 className="text-2xl font-bold">{user.name}</h2>
-                {user.verified && (
-                  <CheckCircle className="w-6 h-6 text-blue-500 fill-blue-500" strokeWidth={0} />
-                )}
+                {user.verified && <VerifiedBadge size="lg" />}
               </div>
 
               <p className="text-white/60 mb-4">{user.bio}</p>
