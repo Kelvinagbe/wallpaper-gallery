@@ -1,6 +1,6 @@
 
 import { createClient } from '@/lib/supabase/client';
-import type { Wallpaper, UserProfile } from '@/types';
+import type { Wallpaper, UserProfile } from '@/app/types';
 
 const supabase = createClient();
 
