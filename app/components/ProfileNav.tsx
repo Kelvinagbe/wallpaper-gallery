@@ -17,9 +17,9 @@ import {
   getCurrentUser,
   signOut,
   type UserProfile as StoreProfile 
-} from '../lib/stores/userStore'; // Updated path to new Supabase store
+} from '@/lib/stores/userStore'; // Updated path to new Supabase store
 
-import { getUserCounts } from '../lib/stores/wallpaperStore'; // Import for fetching user stats
+import { getUserCounts } from '@/lib/stores/wallpaperStore'; // Import for fetching user stats
 import type { Wallpaper } from '../types';
 
 type ProfileNavProps = {
