@@ -1,5 +1,7 @@
 // userStore.ts
 export type UserProfile = {
+  id: string;
+  username: string;
   name: string;
   username: string;
   bio: string;
