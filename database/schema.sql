@@ -278,6 +278,44 @@ LEFT JOIN comments c ON c.wallpaper_id = w.id
 LEFT JOIN saves s ON s.wallpaper_id = w.id
 GROUP BY w.id, p.username, p.full_name, p.avatar_url, p.verified;
 
+-- Additional SQL functions for the wallpaper app
+-- Run these in your Supabase SQL Editor (ADDITION, not replacement)
+
+-- Function to increment views count
+CREATE OR REPLACE FUNCTION increment_views(wallpaper_id UUID)
+RETURNS void AS $$
+BEGIN
+  UPDATE public.wallpapers
+  SET views = views + 1
+  WHERE id = wallpaper_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Function to increment downloads count
+CREATE OR REPLACE FUNCTION increment_downloads(wallpaper_id UUID)
+RETURNS void AS $$
+BEGIN
+  UPDATE public.wallpapers
+  SET downloads = downloads + 1
+  WHERE id = wallpaper_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Function to get user stats (followers, following, posts)
+CREATE OR REPLACE FUNCTION get_user_stats(user_id UUID)
+RETURNS TABLE(
+  followers_count BIGINT,
+  following_count BIGINT,
+  posts_count BIGINT
+) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    (SELECT COUNT(*) FROM public.follows WHERE following_id = user_id) as followers_count,
+    (SELECT COUNT(*) FROM public.follows WHERE follower_id = user_id) as following_count,
+    (SELECT COUNT(*) FROM public.wallpapers WHERE user_id = user_id) as posts_count;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 -- ============================================
 -- DONE! ✅
 -- ============================================
