@@ -5,8 +5,8 @@ import { ContentListModal } from './profile/ContentListModal';
 import { PrivacyModal } from './profile/PrivacyModal';
 import { ViewAllPostsModal } from './profile/ViewAllPostsModal';
 import { VerifiedBadge } from './VerifiedBadge';
-import { getProfile, getLiked, getSaved, getRecent, getCurrentUser, signOut, type UserProfile } from '../lib/stores/userStore';
-import { getUserCounts } from '../lib/stores/wallpaperStore';
+import { getProfile, getLiked, getSaved, getRecent, getCurrentUser, signOut, type UserProfile } from '@/lib/stores/userStore';
+import { getUserCounts } from '@/lib/stores/wallpaperStore';
 import type { Wallpaper } from '../types';
 
 type ProfileNavProps = {
