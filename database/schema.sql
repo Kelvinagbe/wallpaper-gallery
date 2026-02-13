@@ -283,3 +283,4 @@ GROUP BY w.id, p.username, p.full_name, p.avatar_url, p.verified;
 -- ============================================
 -- Your database is now ready for the wallpaper app!
 -- Tables created with RLS enabled for security.
+ 
