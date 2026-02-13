@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { fetchWallpapers, fetchTrendingWallpapers, fetchWallpapersByCategory } from '@/lib/stores/wallpaperStore';
-import type { Wallpaper } from '@/types';
+import type { Wallpaper } from '@/app/types';
 
 /**
  * Hook to fetch wallpapers with loading and error states
