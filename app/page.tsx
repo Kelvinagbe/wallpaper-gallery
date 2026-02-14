@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useAuth } from '@/components/AuthProvider';
+import { fetchWallpapers } from '@/lib/stores/wallpaperStore';
 import { Header } from './components/Header';
 import { Navigation } from './components/Navigation';
 import { SearchModal } from './components/SearchModal';
@@ -11,15 +13,13 @@ import { WallpaperGrid } from './components/WallpaperGrid';
 import { GlobalStyles } from './components/GlobalStyles';
 import { ProfileNav } from './components/ProfileNav';
 import { NotificationNav } from './components/NotificationNav';
-import { generateMockData } from './utils/mockData';
-import type { Wallpaper, UserProfile as UserProfileType, ActiveTab, Filter } from './types';
+import type { Wallpaper, ActiveTab, Filter } from './types';
 
 export default function WallpaperGallery() {
+  const { session } = useAuth();
   const [wallpapers, setWallpapers] = useState<Wallpaper[]>([]);
-  const [userProfiles, setUserProfiles] = useState<UserProfileType[]>([]);
   const [selectedWallpaper, setSelectedWallpaper] = useState<Wallpaper | null>(null);
-  const [selectedUser, setSelectedUser] = useState<UserProfileType | null>(null);
-  const [isLoadingProfile, setIsLoadingProfile] = useState(false);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -29,12 +29,12 @@ export default function WallpaperGallery() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('home');
 
   useEffect(() => {
-    const { wallpapers: mockWallpapers, profiles: mockProfiles } = generateMockData();
-    setTimeout(() => {
-      setWallpapers(mockWallpapers);
-      setUserProfiles(mockProfiles);
+    (async () => {
+      setIsLoading(true);
+      const data = await fetchWallpapers(50);
+      setWallpapers(data);
       setIsLoading(false);
-    }, 1000);
+    })();
 
     const savedSearches = localStorage.getItem('recentSearches');
     if (savedSearches) setRecentSearches(JSON.parse(savedSearches));
@@ -55,43 +55,7 @@ export default function WallpaperGallery() {
     }
   };
 
-  const clearRecentSearch = (searchTerm: string) => {
-    const updated = recentSearches.filter(s => s !== searchTerm);
-    setRecentSearches(updated);
-    localStorage.setItem('recentSearches', JSON.stringify(updated));
-  };
-
-  const clearAllRecentSearches = () => {
-    setRecentSearches([]);
-    localStorage.removeItem('recentSearches');
-  };
-
-  const toggleFollow = (userId: string) => {
-    setUserProfiles(prev => prev.map(user =>
-      user.id === userId
-        ? { ...user, isFollowing: !user.isFollowing, followers: user.isFollowing ? user.followers - 1 : user.followers + 1 }
-        : user
-    ));
-    if (selectedUser?.id === userId) {
-      setSelectedUser(prev => prev ? {
-        ...prev,
-        isFollowing: !prev.isFollowing,
-        followers: prev.isFollowing ? prev.followers - 1 : prev.followers + 1
-      } : null);
-    }
-  };
-
-  const openUserProfile = (userId: string) => {
-    setIsLoadingProfile(true);
-    setSelectedUser(null);
-    setTimeout(() => {
-      const user = userProfiles.find(u => u.id === userId);
-      if (user) setSelectedUser(user);
-      setIsLoadingProfile(false);
-    }, 800);
-  };
-
-  const isFullScreenViewOpen = selectedWallpaper || selectedUser || isLoadingProfile || activeTab === 'profile' || activeTab === 'notifications';
+  const isFullScreenViewOpen = selectedWallpaper || selectedUserId || activeTab === 'profile' || activeTab === 'notifications';
 
   return (
     <div className="min-h-screen bg-black text-white pb-16">
@@ -116,12 +80,18 @@ export default function WallpaperGallery() {
         searchQuery={searchQuery}
         setSearchQuery={handleSearchQuery}
         recentSearches={recentSearches}
-        onClearRecentSearch={clearRecentSearch}
-        onClearAllRecentSearches={clearAllRecentSearches}
+        onClearRecentSearch={(term) => {
+          const updated = recentSearches.filter(s => s !== term);
+          setRecentSearches(updated);
+          localStorage.setItem('recentSearches', JSON.stringify(updated));
+        }}
+        onClearAllRecentSearches={() => {
+          setRecentSearches([]);
+          localStorage.removeItem('recentSearches');
+        }}
         filteredWallpapers={filteredWallpapers}
-        userProfiles={userProfiles}
         onWallpaperClick={(wp) => { setIsSearchOpen(false); setSelectedWallpaper(wp); }}
-        onUserClick={(userId) => { setIsSearchOpen(false); openUserProfile(userId); }}
+        onUserClick={(userId) => { setIsSearchOpen(false); setSelectedUserId(userId); }}
       />
 
       <UploadModal isOpen={isUploadOpen} onClose={() => setIsUploadOpen(false)} />
@@ -136,14 +106,12 @@ export default function WallpaperGallery() {
 
       {activeTab === 'notifications' && <NotificationNav onClose={() => setActiveTab('home')} />}
 
-      {(selectedUser || isLoadingProfile) && (
+      {selectedUserId && (
         <UserProfile
-          user={selectedUser}
+          userId={selectedUserId}
           wallpapers={wallpapers}
-          onClose={() => { setSelectedUser(null); setIsLoadingProfile(false); }}
-          onWallpaperClick={(wp) => { setSelectedUser(null); setIsLoadingProfile(false); setSelectedWallpaper(wp); }}
-          onToggleFollow={toggleFollow}
-          isLoading={isLoadingProfile}
+          onClose={() => setSelectedUserId(null)}
+          onWallpaperClick={(wp) => { setSelectedUserId(null); setSelectedWallpaper(wp); }}
         />
       )}
 
@@ -152,7 +120,7 @@ export default function WallpaperGallery() {
           wallpaper={selectedWallpaper}
           relatedWallpapers={filteredWallpapers.filter(wp => wp.id !== selectedWallpaper.id).slice(0, 4)}
           onClose={() => setSelectedWallpaper(null)}
-          onUserClick={() => openUserProfile(selectedWallpaper.userId)}
+          onUserClick={() => setSelectedUserId(selectedWallpaper.userId)}
           onRelatedClick={setSelectedWallpaper}
         />
       )}
