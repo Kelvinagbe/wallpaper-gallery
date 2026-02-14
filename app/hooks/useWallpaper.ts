@@ -5,8 +5,10 @@ import type { Wallpaper } from '@/app/types';
 /**
  * Hook to fetch wallpapers with loading and error states
  */
-export const useWallpapers = (limit = 24, offset = 0) => {
+export const useWallpapers = (page = 0, pageSize = 24) => {
   const [wallpapers, setWallpapers] = useState<Wallpaper[]>([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -14,8 +16,10 @@ export const useWallpapers = (limit = 24, offset = 0) => {
     const loadWallpapers = async () => {
       try {
         setLoading(true);
-        const data = await fetchWallpapers(limit, offset);
-        setWallpapers(data);
+        const data = await fetchWallpapers(page, pageSize);
+        setWallpapers(data.wallpapers);
+        setHasMore(data.hasMore);
+        setTotal(data.total);
         setError(null);
       } catch (err: any) {
         setError(err.message || 'Failed to load wallpapers');
@@ -25,9 +29,9 @@ export const useWallpapers = (limit = 24, offset = 0) => {
     };
 
     loadWallpapers();
-  }, [limit, offset]);
+  }, [page, pageSize]);
 
-  return { wallpapers, loading, error };
+  return { wallpapers, hasMore, total, loading, error };
 };
 
 /**
@@ -61,8 +65,10 @@ export const useTrendingWallpapers = (limit = 24) => {
 /**
  * Hook to fetch wallpapers by category
  */
-export const useWallpapersByCategory = (category: string, limit = 24) => {
+export const useWallpapersByCategory = (category: string, page = 0, pageSize = 24) => {
   const [wallpapers, setWallpapers] = useState<Wallpaper[]>([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -70,8 +76,10 @@ export const useWallpapersByCategory = (category: string, limit = 24) => {
     const loadWallpapers = async () => {
       try {
         setLoading(true);
-        const data = await fetchWallpapersByCategory(category, limit);
-        setWallpapers(data);
+        const data = await fetchWallpapersByCategory(category, page, pageSize);
+        setWallpapers(data.wallpapers);
+        setHasMore(data.hasMore);
+        setTotal(data.total);
         setError(null);
       } catch (err: any) {
         setError(err.message || 'Failed to load wallpapers');
@@ -81,7 +89,7 @@ export const useWallpapersByCategory = (category: string, limit = 24) => {
     };
 
     loadWallpapers();
-  }, [category, limit]);
+  }, [category, page, pageSize]);
 
-  return { wallpapers, loading, error };
+  return { wallpapers, hasMore, total, loading, error };
 };
