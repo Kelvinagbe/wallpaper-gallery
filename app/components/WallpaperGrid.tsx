@@ -32,21 +32,12 @@ export const WallpaperGrid = ({ wallpapers, isLoading, onWallpaperClick }: Wallp
   }
 
   return (
-    <div className="space-y-4">
-      {/* Wallpaper Count */}
-      <div className="flex items-center justify-between px-1">
-        <p className="text-sm text-white/60">
-          <span className="font-semibold text-white">{wallpapers.length.toLocaleString()}</span> wallpaper{wallpapers.length !== 1 ? 's' : ''} found
-        </p>
-      </div>
-
-      <div className="masonry">
-        {wallpapers.map((wp) => (
-          <div key={wp.id}>
-            <WallpaperCard wp={wp} onClick={() => onWallpaperClick(wp)} />
-          </div>
-        ))}
-      </div>
+    <div className="masonry">
+      {wallpapers.map((wp) => (
+        <div key={wp.id}>
+          <WallpaperCard wp={wp} onClick={() => onWallpaperClick(wp)} />
+        </div>
+      ))}
     </div>
   );
 };
