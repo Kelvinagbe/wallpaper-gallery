@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useAuth } from '@/components/AuthProvider';
+import { useAuth } from './components/AuthProvider';
 import { fetchWallpapers } from '@/lib/stores/wallpaperStore';
 import { Header } from './components/Header';
 import { Navigation } from './components/Navigation';
