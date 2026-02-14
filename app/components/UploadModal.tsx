@@ -47,7 +47,7 @@ const Progress = ({ progress, status, error, onRetry, onCancel, logs }: any) => 
         </div>
         <div className="bg-black/50 rounded-lg p-3 font-mono text-xs overflow-y-auto flex-1 border border-white/10">
           {logs.length === 0 ? (
-            <p className="text-white/40">Waiting for upload to start...</p>
+            <p className="text-white/40">Waiting for upload...</p>
           ) : (
             logs.map((log: any, i: number) => (
               <div key={i} className={`mb-1 ${
@@ -144,128 +144,150 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: any) => {
 
   const upload = async () => {
     setLogs([]);
-    log('Upload process started', 'info');
+    log('🚀 Upload process started', 'info');
     
+    // Validation
     if (!file || !title) {
       log('Validation failed: Missing file or title', 'error');
       return show('Fill required fields','error');
     }
     
-    log(`File: ${file.name} (${(file.size/1024/1024).toFixed(2)} MB)`, 'info');
-    log(`Title: ${title}`, 'info');
-    
     if (!online || speed==='offline') {
       log('No internet connection', 'error');
       return show('No internet connection','error');
     }
+    
     if (speed==='slow') {
-      log('Slow connection detected', 'warning');
-      show('Slow connection detected','error');
+      log('⚠️ Slow connection detected', 'warning');
     }
     
     if (!user?.id) {
       log('User not authenticated', 'error');
       return show('Must be logged in','error');
     }
-    
-    log(`User ID: ${user.id}`, 'info');
-    log(`User Email: ${user.email}`, 'info');
+
+    log(`📦 File: ${file.name} (${(file.size/1024/1024).toFixed(2)} MB)`, 'info');
+    log(`📝 Title: ${title}`, 'info');
+    log(`👤 User: ${user.email}`, 'info');
 
     abortRef.current = new AbortController();
     const tid = setTimeout(() => abortRef.current?.abort(), 120000);
 
     try {
-      setUploading(true); setError(null); setProgress(5); setStatus('Preparing...');
-      log('Creating FormData...', 'info');
+      setUploading(true);
+      setError(null);
+      setProgress(5);
+      setStatus('Preparing...');
 
+      // STEP 1: Upload to Vercel Blob via external API
+      log('📤 STEP 1: Uploading to Vercel Blob...', 'info');
+      
       const fd = new FormData();
       fd.append('file', file);
       fd.append('userId', user.id);
       fd.append('folder', 'wallpapers');
+
+      setProgress(15);
+      setStatus('Uploading to storage...');
+      log('Sending to https://ovrica.name.ng/api/blob-upload', 'info');
+
+      const blobRes = await fetch('https://ovrica.name.ng/api/blob-upload', {
+        method: 'POST',
+        body: fd,
+        signal: abortRef.current.signal,
+        mode: 'cors',
+        credentials: 'omit'
+      });
+
+      log(`Response status: ${blobRes.status}`, blobRes.ok ? 'success' : 'error');
+
+      if (!blobRes.ok) {
+        const err = await blobRes.json().catch(() => ({error: blobRes.statusText}));
+        log(`Blob upload failed: ${err.error}`, 'error');
+        throw new Error(err.error || 'Failed to upload to storage');
+      }
+
+      const blobData = await blobRes.json();
       
-      log('FormData created successfully', 'success');
+      if (!blobData.success || !blobData.url) {
+        log('No image URL returned from blob storage', 'error');
+        throw new Error('Upload failed: No image URL');
+      }
 
-      setProgress(15); setStatus('Uploading to Vercel Blob...');
-      log('Sending request to https://ovrica.name.ng/api/blob-upload', 'info');
+      log('✅ Blob upload successful!', 'success');
+      log(`🔗 Image URL: ${blobData.url}`, 'info');
 
-      const res = await fetch('https://ovrica.name.ng/api/blob-upload', {
-        method:'POST', body:fd, signal:abortRef.current.signal, mode:'cors', credentials:'omit'
+      // STEP 2: Save to database via local API
+      setProgress(70);
+      setStatus('Saving to database...');
+      log('💾 STEP 2: Saving to database...', 'info');
+
+      const dbRes = await fetch('/api/save-wallpaper', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: user.id,
+          title: title.trim(),
+          description: desc.trim() || null,
+          image_url: blobData.url,
+          thumbnail_url: blobData.url,
+        }),
       });
 
       clearTimeout(tid);
-      
-      log(`Response status: ${res.status} ${res.statusText}`, res.ok ? 'success' : 'error');
 
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({error:res.statusText}));
-        log(`Upload failed: ${err?.error || res.statusText}`, 'error');
-        throw new Error(err?.error || `Upload failed: ${res.statusText}`);
-      }
+      log(`Database response: ${dbRes.status}`, dbRes.ok ? 'success' : 'error');
 
-      const data = await res.json();
-      log('Upload response received', 'success');
-      log(`Image URL: ${data.url}`, 'info');
-
-      if (!data.success || !data.url) {
-        log('No image URL in response', 'error');
-        throw new Error('No image URL returned');
-      }
-
-      setProgress(70); setStatus('Saving to database...');
-      log('Starting database insert with 20s timeout...', 'info');
-      
-      // SIMPLIFIED INSERT - Only essential fields
-      const insertData = {
-        user_id: user.id,
-        title: title.trim(),
-        description: desc.trim() || null,
-        image_url: data.url,
-        thumbnail_url: data.url,
-      };
-      
-      log(`Insert data: ${JSON.stringify(insertData)}`, 'info');
-
-      // Add timeout to database query
-      const dbPromise = supabase.from('wallpapers').insert(insertData).select().single();
-      
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => {
-          log('Database query timeout after 20 seconds!', 'error');
-          log('Possible causes:', 'warning');
-          log('1. RLS policy WITH CHECK is incorrect', 'warning');
-          log('2. Missing columns in table', 'warning');
-          log('3. Database connection issue', 'warning');
-          reject(new Error('Database timeout (20s). Check RLS policies or missing columns.'));
-        }, 20000)
-      );
-
-      const { data: dbData, error: dbErr } = await Promise.race([dbPromise, timeoutPromise]) as any;
-
-      if (dbErr) {
-        log(`Database error: ${dbErr.message}`, 'error');
-        log(`Error code: ${dbErr.code || 'none'}`, 'error');
-        log(`Error details: ${dbErr.details || 'none'}`, 'error');
-        log(`Error hint: ${dbErr.hint || 'none'}`, 'error');
+      if (!dbRes.ok) {
+        const dbErr = await dbRes.json().catch(() => ({error: dbRes.statusText}));
+        log(`Database save failed: ${dbErr.error}`, 'error');
         
-        throw new Error(`DB Error: ${dbErr.message}`);
+        // Cleanup: Try to delete uploaded blob
+        log('🗑️ Attempting cleanup of uploaded file...', 'warning');
+        try {
+          await fetch('https://ovrica.name.ng/api/blob-upload', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: blobData.url }),
+            mode: 'cors'
+          });
+          log('Cleanup successful', 'warning');
+        } catch (cleanupErr) {
+          log('Cleanup failed (file may remain in storage)', 'warning');
+        }
+        
+        throw new Error(dbErr.error || 'Failed to save to database');
       }
 
-      log('Database insert successful!', 'success');
-      log(`Inserted record: ${JSON.stringify(dbData)}`, 'success');
+      const dbData = await dbRes.json();
+      
+      if (!dbData.success) {
+        log('Database save failed', 'error');
+        throw new Error(dbData.error || 'Failed to save to database');
+      }
 
-      setProgress(100); setStatus('Complete!');
-      log('Upload completed successfully! 🎉', 'success');
+      log('✅ Database save successful!', 'success');
+      log(`📋 Record ID: ${dbData.data?.id}`, 'success');
+
+      setProgress(100);
+      setStatus('Complete!');
+      log('🎉 Upload completed successfully!', 'success');
       show('Upload successful!','success');
       
       setTimeout(() => { close(); onSuccess?.(); }, 1000);
 
     } catch (e: any) {
       clearTimeout(tid);
-      log(`Upload failed: ${e.message}`, 'error');
+      log(`💥 Upload failed: ${e.message}`, 'error');
       
       let msg = e.message || 'Upload failed';
-      if (e.name==='AbortError') msg = 'Upload timed out';
-      else if (e.message.includes('Failed to fetch')) msg = 'Cannot connect to server (CORS)';
+      if (e.name === 'AbortError') {
+        msg = 'Upload timed out (2 minutes)';
+        log('Timeout after 2 minutes', 'error');
+      } else if (e.message.includes('Failed to fetch')) {
+        msg = 'Cannot connect to server. Check your internet connection.';
+        log('Network error: Failed to fetch', 'error');
+      }
       
       setError(msg);
     }
