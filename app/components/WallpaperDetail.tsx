@@ -4,7 +4,7 @@ import { ChevronLeft, Eye, Heart, Download, Share2, Bookmark, Check, Link as Lin
 import { VerifiedBadge } from './VerifiedBadge';
 import { incrementViews, incrementDownloads } from '@/lib/stores/wallpaperStore';
 import { createClient } from '@/lib/supabase/client';
-import { useAuth } from '@/components/AuthProvider';
+import { useAuth } from '@/app/components/AuthProvider';
 import type { Wallpaper } from '../types';
 
 type WallpaperDetailProps = {
