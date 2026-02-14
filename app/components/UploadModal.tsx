@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { X, Upload, Image as ImageIcon, Check, AlertCircle, User } from 'lucide-react';
+import { X, Upload, Image as ImageIcon, Check, AlertCircle, User, Wifi, WifiOff } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/app/components/AuthProvider';
 
@@ -75,8 +75,72 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: UploadModalProps) =>
   const [previewUrl, setPreviewUrl] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [isOnline, setIsOnline] = useState(true);
+  const [connectionSpeed, setConnectionSpeed] = useState<'fast' | 'slow' | 'offline'>('fast');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadAbortController = useRef<AbortController | null>(null);
   const supabase = createClient();
+
+  // Network detection
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      setConnectionSpeed('fast');
+      showToast('Connection restored', 'success');
+    };
+    
+    const handleOffline = () => {
+      setIsOnline(false);
+      setConnectionSpeed('offline');
+      showToast('No internet connection', 'error');
+    };
+
+    // Check connection speed
+    const checkConnectionSpeed = async () => {
+      if (!navigator.onLine) {
+        setConnectionSpeed('offline');
+        setIsOnline(false);
+        return;
+      }
+
+      try {
+        const startTime = Date.now();
+        const response = await fetch('https://www.google.com/favicon.ico', { 
+          method: 'HEAD',
+          cache: 'no-cache',
+          signal: AbortSignal.timeout(5000)
+        });
+        const endTime = Date.now();
+        const duration = endTime - startTime;
+
+        if (response.ok) {
+          setIsOnline(true);
+          if (duration > 2000) {
+            setConnectionSpeed('slow');
+          } else {
+            setConnectionSpeed('fast');
+          }
+        }
+      } catch (error) {
+        setConnectionSpeed('slow');
+      }
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    // Initial check
+    checkConnectionSpeed();
+    
+    // Periodic check every 30 seconds
+    const interval = setInterval(checkConnectionSpeed, 30000);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      clearInterval(interval);
+    };
+  }, []);
 
   // Check auth when modal opens
   useEffect(() => {
@@ -126,6 +190,10 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: UploadModalProps) =>
     setUploadStatus(''); 
     setUploadError(null); 
     setIsUploading(false);
+    if (uploadAbortController.current) {
+      uploadAbortController.current.abort();
+      uploadAbortController.current = null;
+    }
   };
 
   const handleClose = () => {
@@ -154,6 +222,16 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: UploadModalProps) =>
       return showToast('Please fill in all required fields', 'error');
     }
 
+    // Check internet connection
+    if (!isOnline || connectionSpeed === 'offline') {
+      return showToast('No internet connection. Please check your network and try again.', 'error');
+    }
+
+    // Warn if slow connection
+    if (connectionSpeed === 'slow') {
+      showToast('Slow connection detected. Upload may take longer than usual.', 'error');
+    }
+
     const user = currentUser || session?.user;
 
     if (!user?.id) {
@@ -161,12 +239,15 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: UploadModalProps) =>
       return showToast('You must be logged in to upload wallpapers. Please refresh and try again.', 'error');
     }
 
-    const uploadApiUrl = process.env.NEXT_PUBLIC_UPLOAD_API_URL;
-    
-    if (!uploadApiUrl) {
-      console.error('❌ NEXT_PUBLIC_UPLOAD_API_URL not configured');
-      return showToast('Upload service not configured. Please contact support.', 'error');
-    }
+    const uploadApiUrl = 'https://ovrica.name.ng';
+
+    // Create abort controller for timeout
+    uploadAbortController.current = new AbortController();
+    const timeoutId = setTimeout(() => {
+      if (uploadAbortController.current) {
+        uploadAbortController.current.abort();
+      }
+    }, 120000); // 2 minute timeout
 
     try {
       setIsUploading(true);
@@ -198,11 +279,14 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: UploadModalProps) =>
       setUploadProgress(15);
       setUploadStatus('Uploading to server...');
 
-      // Upload to custom API
+      // Upload to custom API with timeout
       const uploadResponse = await fetch(`${uploadApiUrl}/api/blob-upload`, {
         method: 'POST',
         body: formData,
+        signal: uploadAbortController.current.signal,
       });
+
+      clearTimeout(timeoutId);
 
       if (!uploadResponse.ok) {
         const errorData = await uploadResponse.json().catch(() => null);
@@ -248,10 +332,10 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: UploadModalProps) =>
 
         // Try to delete the uploaded file if database insert fails
         try {
-          await fetch(`${uploadApiUrl}/api/delete`, {
-            method: 'POST',
+          await fetch('https://ovrica.name.ng/api/blob-upload', {
+            method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ imageUrl }),
+            body: JSON.stringify({ url: imageUrl }),
           });
         } catch (deleteError) {
           console.error('Failed to cleanup uploaded file:', deleteError);
@@ -278,7 +362,20 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: UploadModalProps) =>
 
     } catch (error: any) {
       console.error('❌ Upload failed:', error);
-      setUploadError(error.message || 'Upload failed. Please try again.');
+      
+      clearTimeout(timeoutId);
+
+      let errorMessage = 'Upload failed. Please try again.';
+      
+      if (error.name === 'AbortError') {
+        errorMessage = 'Upload timed out. Please check your internet connection and try again.';
+      } else if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+        errorMessage = 'Network error. Please check your internet connection and try again.';
+      } else {
+        errorMessage = error.message || errorMessage;
+      }
+      
+      setUploadError(errorMessage);
     }
   };
 
@@ -289,6 +386,10 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: UploadModalProps) =>
   };
 
   const handleCancelUpload = () => {
+    if (uploadAbortController.current) {
+      uploadAbortController.current.abort();
+      uploadAbortController.current = null;
+    }
     setUploadError(null);
     setIsUploading(false);
     setUploadProgress(0);
@@ -311,7 +412,7 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: UploadModalProps) =>
           <div className="flex items-center justify-between px-4 md:px-6 py-4 border-b border-white/10">
             <div>
               <h2 className="text-base md:text-lg font-semibold">Upload Wallpaper</h2>
-              <div className="flex items-center gap-2 mt-1">
+              <div className="flex items-center gap-3 mt-1">
                 {currentUser ? (
                   <>
                     <User className="w-3 h-3 text-emerald-500" />
@@ -323,6 +424,26 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: UploadModalProps) =>
                     <p className="text-xs text-red-500">Not logged in</p>
                   </>
                 )}
+                
+                {/* Network Status Indicator */}
+                <div className="flex items-center gap-1.5 ml-auto">
+                  {connectionSpeed === 'offline' ? (
+                    <>
+                      <WifiOff className="w-3 h-3 text-red-500" />
+                      <p className="text-xs text-red-500">Offline</p>
+                    </>
+                  ) : connectionSpeed === 'slow' ? (
+                    <>
+                      <Wifi className="w-3 h-3 text-yellow-500" />
+                      <p className="text-xs text-yellow-500">Slow</p>
+                    </>
+                  ) : (
+                    <>
+                      <Wifi className="w-3 h-3 text-emerald-500" />
+                      <p className="text-xs text-emerald-500">Online</p>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
             <button onClick={handleClose} disabled={isUploading && !uploadError} className="p-2 hover:bg-white/5 rounded-lg transition-colors disabled:opacity-50">
@@ -370,7 +491,7 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: UploadModalProps) =>
                 )}
               </div>
 
-              <input ref={fileInputRef} type="file" accept="image/*" style={{display:'none'}} onChange={e=>{const f=e.target.files?.[0];if(f)handleFileSelect(f);}} />
+           <input ref={fileInputRef} type="file" accept="image/*" style={{display:'none'}} onChange={e=>{const f=e.target.files?.[0];if(f)handleFileSelect(f);}} />
 
               <div>
                 <label className="block text-xs md:text-sm font-medium text-white/70 mb-1.5">Title *</label>
@@ -390,6 +511,7 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: UploadModalProps) =>
                   <li className="flex gap-2"><span className="text-white/30">•</span><span>High-quality images recommended</span></li>
                   <li className="flex gap-2"><span className="text-white/30">•</span><span>Ensure you have rights to share</span></li>
                   <li className="flex gap-2"><span className="text-white/30">•</span><span>Max file size: 10MB</span></li>
+                  <li className="flex gap-2"><span className="text-white/30">•</span><span>Upload timeout: 2 minutes</span></li>
                 </ul>
               </div>
             </div>
@@ -397,7 +519,7 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: UploadModalProps) =>
 
           <div className="flex gap-2 px-4 md:px-6 py-3 md:py-4 border-t border-white/10">
             <button onClick={handleClose} disabled={isUploading && !uploadError} className="flex-1 md:flex-none md:px-6 py-2.5 rounded-lg text-sm font-medium text-white/70 hover:bg-white/5 transition-colors disabled:opacity-50">Cancel</button>
-            <button onClick={performUpload} disabled={!selectedFile || !uploadTitle || isUploading || !currentUser} className="flex-1 md:flex-none md:px-6 py-2.5 rounded-lg text-sm font-medium bg-white text-black hover:bg-white/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+            <button onClick={performUpload} disabled={!selectedFile || !uploadTitle || isUploading || !currentUser || !isOnline} className="flex-1 md:flex-none md:px-6 py-2.5 rounded-lg text-sm font-medium bg-white text-black hover:bg-white/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
               <Upload className="w-4 h-4"/><span>Upload</span>
             </button>
           </div>
