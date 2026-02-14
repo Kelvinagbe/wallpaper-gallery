@@ -4,6 +4,9 @@ import type { Wallpaper, UserProfile } from '@/app/types';
 
 const supabase = createClient();
 
+// Optimized page size
+const DEFAULT_PAGE_SIZE = 24;
+
 // Transform wallpaper from DB to app format
 const transformWallpaper = (wp: any): Wallpaper => ({
   id: wp.id,
@@ -40,57 +43,181 @@ const transformProfile = (p: any): UserProfile => ({
 });
 
 // Base wallpaper query with profile join
-const baseWallpaperQuery = () => supabase.from('wallpapers').select(`*,profiles:user_id(username,full_name,avatar_url,verified)`);
+const baseWallpaperQuery = () => 
+  supabase.from('wallpapers').select(`
+    *,
+    profiles:user_id(username,full_name,avatar_url,verified)
+  `);
 
-// Fetch all public wallpapers
-export const fetchWallpapers = async (limit = 50, offset = 0) => {
-  console.log('🔍 Fetching wallpapers...');
-  const { data, error } = await baseWallpaperQuery().eq('is_public', true).order('created_at', { ascending: false }).range(offset, offset + limit - 1);
-  console.log('📊 Data:', data, '❌ Error:', error);
-  if (error) { console.error('Error:', error); return []; }
-  if (!data || data.length === 0) { console.warn('⚠️ No wallpapers'); return []; }
-  console.log(`✅ Found ${data.length} wallpapers`);
-  return data.map(transformWallpaper);
+// Fetch paginated wallpapers (optimized)
+export const fetchWallpapers = async (page = 0, pageSize = DEFAULT_PAGE_SIZE) => {
+  console.log(`🔍 Fetching wallpapers - Page ${page}, Size ${pageSize}`);
+  
+  const start = page * pageSize;
+  const end = start + pageSize - 1;
+  
+  const { data, error, count } = await supabase
+    .from('wallpapers')
+    .select(`
+      *,
+      profiles:user_id(username,full_name,avatar_url,verified)
+    `, { count: 'exact' })
+    .eq('is_public', true)
+    .order('created_at', { ascending: false })
+    .range(start, end);
+  
+  if (error) {
+    console.error('❌ Error fetching wallpapers:', error);
+    return { wallpapers: [], hasMore: false, total: 0 };
+  }
+  
+  if (!data || data.length === 0) {
+    console.warn('⚠️ No wallpapers found');
+    return { wallpapers: [], hasMore: false, total: count || 0 };
+  }
+  
+  console.log(`✅ Found ${data.length} wallpapers (Total: ${count})`);
+  
+  return {
+    wallpapers: data.map(transformWallpaper),
+    hasMore: end < (count || 0) - 1,
+    total: count || 0,
+  };
 };
 
-// Fetch by category
-export const fetchWallpapersByCategory = async (category: string, limit = 24) => {
-  const { data, error } = await baseWallpaperQuery().eq('is_public', true).eq('category', category).order('created_at', { ascending: false }).limit(limit);
+// Fetch by category (paginated)
+export const fetchWallpapersByCategory = async (
+  category: string, 
+  page = 0, 
+  pageSize = DEFAULT_PAGE_SIZE
+) => {
+  const start = page * pageSize;
+  const end = start + pageSize - 1;
+  
+  const { data, error, count } = await supabase
+    .from('wallpapers')
+    .select(`
+      *,
+      profiles:user_id(username,full_name,avatar_url,verified)
+    `, { count: 'exact' })
+    .eq('is_public', true)
+    .eq('category', category)
+    .order('created_at', { ascending: false })
+    .range(start, end);
+  
+  return {
+    wallpapers: error ? [] : data.map(transformWallpaper),
+    hasMore: !error && end < (count || 0) - 1,
+    total: count || 0,
+  };
+};
+
+// Fetch by tags (paginated)
+export const fetchWallpapersByTags = async (
+  tags: string[], 
+  page = 0, 
+  pageSize = DEFAULT_PAGE_SIZE
+) => {
+  const start = page * pageSize;
+  const end = start + pageSize - 1;
+  
+  const { data, error, count } = await supabase
+    .from('wallpapers')
+    .select(`
+      *,
+      profiles:user_id(username,full_name,avatar_url,verified)
+    `, { count: 'exact' })
+    .eq('is_public', true)
+    .overlaps('tags', tags)
+    .order('created_at', { ascending: false })
+    .range(start, end);
+  
+  return {
+    wallpapers: error ? [] : data.map(transformWallpaper),
+    hasMore: !error && end < (count || 0) - 1,
+    total: count || 0,
+  };
+};
+
+// Fetch trending (last 7 days, most viewed) - limited to 24
+export const fetchTrendingWallpapers = async (limit = DEFAULT_PAGE_SIZE) => {
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  
+  const { data, error } = await supabase
+    .from('wallpapers')
+    .select(`
+      *,
+      profiles:user_id(username,full_name,avatar_url,verified)
+    `)
+    .eq('is_public', true)
+    .gte('created_at', sevenDaysAgo.toISOString())
+    .order('views', { ascending: false })
+    .limit(limit);
+  
   return error ? [] : data.map(transformWallpaper);
 };
 
-// Fetch by tags
-export const fetchWallpapersByTags = async (tags: string[], limit = 24) => {
-  const { data, error } = await baseWallpaperQuery().eq('is_public', true).overlaps('tags', tags).order('created_at', { ascending: false }).limit(limit);
-  return error ? [] : data.map(transformWallpaper);
+// Fetch user's wallpapers (paginated)
+export const fetchUserWallpapers = async (
+  userId: string, 
+  page = 0, 
+  pageSize = DEFAULT_PAGE_SIZE
+) => {
+  const start = page * pageSize;
+  const end = start + pageSize - 1;
+  
+  const { data, error, count } = await supabase
+    .from('wallpapers')
+    .select(`
+      *,
+      profiles:user_id(username,full_name,avatar_url,verified)
+    `, { count: 'exact' })
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .range(start, end);
+  
+  return {
+    wallpapers: error ? [] : data.map(transformWallpaper),
+    hasMore: !error && end < (count || 0) - 1,
+    total: count || 0,
+  };
 };
 
-// Fetch trending (last 7 days, most viewed)
-export const fetchTrendingWallpapers = async (limit = 24) => {
-  const sevenDaysAgo = new Date(); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-  const { data, error } = await baseWallpaperQuery().eq('is_public', true).gte('created_at', sevenDaysAgo.toISOString()).order('views', { ascending: false }).limit(limit);
-  return error ? [] : data.map(transformWallpaper);
+// Search wallpapers (paginated)
+export const searchWallpapers = async (
+  query: string, 
+  page = 0, 
+  pageSize = DEFAULT_PAGE_SIZE
+) => {
+  const start = page * pageSize;
+  const end = start + pageSize - 1;
+  
+  const { data, error, count } = await supabase
+    .from('wallpapers')
+    .select(`
+      *,
+      profiles:user_id(username,full_name,avatar_url,verified)
+    `, { count: 'exact' })
+    .eq('is_public', true)
+    .or(`title.ilike.%${query}%,description.ilike.%${query}%`)
+    .order('created_at', { ascending: false })
+    .range(start, end);
+  
+  return {
+    wallpapers: error ? [] : data.map(transformWallpaper),
+    hasMore: !error && end < (count || 0) - 1,
+    total: count || 0,
+  };
 };
 
-// Fetch user's wallpapers
-export const fetchUserWallpapers = async (userId: string, limit = 24) => {
-  const { data, error } = await baseWallpaperQuery().eq('user_id', userId).order('created_at', { ascending: false }).limit(limit);
-  return error ? [] : data.map(transformWallpaper);
-};
-
-// Search wallpapers
-export const searchWallpapers = async (query: string, limit = 24) => {
-  const { data, error } = await baseWallpaperQuery().eq('is_public', true).or(`title.ilike.%${query}%,description.ilike.%${query}%`).order('created_at', { ascending: false }).limit(limit);
-  return error ? [] : data.map(transformWallpaper);
-};
-
-// Increment views
+// Increment views (optimized with RPC)
 export const incrementViews = async (wallpaperId: string) => {
   const { error } = await supabase.rpc('increment_views', { wallpaper_id: wallpaperId });
   if (error) console.error('Error incrementing views:', error);
 };
 
-// Increment downloads
+// Increment downloads (optimized with RPC)
 export const incrementDownloads = async (wallpaperId: string) => {
   const { error } = await supabase.rpc('increment_downloads', { wallpaper_id: wallpaperId });
   if (error) console.error('Error incrementing downloads:', error);
@@ -98,34 +225,116 @@ export const incrementDownloads = async (wallpaperId: string) => {
 
 // Fetch profile by ID
 export const fetchProfile = async (userId: string) => {
-  const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single();
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', userId)
+    .single();
+  
   return error ? null : transformProfile(data);
 };
 
-// Fetch multiple profiles
+// Fetch multiple profiles (batch optimization)
 export const fetchProfiles = async (userIds: string[]) => {
-  const { data, error } = await supabase.from('profiles').select('*').in('id', userIds);
+  if (userIds.length === 0) return [];
+  
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .in('id', userIds);
+  
   return error ? [] : data.map(transformProfile);
 };
 
-// Search profiles
-export const searchProfiles = async (query: string, limit = 20) => {
-  const { data, error } = await supabase.from('profiles').select('*').or(`username.ilike.%${query}%,full_name.ilike.%${query}%`).limit(limit);
-  return error ? [] : data.map(transformProfile);
+// Search profiles (paginated)
+export const searchProfiles = async (
+  query: string, 
+  page = 0, 
+  pageSize = 20
+) => {
+  const start = page * pageSize;
+  const end = start + pageSize - 1;
+  
+  const { data, error, count } = await supabase
+    .from('profiles')
+    .select('*', { count: 'exact' })
+    .or(`username.ilike.%${query}%,full_name.ilike.%${query}%`)
+    .range(start, end);
+  
+  return {
+    profiles: error ? [] : data.map(transformProfile),
+    hasMore: !error && end < (count || 0) - 1,
+    total: count || 0,
+  };
 };
 
-// Get user stats
+// Get user stats (cached for 5 minutes recommended)
 export const getUserCounts = async (userId: string) => {
   const [followersResult, followingResult, postsResult] = await Promise.all([
-    supabase.from('follows').select('id', { count: 'exact' }).eq('following_id', userId),
-    supabase.from('follows').select('id', { count: 'exact' }).eq('follower_id', userId),
-    supabase.from('wallpapers').select('id', { count: 'exact' }).eq('user_id', userId),
+    supabase
+      .from('follows')
+      .select('id', { count: 'exact', head: true })
+      .eq('following_id', userId),
+    supabase
+      .from('follows')
+      .select('id', { count: 'exact', head: true })
+      .eq('follower_id', userId),
+    supabase
+      .from('wallpapers')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId),
   ]);
-  return { followers: followersResult.count || 0, following: followingResult.count || 0, posts: postsResult.count || 0 };
+  
+  return {
+    followers: followersResult.count || 0,
+    following: followingResult.count || 0,
+    posts: postsResult.count || 0,
+  };
 };
 
 // Check if following user
 export const checkIsFollowing = async (currentUserId: string, targetUserId: string) => {
-  const { data } = await supabase.from('follows').select('id').eq('follower_id', currentUserId).eq('following_id', targetUserId).maybeSingle();
+  const { data } = await supabase
+    .from('follows')
+    .select('id')
+    .eq('follower_id', currentUserId)
+    .eq('following_id', targetUserId)
+    .maybeSingle();
+  
   return !!data;
+};
+
+// Subscribe to new wallpapers (real-time)
+export const subscribeToWallpapers = (callback: (wallpaper: Wallpaper) => void) => {
+  const channel = supabase
+    .channel('wallpapers-changes')
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'wallpapers',
+        filter: 'is_public=eq.true',
+      },
+      async (payload) => {
+        // Fetch full wallpaper with profile
+        const { data } = await supabase
+          .from('wallpapers')
+          .select(`
+            *,
+            profiles:user_id(username,full_name,avatar_url,verified)
+          `)
+          .eq('id', payload.new.id)
+          .single();
+        
+        if (data) {
+          callback(transformWallpaper(data));
+        }
+      }
+    )
+    .subscribe();
+  
+  return () => {
+    supabase.removeChannel(channel);
+  };
 };
