@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { X, Upload, Image as ImageIcon, Check } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
-import { useAuth } from '@/components/AuthProvider';
+import { useAuth } from '@/app/components/AuthProvider';
 
 type UploadModalProps = {
   isOpen: boolean;
