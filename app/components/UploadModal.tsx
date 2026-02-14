@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { X, Upload, Image as ImageIcon, Check, AlertCircle, User, Wifi, WifiOff } from 'lucide-react';
+import { X, Upload, Image as ImageIcon, Check, AlertCircle, User, Wifi, WifiOff, Terminal } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/app/components/AuthProvider';
 
@@ -13,21 +13,21 @@ const Toast = ({ message, type, onClose }: any) => (
   </div>
 );
 
-const Progress = ({ progress, status, error, onRetry, onCancel }: any) => (
-  <div style={{position:'fixed',inset:0,zIndex:60,animation:'fadeIn 0.2s'}} className="bg-black/80 backdrop-blur-sm flex items-center justify-center">
-    <div className="bg-zinc-900 rounded-2xl p-8 max-w-md w-full mx-4 border border-white/10">
+const Progress = ({ progress, status, error, onRetry, onCancel, logs }: any) => (
+  <div style={{position:'fixed',inset:0,zIndex:60,animation:'fadeIn 0.2s'}} className="bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div className="bg-zinc-900 rounded-2xl p-6 max-w-2xl w-full mx-4 border border-white/10 max-h-[90vh] flex flex-col">
       {error ? (
-        <div className="text-center">
+        <div className="text-center flex-shrink-0">
           <div className="w-16 h-16 mx-auto mb-4 bg-red-500/10 rounded-full flex items-center justify-center"><AlertCircle className="w-8 h-8 text-red-500"/></div>
           <h3 className="text-lg font-semibold text-white mb-2">Upload Failed</h3>
-          <p className="text-sm text-white/60 mb-6 whitespace-pre-wrap max-h-60 overflow-y-auto text-left">{error}</p>
-          <div className="flex gap-3">
+          <p className="text-sm text-white/60 mb-6 whitespace-pre-wrap max-h-40 overflow-y-auto text-left">{error}</p>
+          <div className="flex gap-3 mb-4">
             <button onClick={onCancel} className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-white/70 hover:bg-white/5 border border-white/10">Cancel</button>
             <button onClick={onRetry} className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium bg-white text-black hover:bg-white/90">Retry</button>
           </div>
         </div>
       ) : (
-        <div className="text-center">
+        <div className="text-center flex-shrink-0 mb-4">
           <div className="w-16 h-16 mx-auto mb-4 relative">
             <svg className="w-16 h-16" style={{transform:'rotate(-90deg)'}}>
               <circle cx="32" cy="32" r="28" stroke="currentColor" strokeWidth="4" fill="none" className="text-white/10"/>
@@ -39,6 +39,31 @@ const Progress = ({ progress, status, error, onRetry, onCancel }: any) => (
           <p className="text-sm text-white/60">{status}</p>
         </div>
       )}
+      
+      {/* Console Log Panel */}
+      <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+        <div className="flex items-center gap-2 mb-2 flex-shrink-0">
+          <Terminal className="w-4 h-4 text-emerald-500"/>
+          <h4 className="text-sm font-semibold text-white">Console Logs</h4>
+        </div>
+        <div className="bg-black/50 rounded-lg p-3 font-mono text-xs overflow-y-auto flex-1 border border-white/10">
+          {logs.length === 0 ? (
+            <p className="text-white/40">Waiting for upload to start...</p>
+          ) : (
+            logs.map((log: any, i: number) => (
+              <div key={i} className={`mb-1 ${
+                log.type === 'error' ? 'text-red-400' : 
+                log.type === 'success' ? 'text-emerald-400' : 
+                log.type === 'warning' ? 'text-yellow-400' : 
+                log.type === 'info' ? 'text-blue-400' : 
+                'text-white/70'
+              }`}>
+                <span className="text-white/40">[{log.time}]</span> {log.icon} {log.message}
+              </div>
+            ))
+          )}
+        </div>
+      </div>
     </div>
   </div>
 );
@@ -59,9 +84,23 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: any) => {
   const [toast, setToast] = useState<any>(null);
   const [online, setOnline] = useState(true);
   const [speed, setSpeed] = useState<'fast'|'slow'|'offline'>('fast');
+  const [logs, setLogs] = useState<any[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController|null>(null);
   const supabase = createClient();
+
+  const log = (message: string, type: 'log'|'error'|'success'|'warning'|'info' = 'log') => {
+    const icons = {
+      log: '📝',
+      error: '❌',
+      success: '✅',
+      warning: '⚠️',
+      info: 'ℹ️'
+    };
+    const time = new Date().toLocaleTimeString();
+    setLogs(prev => [...prev, { message, type, time, icon: icons[type] }]);
+    console.log(`[${time}] ${icons[type]} ${message}`);
+  };
 
   useEffect(() => {
     const checkSpeed = async () => {
@@ -94,7 +133,7 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: any) => {
   };
 
   const reset = () => {
-    setTitle(''); setDesc(''); setFile(null); setPreview(''); setProgress(0); setStatus(''); setError(null); setUploading(false);
+    setTitle(''); setDesc(''); setFile(null); setPreview(''); setProgress(0); setStatus(''); setError(null); setUploading(false); setLogs([]);
     if (abortRef.current) { abortRef.current.abort(); abortRef.current = null; }
   };
 
@@ -111,64 +150,137 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: any) => {
   }, []);
 
   const upload = async () => {
-    if (!file || !title) return show('Fill required fields','error');
-    if (!online || speed==='offline') return show('No internet connection','error');
-    if (speed==='slow') show('Slow connection detected','error');
-    if (!user?.id) return show('Must be logged in','error');
+    setLogs([]); // Clear previous logs
+    log('Upload process started', 'info');
+    
+    if (!file || !title) {
+      log('Validation failed: Missing file or title', 'error');
+      return show('Fill required fields','error');
+    }
+    
+    log(`File: ${file.name} (${(file.size/1024/1024).toFixed(2)} MB)`, 'info');
+    log(`Title: ${title}`, 'info');
+    
+    if (!online || speed==='offline') {
+      log('No internet connection', 'error');
+      return show('No internet connection','error');
+    }
+    if (speed==='slow') {
+      log('Slow connection detected', 'warning');
+      show('Slow connection detected','error');
+    }
+    
+    if (!user?.id) {
+      log('User not authenticated', 'error');
+      return show('Must be logged in','error');
+    }
+    
+    log(`User ID: ${user.id}`, 'info');
+    log(`User Email: ${user.email}`, 'info');
 
     abortRef.current = new AbortController();
     const tid = setTimeout(() => abortRef.current?.abort(), 120000);
 
     try {
       setUploading(true); setError(null); setProgress(5); setStatus('Preparing...');
+      log('Creating FormData...', 'info');
 
       const fd = new FormData();
       fd.append('file', file);
       fd.append('userId', user.id);
       fd.append('folder', 'wallpapers');
+      
+      log('FormData created successfully', 'success');
 
-      setProgress(15); setStatus('Uploading...');
+      setProgress(15); setStatus('Uploading to Vercel Blob...');
+      log('Sending request to https://ovrica.name.ng/api/blob-upload', 'info');
 
       const res = await fetch('https://ovrica.name.ng/api/blob-upload', {
         method:'POST', body:fd, signal:abortRef.current.signal, mode:'cors', credentials:'omit'
       });
 
       clearTimeout(tid);
+      
+      log(`Response status: ${res.status} ${res.statusText}`, res.ok ? 'success' : 'error');
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({error:res.statusText}));
+        log(`Upload failed: ${err?.error || res.statusText}`, 'error');
         throw new Error(err?.error || `Upload failed: ${res.statusText}`);
       }
 
       const data = await res.json();
-      if (!data.success || !data.url) throw new Error('No image URL returned');
+      log('Upload response received', 'success');
+      log(`Image URL: ${data.url}`, 'info');
 
-      setProgress(70); setStatus('Saving...');
+      if (!data.success || !data.url) {
+        log('No image URL in response', 'error');
+        throw new Error('No image URL returned');
+      }
 
-      const {error:dbErr} = await supabase.from('wallpapers').insert({
-        user_id:user.id, title:title.trim(), description:desc.trim()||null,
-        image_url:data.url, thumbnail_url:data.url, category:'Other',
-        tags:[], is_public:true, views:0, downloads:0
-      });
+      setProgress(70); setStatus('Saving to database...');
+      log('Starting database insert...', 'info');
+      
+      const insertData = {
+        user_id: user.id,
+        title: title.trim(),
+        description: desc.trim() || null,
+        image_url: data.url,
+        thumbnail_url: data.url,
+        category: 'Other',
+        tags: [],
+        is_public: true,
+        views: 0,
+        downloads: 0,
+      };
+      
+      log(`Insert data: ${JSON.stringify(insertData, null, 2)}`, 'info');
+
+      const { data: dbData, error: dbErr } = await supabase
+        .from('wallpapers')
+        .insert(insertData)
+        .select()
+        .single();
 
       if (dbErr) {
+        log(`Database error: ${dbErr.message}`, 'error');
+        log(`Error code: ${dbErr.code}`, 'error');
+        log(`Error details: ${dbErr.details || 'None'}`, 'error');
+        log(`Error hint: ${dbErr.hint || 'None'}`, 'error');
+        
+        // Cleanup
+        log('Attempting to delete uploaded file...', 'warning');
         await fetch('https://ovrica.name.ng/api/blob-upload', {
           method:'DELETE', headers:{'Content-Type':'application/json'},
           body:JSON.stringify({url:data.url}), mode:'cors'
-        }).catch(console.error);
-        throw new Error(`DB Error: ${dbErr.message}`);
+        }).catch(() => log('Failed to delete uploaded file', 'warning'));
+
+        throw new Error(`DB Error: ${dbErr.message}\nCode: ${dbErr.code}\nDetails: ${dbErr.details || 'None'}`);
       }
 
+      log('Database insert successful!', 'success');
+      log(`Inserted record ID: ${dbData?.id}`, 'success');
+
       setProgress(100); setStatus('Complete!');
+      log('Upload process completed successfully! 🎉', 'success');
       show('Upload successful!','success');
+      
       setTimeout(() => { close(); onSuccess?.(); }, 1000);
 
     } catch (e: any) {
       clearTimeout(tid);
+      log(`Upload failed: ${e.message}`, 'error');
+      
       let msg = 'Upload failed';
-      if (e.name==='AbortError') msg = 'Upload timed out';
-      else if (e.message.includes('Failed to fetch')) msg = 'Cannot connect to server (CORS)';
-      else msg = e.message || msg;
+      if (e.name==='AbortError') {
+        msg = 'Upload timed out';
+        log('Upload timed out (2 minutes)', 'error');
+      } else if (e.message.includes('Failed to fetch')) {
+        msg = 'Cannot connect to server (CORS)';
+        log('Network error: Cannot connect to server', 'error');
+      } else {
+        msg = e.message || msg;
+      }
       setError(msg);
     }
   };
@@ -178,7 +290,7 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: any) => {
   const inp = "w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-white/30 focus:bg-white/[0.07] disabled:opacity-50";
 
   return (<>
-    {uploading && <Progress progress={progress} status={status} error={error} onRetry={upload} onCancel={()=>{abortRef.current?.abort();setError(null);setUploading(false);setProgress(0);}}/>}
+    {uploading && <Progress progress={progress} status={status} error={error} logs={logs} onRetry={upload} onCancel={()=>{abortRef.current?.abort();setError(null);setUploading(false);setProgress(0);setLogs([]);}}/>}
     {toast && <Toast {...toast} onClose={()=>setToast(null)}/>}
     
     <div style={{position:'fixed',inset:0,zIndex:50,animation:closing?'fadeOut 0.2s':'fadeIn 0.2s'}} className="bg-black/60 backdrop-blur-sm" onClick={close}>
