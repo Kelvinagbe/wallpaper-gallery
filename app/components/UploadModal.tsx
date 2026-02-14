@@ -34,7 +34,7 @@ const UploadProgress = ({ progress, status, error, onRetry, onCancel }: {
               <AlertCircle className="w-8 h-8 text-red-500" />
             </div>
             <h3 className="text-lg font-semibold text-white mb-2">Upload Failed</h3>
-            <p className="text-sm text-white/60 mb-6 whitespace-pre-wrap">{error}</p>
+            <p className="text-sm text-white/60 mb-6 whitespace-pre-wrap max-h-60 overflow-y-auto text-left">{error}</p>
             <div className="flex gap-3">
               <button onClick={onCancel} className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-white/70 hover:bg-white/5 transition-colors border border-white/10">Cancel</button>
               <button onClick={onRetry} className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium bg-white text-black hover:bg-white/90 transition-colors">Retry</button>
@@ -101,53 +101,166 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: UploadModalProps) =>
   }, []);
 
   const performUpload = async () => {
-    if (!selectedFile || !uploadTitle || !session) return showToast('Please fill in all required fields', 'error');
+    if (!selectedFile || !uploadTitle) return showToast('Please fill in all required fields', 'error');
+    
+    if (!session?.user?.id) {
+      return showToast('You must be logged in to upload wallpapers', 'error');
+    }
 
     try {
-      setIsUploading(true); setUploadError(null); setUploadProgress(5); setUploadStatus('Preparing upload...');
+      setIsUploading(true); 
+      setUploadError(null); 
+      setUploadProgress(5); 
+      setUploadStatus('Preparing upload...');
+
+      // Log user info for debugging
+      console.log('🔐 User authenticated:', {
+        userId: session.user.id,
+        email: session.user.email,
+        role: session.user.role
+      });
 
       const fileExt = selectedFile.name.split('.').pop();
       const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
       const filePath = `${session.user.id}/${fileName}`;
 
-      setUploadProgress(15); setUploadStatus('Uploading image...');
+      console.log('📁 Upload path:', filePath);
+      console.log('📦 File details:', {
+        name: selectedFile.name,
+        size: `${(selectedFile.size / 1024 / 1024).toFixed(2)} MB`,
+        type: selectedFile.type
+      });
 
-      const { data: uploadData, error: uploadError } = await supabase.storage.from('wallpapers').upload(filePath, selectedFile, { cacheControl: '3600', upsert: false });
+      setUploadProgress(15); 
+      setUploadStatus('Uploading image...');
+
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('wallpapers')
+        .upload(filePath, selectedFile, { 
+          cacheControl: '3600', 
+          upsert: false 
+        });
+
+      console.log('📤 Upload response:', { uploadData, uploadError });
 
       if (uploadError) {
-        const statusCode = (uploadError as any).cause?.status || (uploadError as any).statusCode || 'Unknown';
-        throw new Error(`Storage Error: ${uploadError.message}\n\nStatus: ${statusCode}\nPath: ${filePath}`);
+        console.error('❌ Storage upload error:', uploadError);
+        
+        // Detailed error message
+        let errorMessage = `Storage Error: ${uploadError.message}`;
+        
+        if (uploadError.statusCode) {
+          errorMessage += `\n\nHTTP Status: ${uploadError.statusCode}`;
+        }
+        
+        const cause = (uploadError as any).cause;
+        if (cause) {
+          if (cause.status) errorMessage += `\nStatus Code: ${cause.status}`;
+          if (cause.statusText) errorMessage += `\nStatus: ${cause.statusText}`;
+        }
+        
+        errorMessage += `\n\nFile Path: ${filePath}`;
+        errorMessage += `\nBucket: wallpapers`;
+        errorMessage += `\n\nPossible issues:`;
+        errorMessage += `\n• Storage bucket policies not configured`;
+        errorMessage += `\n• User not authenticated properly`;
+        errorMessage += `\n• Storage bucket does not exist`;
+        errorMessage += `\n• File size exceeds limit`;
+        
+        throw new Error(errorMessage);
       }
-      if (!uploadData) throw new Error('Upload completed but no data returned from storage');
 
-      setUploadProgress(50); setUploadStatus('Processing image...');
+      if (!uploadData) {
+        throw new Error('Upload completed but no data returned from storage');
+      }
 
-      const { data: { publicUrl } } = supabase.storage.from('wallpapers').getPublicUrl(filePath);
+      console.log('✅ Upload successful:', uploadData);
 
-      setUploadProgress(70); setUploadStatus('Saving to database...');
+      setUploadProgress(50); 
+      setUploadStatus('Processing image...');
 
-      const { data: wallpaperData, error: dbError } = await supabase.from('wallpapers').insert({
-        user_id: session.user.id, title: uploadTitle.trim(), description: uploadDescription.trim() || null,
-        image_url: publicUrl, thumbnail_url: publicUrl, category: 'Other', tags: [], is_public: true, views: 0, downloads: 0,
-      }).select().single();
+      const { data: { publicUrl } } = supabase.storage
+        .from('wallpapers')
+        .getPublicUrl(filePath);
+
+      console.log('🔗 Public URL:', publicUrl);
+
+      setUploadProgress(70); 
+      setUploadStatus('Saving to database...');
+
+      const wallpaperData = {
+        user_id: session.user.id, 
+        title: uploadTitle.trim(), 
+        description: uploadDescription.trim() || null,
+        image_url: publicUrl, 
+        thumbnail_url: publicUrl, 
+        category: 'Other', 
+        tags: [], 
+        is_public: true, 
+        views: 0, 
+        downloads: 0,
+      };
+
+      console.log('💾 Inserting to database:', wallpaperData);
+
+      const { data: dbData, error: dbError } = await supabase
+        .from('wallpapers')
+        .insert(wallpaperData)
+        .select()
+        .single();
+
+      console.log('💾 Database response:', { dbData, dbError });
 
       if (dbError) {
+        console.error('❌ Database error:', dbError);
+        
+        // Try to cleanup uploaded file
+        console.log('🗑️ Cleaning up uploaded file...');
         await supabase.storage.from('wallpapers').remove([filePath]);
-        throw new Error(`Database Error: ${dbError.message}\n\nCode: ${dbError.code || 'Unknown'}\nDetails: ${dbError.details || 'None'}`);
+        
+        let errorMessage = `Database Error: ${dbError.message}`;
+        
+        if (dbError.code) errorMessage += `\n\nError Code: ${dbError.code}`;
+        if (dbError.details) errorMessage += `\nDetails: ${dbError.details}`;
+        if (dbError.hint) errorMessage += `\nHint: ${dbError.hint}`;
+        
+        errorMessage += `\n\nPossible issues:`;
+        errorMessage += `\n• RLS policies not configured`;
+        errorMessage += `\n• Missing required fields`;
+        errorMessage += `\n• Foreign key constraint failed`;
+        
+        throw new Error(errorMessage);
       }
 
-      setUploadProgress(100); setUploadStatus('Upload complete!');
+      console.log('✅ Database insert successful:', dbData);
+
+      setUploadProgress(100); 
+      setUploadStatus('Upload complete!');
       showToast('Wallpaper uploaded successfully!', 'success');
-      setTimeout(() => { handleClose(); if (onSuccess) onSuccess(); }, 1000);
+
+      setTimeout(() => { 
+        handleClose(); 
+        if (onSuccess) onSuccess(); 
+      }, 1000);
 
     } catch (error: any) {
-      console.error('Upload failed:', error);
+      console.error('❌ Upload failed:', error);
       setUploadError(error.message || 'An unexpected error occurred. Please try again.');
     }
   };
 
-  const handleRetry = () => { setUploadError(null); setUploadProgress(0); performUpload(); };
-  const handleCancelUpload = () => { setUploadError(null); setIsUploading(false); setUploadProgress(0); setUploadStatus(''); };
+  const handleRetry = () => { 
+    setUploadError(null); 
+    setUploadProgress(0); 
+    performUpload(); 
+  };
+  
+  const handleCancelUpload = () => { 
+    setUploadError(null); 
+    setIsUploading(false); 
+    setUploadProgress(0); 
+    setUploadStatus(''); 
+  };
 
   if (!isOpen) return null;
 
