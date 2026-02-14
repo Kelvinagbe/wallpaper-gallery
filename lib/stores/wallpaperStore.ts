@@ -5,7 +5,7 @@ import type { Wallpaper, UserProfile } from '@/app/types';
 const supabase = createClient();
 
 // Optimized page size
-const DEFAULT_PAGE_SIZE = 20;
+const DEFAULT_PAGE_SIZE = 17;
 
 // Transform wallpaper from DB to app format
 const transformWallpaper = (wp: any): Wallpaper => ({
