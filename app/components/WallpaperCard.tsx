@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Heart, Download, Loader2 } from 'lucide-react';
 import { VerifiedBadge } from './VerifiedBadge';
 import { createClient } from '@/lib/supabase/client';
@@ -10,28 +10,50 @@ type WallpaperCardProps = {
   onClick: () => void;
 };
 
-// ✅ Cache for card interactions
+// ✅ Cache ONLY for wallpapers that user has viewed
 const cardDataCache = new Map<string, {
   liked: boolean;
-  saved: boolean;
   likeCount: number;
   timestamp: number;
 }>();
 
-const CACHE_DURATION = 30000; // 30 seconds
+const CACHE_DURATION = 60000; // 1 minute
 
 export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
   const { session } = useAuth();
   const supabase = createClient();
+  const cardRef = useRef<HTMLDivElement>(null);
   const [loaded, setLoaded] = useState(false);
+  const [inView, setInView] = useState(false);
   const [hideOverlay, setHideOverlay] = useState(false);
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(wp.likes || 0);
   const [dataFetched, setDataFetched] = useState(false);
 
-  // ✅ Fetch like status and count with caching
+  // ✅ Lazy loading - only load image when in viewport
   useEffect(() => {
-    if (!session || !wp.id) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            setInView(true);
+            observer.disconnect();
+          }
+        });
+      },
+      { rootMargin: '50px' } // Load 50px before entering viewport
+    );
+
+    if (cardRef.current) {
+      observer.observe(cardRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, []);
+
+  // ✅ Fetch data ONLY when card is in view
+  useEffect(() => {
+    if (!inView || !session || !wp.id) return;
 
     const cacheKey = `card-${wp.id}-${session.user.id}`;
     const cached = cardDataCache.get(cacheKey);
@@ -44,7 +66,7 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
       return;
     }
 
-    // Fetch from database
+    // Fetch from database only for viewed cards
     (async () => {
       const [likeResult, likeCountResult] = await Promise.all([
         supabase
@@ -69,16 +91,15 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
       // Cache the results
       cardDataCache.set(cacheKey, {
         liked: isLiked,
-        saved: false, // placeholder for future use
         likeCount: count,
         timestamp: Date.now(),
       });
     })();
-  }, [wp.id, session]);
+  }, [inView, wp.id, session]);
 
-  // ✅ Real-time subscription for like count
+  // ✅ Real-time subscription ONLY for viewed cards
   useEffect(() => {
-    if (!wp.id) return;
+    if (!inView || !wp.id) return;
 
     const channel = supabase
       .channel(`card-${wp.id}`)
@@ -91,7 +112,6 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
           filter: `wallpaper_id=eq.${wp.id}`,
         },
         async () => {
-          // Fetch updated like count
           const { count } = await supabase
             .from('likes')
             .select('id', { count: 'exact' })
@@ -119,7 +139,7 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [wp.id, session]);
+  }, [inView, wp.id, session]);
 
   const handleLike = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -134,8 +154,6 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
     setLiked(newLikedState);
     setLikeCount(c => newLikedState ? c + 1 : c - 1);
     setHideOverlay(true);
-
-    // Vibrate feedback
     navigator.vibrate?.(50);
 
     // Update cache immediately
@@ -150,7 +168,7 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
       });
     }
 
-    // Background sync to database
+    // Background sync
     try {
       if (newLikedState) {
         await supabase.from('likes').insert({
@@ -166,7 +184,6 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
       }
     } catch (error) {
       console.error('Error updating like:', error);
-      // Revert on error
       setLiked(!newLikedState);
       setLikeCount(c => newLikedState ? c - 1 : c + 1);
     }
@@ -175,7 +192,6 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
   const handleDownload = (e: React.MouseEvent) => {
     e.stopPropagation();
     
-    // Download the image
     const link = document.createElement('a');
     link.href = wp.url;
     link.download = wp.title || 'wallpaper';
@@ -192,75 +208,83 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
 
   return (
     <div 
+      ref={cardRef}
       className="card group relative rounded-xl overflow-hidden cursor-pointer transition-all duration-300" 
       onClick={onClick}
     >
-      {!loaded && (
-        <div className="skeleton rounded-xl flex items-center justify-center" style={{ height: '250px' }}>
-          <Loader2 className="w-8 h-8 text-white/40 animate-spin" />
-        </div>
-      )}
-      <img
-        src={wp.thumbnail}
-        alt={wp.title}
-        className={`w-full h-auto transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0 absolute'}`}
-        onLoad={() => setLoaded(true)}
-      />
-      {loaded && (
+      {!inView ? (
+        <div className="skeleton rounded-xl" style={{ height: '250px' }} />
+      ) : (
         <>
-          {!hideOverlay && (
-            <div className="card-overlay absolute inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center gap-3">
-              <button
-                onClick={handleLike}
-                className={`p-2.5 rounded-full transition-all hover:scale-110 ${
-                  liked 
-                    ? 'bg-rose-500 hover:bg-rose-600' 
-                    : 'bg-white hover:bg-gray-200'
-                }`}
-              >
-                <Heart 
-                  className={`w-4 h-4 transition-all ${
-                    liked 
-                      ? 'text-white fill-white' 
-                      : 'text-black'
-                  }`} 
-                />
-              </button>
-              <button
-                onClick={handleDownload}
-                className="p-2.5 rounded-full bg-white hover:bg-gray-200 transition-all hover:scale-110"
-              >
-                <Download className="w-4 h-4 text-black" />
-              </button>
+          {!loaded && (
+            <div className="skeleton rounded-xl flex items-center justify-center" style={{ height: '250px' }}>
+              <Loader2 className="w-8 h-8 text-white/40 animate-spin" />
             </div>
           )}
-          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-2.5">
-            <h3 className="font-medium mb-1.5 line-clamp-1 text-xs">{wp.title}</h3>
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                <img 
-                  src={wp.userAvatar} 
-                  alt={wp.uploadedBy} 
-                  className="w-5 h-5 rounded-full flex-shrink-0" 
-                />
-                <span className="text-[11px] text-white/80 truncate">
-                  {wp.uploadedBy}
-                </span>
-                {wp.verified && <VerifiedBadge size="sm" />}
+          <img
+            src={wp.thumbnail}
+            alt={wp.title}
+            loading="lazy"
+            className={`w-full h-auto transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0 absolute'}`}
+            onLoad={() => setLoaded(true)}
+          />
+          {loaded && (
+            <>
+              {!hideOverlay && (
+                <div className="card-overlay absolute inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center gap-3">
+                  <button
+                    onClick={handleLike}
+                    className={`p-2.5 rounded-full transition-all hover:scale-110 ${
+                      liked 
+                        ? 'bg-rose-500 hover:bg-rose-600' 
+                        : 'bg-white hover:bg-gray-200'
+                    }`}
+                  >
+                    <Heart 
+                      className={`w-4 h-4 transition-all ${
+                        liked 
+                          ? 'text-white fill-white' 
+                          : 'text-black'
+                      }`} 
+                    />
+                  </button>
+                  <button
+                    onClick={handleDownload}
+                    className="p-2.5 rounded-full bg-white hover:bg-gray-200 transition-all hover:scale-110"
+                  >
+                    <Download className="w-4 h-4 text-black" />
+                  </button>
+                </div>
+              )}
+              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-2.5">
+                <h3 className="font-medium mb-1.5 line-clamp-1 text-xs">{wp.title}</h3>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                    <img 
+                      src={wp.userAvatar} 
+                      alt={wp.uploadedBy} 
+                      className="w-5 h-5 rounded-full flex-shrink-0" 
+                    />
+                    <span className="text-[11px] text-white/80 truncate">
+                      {wp.uploadedBy}
+                    </span>
+                    {wp.verified && <VerifiedBadge size="sm" />}
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {dataFetched && likeCount > 0 && (
+                      <span className="text-[11px] text-rose-400 flex items-center gap-0.5">
+                        <Heart className="w-3 h-3 fill-rose-400" />
+                        {formatCount(likeCount)}
+                      </span>
+                    )}
+                    <span className="text-[11px] text-white/70">
+                      {formatCount(wp.views)}
+                    </span>
+                  </div>
+                </div>
               </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                {dataFetched && (
-                  <span className="text-[11px] text-rose-400 flex items-center gap-0.5">
-                    <Heart className="w-3 h-3 fill-rose-400" />
-                    {formatCount(likeCount)}
-                  </span>
-                )}
-                <span className="text-[11px] text-white/70">
-                  {formatCount(wp.views)}
-                </span>
-              </div>
-            </div>
-          </div>
+            </>
+          )}
         </>
       )}
     </div>
