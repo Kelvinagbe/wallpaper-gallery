@@ -1,7 +1,11 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronLeft, Eye, Heart, Download, Share2, Bookmark, Check, Link as LinkIcon, Loader2 } from 'lucide-react';
 import { VerifiedBadge } from './VerifiedBadge';
+import { incrementViews, incrementDownloads } from '@/lib/stores/wallpaperStore';
+import { likeWallpaper, unlikeWallpaper, isLiked, saveWallpaper, unsaveWallpaper, isSaved } from '@/lib/stores/userStore';
+import { createClient } from '@/lib/supabase/client';
+import { useAuth } from '@/app/components/AuthProvider';
 import type { Wallpaper } from '../types';
 
 type WallpaperDetailProps = {
@@ -68,6 +72,8 @@ const FloatingHearts = ({ hearts }: { hearts: Array<{ id: number; x: number; y: 
 };
 
 export const WallpaperDetail = ({ wallpaper, relatedWallpapers, onClose, onUserClick, onRelatedClick, isLoading = false }: WallpaperDetailProps) => {
+  const { session } = useAuth();
+  const supabase = createClient();
   const [liked, setLiked] = useState(false);
   const [saved, setSaved] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -75,16 +81,75 @@ export const WallpaperDetail = ({ wallpaper, relatedWallpapers, onClose, onUserC
   const [following, setFollowing] = useState(false);
   const [likeCount, setLikeCount] = useState(wallpaper?.likes || 0);
   const [downloadCount, setDownloadCount] = useState(wallpaper?.downloads || 0);
+  const [viewCount, setViewCount] = useState(wallpaper?.views || 0);
   const [isClosing, setIsClosing] = useState(false);
   const [hearts, setHearts] = useState<Array<{ id: number; x: number; y: number; angle: number; distance: number }>>([]);
   const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
+  const [timeAgo, setTimeAgo] = useState('');
   const likeButtonRef = useRef<HTMLButtonElement>(null);
+
+  // Calculate time ago
+  useEffect(() => {
+    if (!wallpaper?.createdAt) return;
+    const updateTime = () => {
+      const now = new Date();
+      const created = new Date(wallpaper.createdAt!);
+      const diff = Math.floor((now.getTime() - created.getTime()) / 1000);
+      if (diff < 60) setTimeAgo('Just now');
+      else if (diff < 3600) setTimeAgo(`${Math.floor(diff / 60)}m ago`);
+      else if (diff < 86400) setTimeAgo(`${Math.floor(diff / 3600)}h ago`);
+      else if (diff < 604800) setTimeAgo(`${Math.floor(diff / 86400)}d ago`);
+      else setTimeAgo(`${Math.floor(diff / 604800)}w ago`);
+    };
+    updateTime();
+    const interval = setInterval(updateTime, 60000);
+    return () => clearInterval(interval);
+  }, [wallpaper?.createdAt]);
+
+  // Check initial like/save status and increment view
+  useEffect(() => {
+    if (!wallpaper) return;
+    
+    (async () => {
+      // Increment view count
+      await incrementViews(wallpaper.id);
+      setViewCount(v => v + 1);
+
+      if (session) {
+        // Check if liked
+        const likedStatus = await isLiked(wallpaper.id);
+        setLiked(likedStatus);
+
+        // Check if saved
+        const savedStatus = await isSaved(wallpaper.id);
+        setSaved(savedStatus);
+
+        // Check if following
+        if (wallpaper.userId) {
+          const { data } = await supabase
+            .from('follows')
+            .select('id')
+            .eq('follower_id', session.user.id)
+            .eq('following_id', wallpaper.userId)
+            .maybeSingle();
+          setFollowing(!!data);
+        }
+      }
+    })();
+  }, [wallpaper, session]);
 
   const handleClose = () => { setIsClosing(true); setTimeout(onClose, 300); };
   const vibrate = (d: number) => navigator.vibrate?.(d);
   const fmt = (n: number) => n > 1000 ? `${(n / 1000).toFixed(1)}k` : n;
 
-  const handleLike = () => {
+  const handleLike = async () => {
+    if (!session) {
+      alert('Please login to like wallpapers');
+      return;
+    }
+
+    if (!wallpaper) return;
+
     if (!liked && likeButtonRef.current) {
       const rect = likeButtonRef.current.getBoundingClientRect();
       setHearts(Array.from({ length: 8 }, (_, i) => {
@@ -93,24 +158,99 @@ export const WallpaperDetail = ({ wallpaper, relatedWallpapers, onClose, onUserC
       }));
       setTimeout(() => setHearts([]), 1400);
     }
-    setLiked(prev => { setLikeCount(c => prev ? c - 1 : c + 1); return !prev; });
-    vibrate(50);
-  };
 
-  const handleDownload = async () => {
-    if (!downloaded && !downloading) {
-      setDownloading(true);
-      vibrate(50);
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      setDownloading(false);
-      setDownloaded(true);
-      setDownloadCount(c => c + 1);
-      vibrate(100);
+    const newLikedState = !liked;
+    setLiked(newLikedState);
+    setLikeCount(c => newLikedState ? c + 1 : c - 1);
+    vibrate(50);
+
+    if (newLikedState) {
+      await likeWallpaper(wallpaper.id);
+    } else {
+      await unlikeWallpaper(wallpaper.id);
     }
   };
 
-  const stats = [{ icon: Eye, value: wallpaper?.views || 0, active: false }, { icon: Heart, value: likeCount, active: liked, color: 'rose' }, { icon: Download, value: downloadCount, active: downloaded, color: 'emerald' }];
-  const shareButtons = [{ icon: Share2, label: 'Share', onClick: () => navigator.share ? navigator.share({ title: wallpaper?.title, text: wallpaper?.description, url: window.location.href }).catch(() => setIsCopyModalOpen(true)) : setIsCopyModalOpen(true) }, { icon: LinkIcon, label: 'Copy Link', onClick: () => setIsCopyModalOpen(true) }];
+  const handleSave = async () => {
+    if (!session) {
+      alert('Please login to save wallpapers');
+      return;
+    }
+
+    if (!wallpaper) return;
+
+    const newSavedState = !saved;
+    setSaved(newSavedState);
+    vibrate(50);
+
+    if (newSavedState) {
+      await saveWallpaper(wallpaper.id);
+    } else {
+      await unsaveWallpaper(wallpaper.id);
+    }
+  };
+
+  const handleFollow = async () => {
+    if (!session) {
+      alert('Please login to follow users');
+      return;
+    }
+
+    if (!wallpaper?.userId) return;
+
+    const newFollowingState = !following;
+    setFollowing(newFollowingState);
+    vibrate(50);
+
+    if (newFollowingState) {
+      await supabase.from('follows').insert({
+        follower_id: session.user.id,
+        following_id: wallpaper.userId,
+      });
+    } else {
+      await supabase.from('follows').delete()
+        .eq('follower_id', session.user.id)
+        .eq('following_id', wallpaper.userId);
+    }
+  };
+
+  const handleDownload = async () => {
+    if (!downloaded && !downloading && wallpaper) {
+      setDownloading(true);
+      vibrate(50);
+      
+      // Actually download the image
+      try {
+        const link = document.createElement('a');
+        link.href = wallpaper.url;
+        link.download = wallpaper.title || 'wallpaper';
+        link.click();
+        
+        // Increment download count in database
+        await incrementDownloads(wallpaper.id);
+        
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        setDownloading(false);
+        setDownloaded(true);
+        setDownloadCount(c => c + 1);
+        vibrate(100);
+      } catch (error) {
+        console.error('Download error:', error);
+        setDownloading(false);
+      }
+    }
+  };
+
+  const stats = [
+    { icon: Eye, value: viewCount, active: false }, 
+    { icon: Heart, value: likeCount, active: liked, color: 'rose' }, 
+    { icon: Download, value: downloadCount, active: downloaded, color: 'emerald' }
+  ];
+  
+  const shareButtons = [
+    { icon: Share2, label: 'Share', onClick: () => navigator.share ? navigator.share({ title: wallpaper?.title, text: wallpaper?.description, url: window.location.href }).catch(() => setIsCopyModalOpen(true)) : setIsCopyModalOpen(true) }, 
+    { icon: LinkIcon, label: 'Copy Link', onClick: () => setIsCopyModalOpen(true) }
+  ];
 
   return (
     <>
@@ -131,14 +271,14 @@ export const WallpaperDetail = ({ wallpaper, relatedWallpapers, onClose, onUserC
                         <p className="font-semibold text-white">{wallpaper.uploadedBy}</p>
                         {wallpaper.verified && <VerifiedBadge size="sm" />}
                       </div>
-                      <p className="text-sm text-white/60">Just now</p>
+                      <p className="text-sm text-white/60">{timeAgo || 'Just now'}</p>
                     </div>
-                    <button onClick={e => { e.stopPropagation(); setFollowing(!following); vibrate(50); }} className={`px-4 py-1.5 rounded-full text-sm font-semibold transition-all active:scale-95 ${following ? 'bg-white/10 text-white border border-white/20 hover:bg-white/15' : 'bg-white text-black hover:bg-gray-200'}`}>{following ? 'Following' : 'Follow'}</button>
+                    <button onClick={e => { e.stopPropagation(); handleFollow(); }} className={`px-4 py-1.5 rounded-full text-sm font-semibold transition-all active:scale-95 ${following ? 'bg-white/10 text-white border border-white/20 hover:bg-white/15' : 'bg-white text-black hover:bg-gray-200'}`}>{following ? 'Following' : 'Follow'}</button>
                   </button>
                   <div><h3 className="font-semibold text-white mb-1">{wallpaper.title}</h3><p className="text-sm text-white/70 leading-relaxed">{wallpaper.description}</p></div>
                   <div className="flex items-center gap-6 text-sm text-white/50">{stats.map(({ icon: Icon, value, active, color }, i) => <span key={i} className={`flex items-center gap-1.5 transition-colors ${active ? `text-${color}-400` : ''}`}><Icon className={`w-4 h-4 transition-all ${active ? `fill-${color}-400 text-${color}-400` : ''}`} />{fmt(value)}</span>)}</div>
                   <div className="flex gap-3">
-                    <button onClick={() => { setSaved(!saved); vibrate(50); }} className={`flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-full font-semibold transition-all active:scale-95 ${saved ? 'bg-blue-500 text-white hover:bg-blue-600 success-bounce' : 'bg-white text-black hover:bg-gray-200'}`}><Bookmark className={`w-5 h-5 transition-all ${saved ? 'fill-white scale-in' : ''}`} />{saved ? 'Saved' : 'Save'}</button>
+                    <button onClick={handleSave} className={`flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-full font-semibold transition-all active:scale-95 ${saved ? 'bg-blue-500 text-white hover:bg-blue-600 success-bounce' : 'bg-white text-black hover:bg-gray-200'}`}><Bookmark className={`w-5 h-5 transition-all ${saved ? 'fill-white scale-in' : ''}`} />{saved ? 'Saved' : 'Save'}</button>
                     <button ref={likeButtonRef} onClick={handleLike} className={`flex items-center justify-center px-4 py-3 rounded-full border transition-all active:scale-95 ${liked ? 'bg-rose-500/20 border-rose-500/50 text-rose-400 hover:bg-rose-500/30 button-press' : 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10'}`}><Heart className={`w-5 h-5 transition-all ${liked ? 'fill-rose-400 text-rose-400 scale-in' : ''}`} /></button>
                     <button onClick={handleDownload} disabled={downloading} className={`flex items-center justify-center px-4 py-3 rounded-full border transition-all ${downloading ? 'cursor-not-allowed' : 'active:scale-95'} ${downloaded ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/30 success-bounce' : downloading ? 'bg-blue-500/20 border-blue-500/50 text-blue-400' : 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10'}`}>{downloading ? <Loader2 className="w-5 h-5 spinner" /> : downloaded ? <Check className="w-5 h-5 text-emerald-400 scale-in" /> : <Download className="w-5 h-5" />}</button>
                   </div>
