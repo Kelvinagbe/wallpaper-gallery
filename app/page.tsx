@@ -18,6 +18,8 @@ import type { Wallpaper, ActiveTab, Filter } from './types';
 export default function WallpaperGallery() {
   const { session } = useAuth();
   const [wallpapers, setWallpapers] = useState<Wallpaper[]>([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [total, setTotal] = useState(0);
   const [selectedWallpaper, setSelectedWallpaper] = useState<Wallpaper | null>(null);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
@@ -31,8 +33,10 @@ export default function WallpaperGallery() {
   useEffect(() => {
     (async () => {
       setIsLoading(true);
-      const data = await fetchWallpapers(50);
-      setWallpapers(data);
+      const data = await fetchWallpapers(0, 50);
+      setWallpapers(data.wallpapers);
+      setHasMore(data.hasMore);
+      setTotal(data.total);
       setIsLoading(false);
     })();
 
