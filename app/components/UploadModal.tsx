@@ -40,7 +40,6 @@ const Progress = ({ progress, status, error, onRetry, onCancel, logs }: any) => 
         </div>
       )}
       
-      {/* Console Log Panel */}
       <div className="flex-1 overflow-hidden flex flex-col min-h-0">
         <div className="flex items-center gap-2 mb-2 flex-shrink-0">
           <Terminal className="w-4 h-4 text-emerald-500"/>
@@ -90,13 +89,7 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: any) => {
   const supabase = createClient();
 
   const log = (message: string, type: 'log'|'error'|'success'|'warning'|'info' = 'log') => {
-    const icons = {
-      log: '📝',
-      error: '❌',
-      success: '✅',
-      warning: '⚠️',
-      info: 'ℹ️'
-    };
+    const icons = { log: '📝', error: '❌', success: '✅', warning: '⚠️', info: 'ℹ️' };
     const time = new Date().toLocaleTimeString();
     setLogs(prev => [...prev, { message, type, time, icon: icons[type] }]);
     console.log(`[${time}] ${icons[type]} ${message}`);
@@ -150,7 +143,7 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: any) => {
   }, []);
 
   const upload = async () => {
-    setLogs([]); // Clear previous logs
+    setLogs([]);
     log('Upload process started', 'info');
     
     if (!file || !title) {
@@ -219,50 +212,49 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: any) => {
       }
 
       setProgress(70); setStatus('Saving to database...');
-      log('Starting database insert...', 'info');
+      log('Starting database insert with 20s timeout...', 'info');
       
+      // SIMPLIFIED INSERT - Only essential fields
       const insertData = {
         user_id: user.id,
         title: title.trim(),
         description: desc.trim() || null,
         image_url: data.url,
         thumbnail_url: data.url,
-        category: 'Other',
-        tags: [],
-        is_public: true,
-        views: 0,
-        downloads: 0,
       };
       
-      log(`Insert data: ${JSON.stringify(insertData, null, 2)}`, 'info');
+      log(`Insert data: ${JSON.stringify(insertData)}`, 'info');
 
-      const { data: dbData, error: dbErr } = await supabase
-        .from('wallpapers')
-        .insert(insertData)
-        .select()
-        .single();
+      // Add timeout to database query
+      const dbPromise = supabase.from('wallpapers').insert(insertData).select().single();
+      
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => {
+          log('Database query timeout after 20 seconds!', 'error');
+          log('Possible causes:', 'warning');
+          log('1. RLS policy WITH CHECK is incorrect', 'warning');
+          log('2. Missing columns in table', 'warning');
+          log('3. Database connection issue', 'warning');
+          reject(new Error('Database timeout (20s). Check RLS policies or missing columns.'));
+        }, 20000)
+      );
+
+      const { data: dbData, error: dbErr } = await Promise.race([dbPromise, timeoutPromise]) as any;
 
       if (dbErr) {
         log(`Database error: ${dbErr.message}`, 'error');
-        log(`Error code: ${dbErr.code}`, 'error');
-        log(`Error details: ${dbErr.details || 'None'}`, 'error');
-        log(`Error hint: ${dbErr.hint || 'None'}`, 'error');
+        log(`Error code: ${dbErr.code || 'none'}`, 'error');
+        log(`Error details: ${dbErr.details || 'none'}`, 'error');
+        log(`Error hint: ${dbErr.hint || 'none'}`, 'error');
         
-        // Cleanup
-        log('Attempting to delete uploaded file...', 'warning');
-        await fetch('https://ovrica.name.ng/api/blob-upload', {
-          method:'DELETE', headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({url:data.url}), mode:'cors'
-        }).catch(() => log('Failed to delete uploaded file', 'warning'));
-
-        throw new Error(`DB Error: ${dbErr.message}\nCode: ${dbErr.code}\nDetails: ${dbErr.details || 'None'}`);
+        throw new Error(`DB Error: ${dbErr.message}`);
       }
 
       log('Database insert successful!', 'success');
-      log(`Inserted record ID: ${dbData?.id}`, 'success');
+      log(`Inserted record: ${JSON.stringify(dbData)}`, 'success');
 
       setProgress(100); setStatus('Complete!');
-      log('Upload process completed successfully! 🎉', 'success');
+      log('Upload completed successfully! 🎉', 'success');
       show('Upload successful!','success');
       
       setTimeout(() => { close(); onSuccess?.(); }, 1000);
@@ -271,16 +263,10 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: any) => {
       clearTimeout(tid);
       log(`Upload failed: ${e.message}`, 'error');
       
-      let msg = 'Upload failed';
-      if (e.name==='AbortError') {
-        msg = 'Upload timed out';
-        log('Upload timed out (2 minutes)', 'error');
-      } else if (e.message.includes('Failed to fetch')) {
-        msg = 'Cannot connect to server (CORS)';
-        log('Network error: Cannot connect to server', 'error');
-      } else {
-        msg = e.message || msg;
-      }
+      let msg = e.message || 'Upload failed';
+      if (e.name==='AbortError') msg = 'Upload timed out';
+      else if (e.message.includes('Failed to fetch')) msg = 'Cannot connect to server (CORS)';
+      
       setError(msg);
     }
   };
