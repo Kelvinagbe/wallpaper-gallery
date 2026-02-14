@@ -16,6 +16,17 @@ type WallpaperDetailProps = {
   isLoading?: boolean;
 };
 
+// ✅ Cache for wallpaper data
+const wallpaperDataCache = new Map<string, {
+  liked: boolean;
+  saved: boolean;
+  following: boolean;
+  likeCount: number;
+  timestamp: number;
+}>();
+
+const CACHE_DURATION = 30000; // 30 seconds
+
 const ImageWithLoader = ({ src, alt }: { src: string; alt: string }) => {
   const [loaded, setLoaded] = useState(false);
   return (
@@ -31,6 +42,15 @@ const SkeletonLoader = () => (
     <div className="relative rounded-2xl overflow-hidden bg-white/10 aspect-[9/16] flex items-center justify-center"><div className="w-10 h-10 border-4 border-white/20 border-t-white/40 rounded-full animate-spin" /></div>
     <div className="flex items-center gap-3 p-2"><div className="w-10 h-10 rounded-full bg-white/10" /><div className="flex-1 space-y-2"><div className="h-4 w-32 bg-white/10 rounded" /><div className="h-3 w-20 bg-white/10 rounded" /></div></div>
     <div className="space-y-2">{[48, 'full', '75%'].map((w, i) => <div key={i} className={`h-${i ? 4 : 5} bg-white/10 rounded`} style={{ width: typeof w === 'number' ? `${w * 4}px` : w }} />)}</div>
+    <div className="flex gap-3">
+      <div className="flex-1 h-12 bg-white/10 rounded-full" />
+      <div className="h-12 w-12 bg-white/10 rounded-full" />
+      <div className="h-12 w-12 bg-white/10 rounded-full" />
+    </div>
+    <div className="grid grid-cols-2 gap-3">
+      <div className="h-14 bg-white/10 rounded-xl" />
+      <div className="h-14 bg-white/10 rounded-xl" />
+    </div>
   </div>
 );
 
@@ -83,6 +103,7 @@ export const WallpaperDetail = ({ wallpaper, relatedWallpapers, onClose, onUserC
   const [hearts, setHearts] = useState<Array<{ id: number; x: number; y: number; angle: number; distance: number }>>([]);
   const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
   const [timeAgo, setTimeAgo] = useState('');
+  const [dataLoading, setDataLoading] = useState(true);
   const likeButtonRef = useRef<HTMLButtonElement>(null);
 
   // Calculate time ago
@@ -103,10 +124,29 @@ export const WallpaperDetail = ({ wallpaper, relatedWallpapers, onClose, onUserC
     return () => clearInterval(interval);
   }, [wallpaper?.createdAt]);
 
-  // ✅ OPTIMIZED: Single query to get all user data at once
+  // ✅ OPTIMIZED: Check cache first, then fetch data
   useEffect(() => {
-    if (!wallpaper || !session) return;
+    if (!wallpaper || !session) {
+      setDataLoading(false);
+      return;
+    }
+
+    const cacheKey = `${wallpaper.id}-${session.user.id}`;
+    const cached = wallpaperDataCache.get(cacheKey);
     
+    // Check if cache is still valid
+    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+      // Load from cache instantly
+      setLiked(cached.liked);
+      setSaved(cached.saved);
+      setFollowing(cached.following);
+      setLikeCount(cached.likeCount);
+      setDataLoading(false);
+    } else {
+      // Show skeleton while fetching
+      setDataLoading(true);
+    }
+
     (async () => {
       // Increment view immediately (fire and forget)
       incrementViews(wallpaper.id);
@@ -120,10 +160,26 @@ export const WallpaperDetail = ({ wallpaper, relatedWallpapers, onClose, onUserC
         supabase.from('likes').select('id', { count: 'exact' }).eq('wallpaper_id', wallpaper.id),
       ]);
 
-      setLiked(!!likeResult.data);
-      setSaved(!!saveResult.data);
-      if (followResult) setFollowing(!!followResult.data);
-      setLikeCount(likeCountResult.count || 0);
+      const newLiked = !!likeResult.data;
+      const newSaved = !!saveResult.data;
+      const newFollowing = followResult ? !!followResult.data : false;
+      const newLikeCount = likeCountResult.count || 0;
+
+      // Update state
+      setLiked(newLiked);
+      setSaved(newSaved);
+      setFollowing(newFollowing);
+      setLikeCount(newLikeCount);
+      setDataLoading(false);
+
+      // Cache the data
+      wallpaperDataCache.set(cacheKey, {
+        liked: newLiked,
+        saved: newSaved,
+        following: newFollowing,
+        likeCount: newLikeCount,
+        timestamp: Date.now(),
+      });
     })();
   }, [wallpaper?.id, session]);
 
@@ -138,28 +194,49 @@ export const WallpaperDetail = ({ wallpaper, relatedWallpapers, onClose, onUserC
         async () => {
           // Fetch updated like count
           const { count } = await supabase.from('likes').select('id', { count: 'exact' }).eq('wallpaper_id', wallpaper.id);
-          setLikeCount(count || 0);
+          const newCount = count || 0;
+          setLikeCount(newCount);
+          
+          // Update cache
+          if (session) {
+            const cacheKey = `${wallpaper.id}-${session.user.id}`;
+            const cached = wallpaperDataCache.get(cacheKey);
+            if (cached) {
+              wallpaperDataCache.set(cacheKey, { ...cached, likeCount: newCount, timestamp: Date.now() });
+            }
+          }
         }
       )
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [wallpaper?.id]);
+  }, [wallpaper?.id, session]);
 
   const handleClose = () => { setIsClosing(true); setTimeout(onClose, 300); };
   const vibrate = (d: number) => navigator.vibrate?.(d);
   const fmt = (n: number) => n > 1000 ? `${(n / 1000).toFixed(1)}k` : n;
 
-  // ✅ OPTIMISTIC UPDATE: Update UI immediately, sync to DB in background
+  // ✅ OPTIMISTIC UPDATE: Update cache immediately
   const handleLike = async () => {
     if (!session) { alert('Please login to like wallpapers'); return; }
     if (!wallpaper) return;
 
-    // Optimistic update - instant UI response
     const newLikedState = !liked;
     setLiked(newLikedState);
     setLikeCount(c => newLikedState ? c + 1 : c - 1);
     vibrate(50);
+
+    // Update cache
+    const cacheKey = `${wallpaper.id}-${session.user.id}`;
+    const cached = wallpaperDataCache.get(cacheKey);
+    if (cached) {
+      wallpaperDataCache.set(cacheKey, {
+        ...cached,
+        liked: newLikedState,
+        likeCount: newLikedState ? cached.likeCount + 1 : cached.likeCount - 1,
+        timestamp: Date.now(),
+      });
+    }
 
     if (!liked && likeButtonRef.current) {
       const rect = likeButtonRef.current.getBoundingClientRect();
@@ -182,10 +259,18 @@ export const WallpaperDetail = ({ wallpaper, relatedWallpapers, onClose, onUserC
     if (!session) { alert('Please login to save wallpapers'); return; }
     if (!wallpaper) return;
 
-    // Optimistic update
     const newSavedState = !saved;
     setSaved(newSavedState);
     vibrate(50);
+
+    // Update cache
+    if (session) {
+      const cacheKey = `${wallpaper.id}-${session.user.id}`;
+      const cached = wallpaperDataCache.get(cacheKey);
+      if (cached) {
+        wallpaperDataCache.set(cacheKey, { ...cached, saved: newSavedState, timestamp: Date.now() });
+      }
+    }
 
     // Background sync
     if (newSavedState) {
@@ -199,10 +284,18 @@ export const WallpaperDetail = ({ wallpaper, relatedWallpapers, onClose, onUserC
     if (!session) { alert('Please login to follow users'); return; }
     if (!wallpaper?.userId) return;
 
-    // Optimistic update
     const newFollowingState = !following;
     setFollowing(newFollowingState);
     vibrate(50);
+
+    // Update cache
+    if (session) {
+      const cacheKey = `${wallpaper.id}-${session.user.id}`;
+      const cached = wallpaperDataCache.get(cacheKey);
+      if (cached) {
+        wallpaperDataCache.set(cacheKey, { ...cached, following: newFollowingState, timestamp: Date.now() });
+      }
+    }
 
     // Background sync
     if (newFollowingState) {
@@ -214,20 +307,17 @@ export const WallpaperDetail = ({ wallpaper, relatedWallpapers, onClose, onUserC
 
   const handleDownload = async () => {
     if (!downloaded && !downloading && wallpaper) {
-      // Optimistic update
       setDownloading(true);
       setDownloadCount(c => c + 1);
       vibrate(50);
-      
-      // Download image
+
       const link = document.createElement('a');
       link.href = wallpaper.url;
       link.download = wallpaper.title || 'wallpaper';
       link.click();
-      
-      // Background sync
+
       incrementDownloads(wallpaper.id);
-      
+
       setTimeout(() => {
         setDownloading(false);
         setDownloaded(true);
@@ -247,28 +337,40 @@ export const WallpaperDetail = ({ wallpaper, relatedWallpapers, onClose, onUserC
         <button onClick={handleClose} className="absolute top-4 left-4 z-10 p-3 bg-white rounded-xl hover:bg-gray-100 active:scale-95 transition-all shadow-lg"><ChevronLeft className="w-6 h-6 text-black" /></button>
         <div className="flex-1 overflow-y-auto no-scrollbar">
           <div className="max-w-2xl mx-auto p-4">
-            {isLoading || !wallpaper ? <SkeletonLoader /> : (
+            {(isLoading || dataLoading) && !wallpaper ? <SkeletonLoader /> : (
               <>
-                <div className="relative rounded-2xl overflow-hidden"><ImageWithLoader src={wallpaper.url} alt={wallpaper.title} /></div>
+                <div className="relative rounded-2xl overflow-hidden"><ImageWithLoader src={wallpaper!.url} alt={wallpaper!.title} /></div>
                 <div className="space-y-4 mt-4">
                   <button onClick={onUserClick} className="flex items-center gap-3 w-full hover:bg-white/5 p-2 rounded-xl transition-colors active:scale-[0.98]">
-                    <img src={wallpaper.userAvatar} alt={wallpaper.uploadedBy} className="w-10 h-10 rounded-full border border-white/20" />
+                    <img src={wallpaper!.userAvatar} alt={wallpaper!.uploadedBy} className="w-10 h-10 rounded-full border border-white/20" />
                     <div className="flex-1 text-left">
                       <div className="flex items-center gap-1.5">
-                        <p className="font-semibold text-white">{wallpaper.uploadedBy}</p>
-                        {wallpaper.verified && <VerifiedBadge size="sm" />}
+                        <p className="font-semibold text-white">{wallpaper!.uploadedBy}</p>
+                        {wallpaper!.verified && <VerifiedBadge size="sm" />}
                       </div>
                       <p className="text-sm text-white/60">{timeAgo || 'Just now'}</p>
                     </div>
-                    <button onClick={e => { e.stopPropagation(); handleFollow(); }} className={`px-4 py-1.5 rounded-full text-sm font-semibold transition-all active:scale-95 ${following ? 'bg-white/10 text-white border border-white/20 hover:bg-white/15' : 'bg-white text-black hover:bg-gray-200'}`}>{following ? 'Following' : 'Follow'}</button>
+                    {dataLoading ? (
+                      <div className="w-20 h-8 bg-white/10 rounded-full animate-pulse" />
+                    ) : (
+                      <button onClick={e => { e.stopPropagation(); handleFollow(); }} className={`px-4 py-1.5 rounded-full text-sm font-semibold transition-all active:scale-95 ${following ? 'bg-white/10 text-white border border-white/20 hover:bg-white/15' : 'bg-white text-black hover:bg-gray-200'}`}>{following ? 'Following' : 'Follow'}</button>
+                    )}
                   </button>
-                  <div><h3 className="font-semibold text-white mb-1">{wallpaper.title}</h3><p className="text-sm text-white/70 leading-relaxed">{wallpaper.description}</p></div>
-                  <div className="flex items-center gap-6 text-sm text-white/50">{stats.map(({ icon: Icon, value, active, color }, i) => <span key={i} className={`flex items-center gap-1.5 transition-colors ${active ? `text-${color}-400` : ''}`}><Icon className={`w-4 h-4 transition-all ${active ? `fill-${color}-400 text-${color}-400` : ''}`} />{fmt(value)}</span>)}</div>
-                  <div className="flex gap-3">
-                    <button onClick={handleSave} className={`flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-full font-semibold transition-all active:scale-95 ${saved ? 'bg-blue-500 text-white hover:bg-blue-600 success-bounce' : 'bg-white text-black hover:bg-gray-200'}`}><Bookmark className={`w-5 h-5 transition-all ${saved ? 'fill-white scale-in' : ''}`} />{saved ? 'Saved' : 'Save'}</button>
+                  <div><h3 className="font-semibold text-white mb-1">{wallpaper!.title}</h3><p className="text-sm text-white/70 leading-relaxed">{wallpaper!.description}</p></div>
+                  {dataLoading ? (
+                    <div className="flex items-center gap-6"><div className="h-4 w-16 bg-white/10 rounded animate-pulse" /><div className="h-4 w-16 bg-white/10 rounded animate-pulse" /><div className="h-4 w-16 bg-white/10 rounded animate-pulse" /></div>
+                  ) : (
+                    <div className="flex items-center gap-6 text-sm text-white/50">{stats.map(({ icon: Icon, value, active, color }, i) => <span key={i} className={`flex items-center gap-1.5 transition-colors ${active ? `text-${color}-400` : ''}`}><Icon className={`w-4 h-4 transition-all ${active ? `fill-${color}-400 text-${color}-400` : ''}`} />{fmt(value)}</span>)}</div>
+                  )}
+                  {dataLoading ? (
+                    <div className="flex gap-3"><div className="flex-1 h-12 bg-white/10 rounded-full animate-pulse" /><div className="h-12 w-12 bg-white/10 rounded-full animate-pulse" /><div className="h-12 w-12 bg-white/10 rounded-full animate-pulse" /></div>
+                  ) : (
+                    <div className="flex gap-3">
+                      <button onClick={handleSave} className={`flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-full font-semibold transition-all active:scale-95 ${saved ? 'bg-blue-500 text-white hover:bg-blue-600 success-bounce' : 'bg-white text-black hover:bg-gray-200'}`}><Bookmark className={`w-5 h-5 transition-all ${saved ? 'fill-white scale-in' : ''}`} />{saved ? 'Saved' : 'Save'}</button>
                     <button ref={likeButtonRef} onClick={handleLike} className={`flex items-center justify-center px-4 py-3 rounded-full border transition-all active:scale-95 ${liked ? 'bg-rose-500/20 border-rose-500/50 text-rose-400 hover:bg-rose-500/30 button-press' : 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10'}`}><Heart className={`w-5 h-5 transition-all ${liked ? 'fill-rose-400 text-rose-400 scale-in' : ''}`} /></button>
-                    <button onClick={handleDownload} disabled={downloading} className={`flex items-center justify-center px-4 py-3 rounded-full border transition-all ${downloading ? 'cursor-not-allowed' : 'active:scale-95'} ${downloaded ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/30 success-bounce' : downloading ? 'bg-blue-500/20 border-blue-500/50 text-blue-400' : 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10'}`}>{downloading ? <Loader2 className="w-5 h-5 spinner" /> : downloaded ? <Check className="w-5 h-5 text-emerald-400 scale-in" /> : <Download className="w-5 h-5" />}</button>
-                  </div>
+                      <button onClick={handleDownload} disabled={downloading} className={`flex items-center justify-center px-4 py-3 rounded-full border transition-all ${downloading ? 'cursor-not-allowed' : 'active:scale-95'} ${downloaded ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/30 success-bounce' : downloading ? 'bg-blue-500/20 border-blue-500/50 text-blue-400' : 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10'}`}>{downloading ? <Loader2 className="w-5 h-5 spinner" /> : downloaded ? <Check className="w-5 h-5 text-emerald-400 scale-in" /> : <Download className="w-5 h-5" />}</button>
+                    </div>
+                  )}
                   <div className="grid grid-cols-2 gap-3">{shareButtons.map(({ icon: Icon, label, onClick }) => <button key={label} onClick={onClick} className="flex items-center justify-center gap-2 py-4 bg-white/5 rounded-xl hover:bg-white/10 active:scale-95 transition-all"><Icon className="w-5 h-5" /><span className="font-medium">{label}</span></button>)}</div>
                   {relatedWallpapers.length > 0 && (
                     <div className="bg-white/5 rounded-2xl p-4">
