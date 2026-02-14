@@ -1,6 +1,6 @@
 import { Search, X, ChevronLeft, Clock } from 'lucide-react';
 import { WallpaperCard } from './WallpaperCard';
-import type { Wallpaper, UserProfile } from '../types';
+import type { Wallpaper } from '../types';
 
 type SearchModalProps = {
   isOpen: boolean;
@@ -11,7 +11,6 @@ type SearchModalProps = {
   onClearRecentSearch: (searchTerm: string) => void;
   onClearAllRecentSearches: () => void;
   filteredWallpapers: Wallpaper[];
-  userProfiles: UserProfile[];
   onWallpaperClick: (wallpaper: Wallpaper) => void;
   onUserClick: (userId: string) => void;
 };
@@ -25,7 +24,6 @@ export const SearchModal = ({
   onClearRecentSearch,
   onClearAllRecentSearches,
   filteredWallpapers,
-  userProfiles,
   onWallpaperClick,
   onUserClick
 }: SearchModalProps) => {
@@ -117,16 +115,26 @@ export const SearchModal = ({
           </div>
         ) : (
           <div className="p-4">
-            <h3 className="text-xs font-semibold text-white/50 mb-3 px-1">
-              {filteredWallpapers.length} RESULTS
-            </h3>
-            <div className="masonry">
-              {filteredWallpapers.map((wp) => (
-                <div key={wp.id}>
-                  <WallpaperCard wp={wp} onClick={() => onWallpaperClick(wp)} />
+            {filteredWallpapers.length > 0 ? (
+              <>
+                <h3 className="text-xs font-semibold text-white/50 mb-3 px-1">
+                  {filteredWallpapers.length} RESULT{filteredWallpapers.length !== 1 ? 'S' : ''}
+                </h3>
+                <div className="masonry">
+                  {filteredWallpapers.map((wp) => (
+                    <div key={wp.id}>
+                      <WallpaperCard wp={wp} onClick={() => onWallpaperClick(wp)} />
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </>
+            ) : (
+              <div className="text-center py-12">
+                <Search className="w-12 h-12 text-white/20 mx-auto mb-3" />
+                <p className="text-white/60">No results found for "{searchQuery}"</p>
+                <p className="text-sm text-white/40 mt-1">Try different keywords</p>
+              </div>
+            )}
           </div>
         )}
       </div>
