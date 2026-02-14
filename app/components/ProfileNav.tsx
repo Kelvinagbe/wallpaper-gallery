@@ -1,11 +1,12 @@
 import { ChevronLeft, Settings, Share2, Heart, Bookmark, Clock, LogOut, Shield } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import { useAuth } from '@/components/AuthProvider';
 import { SettingsModal } from './profile/SettingsModal';
 import { ContentListModal } from './profile/ContentListModal';
 import { PrivacyModal } from './profile/PrivacyModal';
 import { ViewAllPostsModal } from './profile/ViewAllPostsModal';
 import { VerifiedBadge } from './VerifiedBadge';
-import { getProfile, getLiked, getSaved, getRecent, getCurrentUser, signOut, type UserProfile } from '@/lib/stores/userStore';
+import { getLiked, getSaved, getRecent, signOut, type UserProfile } from '@/lib/stores/userStore';
 import { getUserCounts } from '@/lib/stores/wallpaperStore';
 import type { Wallpaper } from '../types';
 
@@ -15,50 +16,89 @@ type ProfileNavProps = {
   onWallpaperClick: (wallpaper: Wallpaper) => void;
 };
 
-// Skeleton Loader Component
 const Skeleton = ({ className = '' }: { className?: string }) => (
   <div className={`animate-pulse bg-white/10 rounded ${className}`}></div>
 );
 
+// Cache for counts and stats
+const cache = {
+  counts: null as { liked: number; saved: number; recent: number } | null,
+  stats: null as { followers: number; following: number; posts: number } | null,
+  timestamp: 0,
+};
+const CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
+
 export const ProfileNav = ({ onClose, wallpapers, onWallpaperClick }: ProfileNavProps) => {
+  const { profile, isLoading: authLoading, refreshProfile } = useAuth(); // Use cached profile
   const [modals, setModals] = useState({ logout: false, settings: false, settingsClosing: false, privacy: false, privacyClosing: false, allPosts: false, content: null as 'liked' | 'saved' | 'recent' | null });
-  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isClosing, setIsClosing] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [counts, setCounts] = useState({ liked: 0, saved: 0, recent: 0 });
-  const [stats, setStats] = useState({ followers: 0, following: 0, posts: 0 });
+  const [counts, setCounts] = useState(cache.counts || { liked: 0, saved: 0, recent: 0 });
+  const [stats, setStats] = useState(cache.stats || { followers: 0, following: 0, posts: 0 });
 
   useEffect(() => {
+    if (authLoading) return;
+    
     (async () => {
+      if (!profile) {
+        setLoading(false);
+        return;
+      }
+
+      const now = Date.now();
+      const isCacheValid = cache.timestamp && (now - cache.timestamp) < CACHE_DURATION;
+
+      if (isCacheValid && cache.counts && cache.stats) {
+        // Use cached data
+        setCounts(cache.counts);
+        setStats(cache.stats);
+        setLoading(false);
+        return;
+      }
+
       try {
         setLoading(true);
-        const user = await getCurrentUser();
-        if (!user) return setLoading(false);
 
-        const userProfile = await getProfile();
-        if (userProfile) {
-          setProfile(userProfile);
-          setStats(await getUserCounts(userProfile.id));
-        }
+        // Fetch fresh data
+        const [userStats, liked, saved, recent] = await Promise.all([
+          getUserCounts(profile.id),
+          getLiked(),
+          getSaved(),
+          getRecent(),
+        ]);
 
-        const [liked, saved, recent] = await Promise.all([getLiked(), getSaved(), getRecent()]);
-        setCounts({ liked: liked.length, saved: saved.length, recent: recent.length });
+        const newCounts = { liked: liked.length, saved: saved.length, recent: recent.length };
+        const newStats = userStats;
+
+        // Update cache
+        cache.counts = newCounts;
+        cache.stats = newStats;
+        cache.timestamp = now;
+
+        setCounts(newCounts);
+        setStats(newStats);
       } catch (error) {
         console.error('Error loading user data:', error);
       } finally {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [profile, authLoading]);
 
   const refreshCounts = async () => {
+    if (!profile) return;
+    
     const [liked, saved, recent] = await Promise.all([getLiked(), getSaved(), getRecent()]);
-    setCounts({ liked: liked.length, saved: saved.length, recent: recent.length });
+    const newCounts = { liked: liked.length, saved: saved.length, recent: recent.length };
+    
+    cache.counts = newCounts;
+    cache.timestamp = Date.now();
+    setCounts(newCounts);
   };
 
   const handleClose = () => { setIsClosing(true); setTimeout(onClose, 300); };
   const closeModal = (key: string) => { setModals(m => ({ ...m, [`${key}Closing`]: true })); setTimeout(() => setModals(m => ({ ...m, [key]: false, [`${key}Closing`]: false })), 300); };
-  const handleLogout = async () => { if (await signOut()) { setModals(m => ({ ...m, logout: false })); window.location.href = '/'; } else alert('Failed to log out. Please try again.'); };
+  const handleLogout = async () => { if (await signOut()) { cache.counts = null; cache.stats = null; cache.timestamp = 0; setModals(m => ({ ...m, logout: false })); window.location.href = '/'; } else alert('Failed to log out. Please try again.'); };
   const formatCount = (n: number) => n >= 1000000 ? `${(n / 1000000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n;
 
   const menuSections = [
@@ -86,8 +126,7 @@ export const ProfileNav = ({ onClose, wallpapers, onWallpaperClick }: ProfileNav
     { label: 'Following', value: formatCount(stats.following) },
   ];
 
-  // Not logged in state
-  if (!loading && !profile) return (
+  if (!authLoading && !profile) return (
     <div className="fixed inset-0 bg-black z-50 flex flex-col items-center justify-center p-4">
       <h2 className="text-2xl font-bold mb-4">Please Log In</h2>
       <p className="text-white/60 mb-6">You need to be logged in to view your profile</p>
@@ -109,29 +148,24 @@ export const ProfileNav = ({ onClose, wallpapers, onWallpaperClick }: ProfileNav
         </div>
 
         <div className="max-w-2xl mx-auto w-full p-4">
-          {loading ? (
-            // SKELETON LOADER
+          {(authLoading || loading) ? (
             <>
               <div className="text-center mb-8 pt-4">
                 <div className="relative inline-block mb-4">
                   <Skeleton className="w-28 h-28 rounded-full" />
                   <div className="absolute bottom-0 right-0 w-9 h-9 bg-white/10 rounded-full"></div>
                 </div>
-
                 <Skeleton className="h-8 w-40 mx-auto mb-2" />
                 <Skeleton className="h-4 w-24 mx-auto mb-2" />
                 <Skeleton className="h-3 w-48 mx-auto mb-6" />
-
                 <div className="flex items-center justify-center gap-8 mb-6">
                   {[1,2,3].map(i=><div key={i} className="text-center"><Skeleton className="h-7 w-12 mx-auto mb-1"/><Skeleton className="h-3 w-16"/></div>)}
                 </div>
-
                 <div className="flex gap-3 justify-center">
                   <Skeleton className="h-11 w-[200px] rounded-full" />
                   <Skeleton className="h-11 w-24 rounded-full" />
                 </div>
               </div>
-
               <div className="mb-8">
                 <div className="flex items-center justify-between mb-4">
                   <Skeleton className="h-5 w-32" />
@@ -141,7 +175,6 @@ export const ProfileNav = ({ onClose, wallpapers, onWallpaperClick }: ProfileNav
                   {[1,2,3,4,5,6].map(i=><Skeleton key={i} className="aspect-[3/4] rounded-lg"/>)}
                 </div>
               </div>
-
               <div className="space-y-6">
                 {[1,2,3].map(s=>(
                   <div key={s}>
@@ -154,32 +187,27 @@ export const ProfileNav = ({ onClose, wallpapers, onWallpaperClick }: ProfileNav
               </div>
             </>
           ) : profile ? (
-            // LOADED CONTENT
             <>
+              {/* EXACT SAME CONTENT AS BEFORE - Just using cached profile */}
               <div className="text-center mb-8 pt-4">
                 <div className="relative inline-block mb-4">
                   <img src={profile.avatar} alt={profile.name} className="w-28 h-28 rounded-full border-4 border-white/20 object-cover"/>
                   <button onClick={()=>setModals(m=>({...m,settings:true}))} className="absolute bottom-0 right-0 p-2 bg-white text-black rounded-full shadow-lg hover:bg-gray-200 active:scale-95 transition-all"><Settings className="w-4 h-4"/></button>
                 </div>
-
                 <div className="flex items-center justify-center gap-2 mb-1">
                   <h2 className="text-2xl font-bold">{profile.name}</h2>
                   {profile.verified && <VerifiedBadge size="lg" />}
                 </div>
-
                 <p className="text-white/60 mb-2">{profile.username || '@user'}</p>
                 <p className="text-sm text-white/70 mb-6 max-w-xs mx-auto">{profile.bio}</p>
-
                 <div className="flex items-center justify-center gap-8 mb-6">
                   {displayStats.map(({label,value})=><div key={label} className="text-center"><p className="text-2xl font-bold">{value}</p><p className="text-sm text-white/60">{label}</p></div>)}
                 </div>
-
                 <div className="flex gap-3 justify-center">
                   <button onClick={()=>setModals(m=>({...m,settings:true}))} className="flex-1 max-w-[200px] px-6 py-2.5 bg-white text-black rounded-full font-semibold hover:bg-gray-200 active:scale-95 transition-all">Edit Profile</button>
                   <button onClick={menuSections[2].items[0].onClick} className="px-6 py-2.5 bg-white/10 hover:bg-white/20 rounded-full font-semibold active:scale-95 transition-all border border-white/20">Share</button>
                 </div>
               </div>
-
               {myWallpapers.length>0&&(
                 <div className="mb-8">
                   <div className="flex items-center justify-between mb-4">
@@ -191,7 +219,6 @@ export const ProfileNav = ({ onClose, wallpapers, onWallpaperClick }: ProfileNav
                   </div>
                 </div>
               )}
-
               <div className="space-y-6">
                 {menuSections.map(section=>(
                   <div key={section.title}>
@@ -209,12 +236,10 @@ export const ProfileNav = ({ onClose, wallpapers, onWallpaperClick }: ProfileNav
                   </div>
                 ))}
               </div>
-
               <button onClick={()=>setModals(m=>({...m,logout:true}))} className="w-full flex items-center justify-center gap-3 p-4 mt-8 mb-4 bg-red-500/10 hover:bg-red-500/20 rounded-xl active:scale-[0.98] transition-all border border-red-500/20">
                 <LogOut className="w-5 h-5 text-red-400"/>
                 <span className="font-semibold text-red-400">Log Out</span>
               </button>
-
               <div className="text-center text-xs text-white/40 py-6">
                 <p>Gallery App v1.0.0</p>
                 <p className="mt-1">Made with ❤️ for wallpaper lovers</p>
@@ -224,23 +249,8 @@ export const ProfileNav = ({ onClose, wallpapers, onWallpaperClick }: ProfileNav
         </div>
       </div>
 
-      {modals.logout&&(
-        <div className={`fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4 ${isClosing?'fo':'fi'}`} onClick={()=>setModals(m=>({...m,logout:false}))}>
-          <div className="bg-zinc-900 rounded-2xl p-6 max-w-sm w-full border border-white/10" onClick={e=>e.stopPropagation()}>
-            <div className="text-center mb-6">
-              <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4"><LogOut className="w-8 h-8 text-red-400"/></div>
-              <h3 className="text-xl font-bold mb-2">Log Out?</h3>
-              <p className="text-white/60 text-sm">Are you sure you want to log out of your account?</p>
-            </div>
-            <div className="flex gap-3">
-              <button onClick={()=>setModals(m=>({...m,logout:false}))} className="flex-1 px-4 py-3 bg-white/5 hover:bg-white/10 rounded-xl font-semibold active:scale-95 transition-all">Cancel</button>
-              <button onClick={handleLogout} className="flex-1 px-4 py-3 bg-red-500 hover:bg-red-600 rounded-xl font-semibold active:scale-95 transition-all">Log Out</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {(modals.settings||modals.settingsClosing)&&<div className={modals.settingsClosing?'mc':''}><SettingsModal onClose={()=>closeModal('settings')} onProfileUpdate={(p)=>{setProfile(p);refreshCounts();}}/></div>}
+      {modals.logout&&(<div className={`fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4 ${isClosing?'fo':'fi'}`} onClick={()=>setModals(m=>({...m,logout:false}))}><div className="bg-zinc-900 rounded-2xl p-6 max-w-sm w-full border border-white/10" onClick={e=>e.stopPropagation()}><div className="text-center mb-6"><div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4"><LogOut className="w-8 h-8 text-red-400"/></div><h3 className="text-xl font-bold mb-2">Log Out?</h3><p className="text-white/60 text-sm">Are you sure you want to log out of your account?</p></div><div className="flex gap-3"><button onClick={()=>setModals(m=>({...m,logout:false}))} className="flex-1 px-4 py-3 bg-white/5 hover:bg-white/10 rounded-xl font-semibold active:scale-95 transition-all">Cancel</button><button onClick={handleLogout} className="flex-1 px-4 py-3 bg-red-500 hover:bg-red-600 rounded-xl font-semibold active:scale-95 transition-all">Log Out</button></div></div></div>)}
+      {(modals.settings||modals.settingsClosing)&&<div className={modals.settingsClosing?'mc':''}><SettingsModal onClose={()=>closeModal('settings')} onProfileUpdate={async(p)=>{setProfile(p);await refreshProfile();refreshCounts();}}/></div>}
       {(modals.privacy||modals.privacyClosing)&&<div className={modals.privacyClosing?'mc':''}><PrivacyModal onClose={()=>closeModal('privacy')}/></div>}
       {modals.allPosts&&profile&&<ViewAllPostsModal onClose={()=>setModals(m=>({...m,allPosts:false}))} wallpapers={wallpapers.filter(wp=>wp.userId===profile.id)} onWallpaperClick={wp=>{setModals(m=>({...m,allPosts:false}));onWallpaperClick(wp);}} userName={profile.name}/>}
       {modals.content&&<ContentListModal type={modals.content} onClose={()=>{setModals(m=>({...m,content:null}));refreshCounts();}} onWallpaperClick={wp=>{setModals(m=>({...m,content:null}));onWallpaperClick(wp);}}/>}
