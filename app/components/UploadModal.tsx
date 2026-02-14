@@ -114,7 +114,10 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: UploadModalProps) =>
 
       const { data: uploadData, error: uploadError } = await supabase.storage.from('wallpapers').upload(filePath, selectedFile, { cacheControl: '3600', upsert: false });
 
-      if (uploadError) throw new Error(`Storage Error: ${uploadError.message}\n\nStatus: ${uploadError.cause?.status || 'Unknown'}\nPath: ${filePath}`);
+      if (uploadError) {
+        const statusCode = (uploadError as any).cause?.status || (uploadError as any).statusCode || 'Unknown';
+        throw new Error(`Storage Error: ${uploadError.message}\n\nStatus: ${statusCode}\nPath: ${filePath}`);
+      }
       if (!uploadData) throw new Error('Upload completed but no data returned from storage');
 
       setUploadProgress(50); setUploadStatus('Processing image...');
