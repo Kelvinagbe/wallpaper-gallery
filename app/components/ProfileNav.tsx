@@ -1,6 +1,6 @@
 import { ChevronLeft, Settings, Share2, Heart, Bookmark, Clock, LogOut, Shield } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { useAuth } from '@/components/AuthProvider';
+import { useAuth } from '@/app/components/AuthProvider';
 import { SettingsModal } from './profile/SettingsModal';
 import { ContentListModal } from './profile/ContentListModal';
 import { PrivacyModal } from './profile/PrivacyModal';
