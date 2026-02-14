@@ -88,11 +88,10 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: UploadModalProps) =>
   const checkCurrentUser = async () => {
     console.log('🔐 Checking auth...');
     console.log('Session from context:', session);
-    
-    // Double check with Supabase directly
+
     const { data: { session: directSession } } = await supabase.auth.getSession();
     console.log('Session from Supabase:', directSession);
-    
+
     if (session?.user) {
       console.log('✅ User from context:', {
         id: session.user.id,
@@ -119,38 +118,60 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: UploadModalProps) =>
   };
 
   const resetModal = () => {
-    setUploadTitle(''); setUploadDescription(''); setSelectedFile(null); setPreviewUrl('');
-    setUploadProgress(0); setUploadStatus(''); setUploadError(null); setIsUploading(false);
+    setUploadTitle(''); 
+    setUploadDescription(''); 
+    setSelectedFile(null); 
+    setPreviewUrl('');
+    setUploadProgress(0); 
+    setUploadStatus(''); 
+    setUploadError(null); 
+    setIsUploading(false);
   };
 
   const handleClose = () => {
     if (isUploading && !uploadError) return;
     setIsClosing(true);
-    setTimeout(() => { onClose(); setIsClosing(false); resetModal(); }, 300);
+    setTimeout(() => { 
+      onClose(); 
+      setIsClosing(false); 
+      resetModal(); 
+    }, 300);
   };
 
   const handleFileSelect = useCallback((file: File) => {
-    if (!file?.type.startsWith('image/')) return showToast('Please select a valid image file', 'error');
-    if (file.size > 10 * 1024 * 1024) return showToast('File size must be less than 10MB', 'error');
+    if (!file?.type.startsWith('image/')) {
+      return showToast('Please select a valid image file', 'error');
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      return showToast('File size must be less than 10MB', 'error');
+    }
     setSelectedFile(file);
     setPreviewUrl(URL.createObjectURL(file));
   }, []);
 
   const performUpload = async () => {
-    if (!selectedFile || !uploadTitle) return showToast('Please fill in all required fields', 'error');
-    
-    // Use currentUser from state
+    if (!selectedFile || !uploadTitle) {
+      return showToast('Please fill in all required fields', 'error');
+    }
+
     const user = currentUser || session?.user;
-    
+
     if (!user?.id) {
       console.error('❌ No user found:', { currentUser, session });
       return showToast('You must be logged in to upload wallpapers. Please refresh and try again.', 'error');
     }
 
+    const uploadApiUrl = process.env.NEXT_PUBLIC_UPLOAD_API_URL;
+    
+    if (!uploadApiUrl) {
+      console.error('❌ NEXT_PUBLIC_UPLOAD_API_URL not configured');
+      return showToast('Upload service not configured. Please contact support.', 'error');
+    }
+
     try {
-      setIsUploading(true); 
-      setUploadError(null); 
-      setUploadProgress(5); 
+      setIsUploading(true);
+      setUploadError(null);
+      setUploadProgress(5);
       setUploadStatus('Preparing upload...');
 
       console.log('🔐 Uploading as:', {
@@ -159,78 +180,62 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: UploadModalProps) =>
         role: user.role
       });
 
-      const fileExt = selectedFile.name.split('.').pop();
-      const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
-      const filePath = `${user.id}/${fileName}`;
-
-      console.log('📁 Upload path:', filePath);
       console.log('📦 File:', {
         name: selectedFile.name,
         size: `${(selectedFile.size / 1024 / 1024).toFixed(2)} MB`,
         type: selectedFile.type
       });
 
-      setUploadProgress(15); 
-      setUploadStatus('Uploading image...');
-
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('wallpapers')
-        .upload(filePath, selectedFile, { 
-          cacheControl: '3600', 
-          upsert: false 
-        });
-
-      console.log('📤 Upload response:', { uploadData, uploadError });
-
-      if (uploadError) {
-        console.error('❌ Storage error:', uploadError);
-        
-        let errorMessage = `Storage Error: ${uploadError.message}`;
-        
-        if (uploadError.statusCode) errorMessage += `\n\nHTTP: ${uploadError.statusCode}`;
-        
-        const cause = (uploadError as any).cause;
-        if (cause?.status) errorMessage += `\nStatus: ${cause.status}`;
-        if (cause?.statusText) errorMessage += `\n${cause.statusText}`;
-        
-        errorMessage += `\n\nPath: ${filePath}`;
-        errorMessage += `\nUser: ${user.id}`;
-        errorMessage += `\n\nCheck:`;
-        errorMessage += `\n• Storage policies configured?`;
-        errorMessage += `\n• Bucket "wallpapers" exists?`;
-        errorMessage += `\n• Bucket is public?`;
-        
-        throw new Error(errorMessage);
+      // Create FormData for upload
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      formData.append('userId', user.id);
+      formData.append('title', uploadTitle.trim());
+      if (uploadDescription.trim()) {
+        formData.append('description', uploadDescription.trim());
       }
 
-      if (!uploadData) throw new Error('No data returned');
+      setUploadProgress(15);
+      setUploadStatus('Uploading to server...');
 
-      console.log('✅ Upload OK:', uploadData);
+      // Upload to custom API
+      const uploadResponse = await fetch(`${uploadApiUrl}/api/blob-upload`, {
+        method: 'POST',
+        body: formData,
+      });
 
-      setUploadProgress(50); 
-      setUploadStatus('Processing...');
+      if (!uploadResponse.ok) {
+        const errorData = await uploadResponse.json().catch(() => null);
+        throw new Error(errorData?.error || `Upload failed: ${uploadResponse.statusText}`);
+      }
 
-      const { data: { publicUrl } } = supabase.storage
-        .from('wallpapers')
-        .getPublicUrl(filePath);
+      const uploadResult = await uploadResponse.json();
+      console.log('📤 Upload response:', uploadResult);
 
-      console.log('🔗 URL:', publicUrl);
+      if (!uploadResult.success || !uploadResult.imageUrl) {
+        throw new Error('Upload failed: No image URL returned');
+      }
 
-      setUploadProgress(70); 
-      setUploadStatus('Saving...');
+      const { imageUrl, thumbnailUrl } = uploadResult;
 
+      console.log('✅ Upload successful:', { imageUrl, thumbnailUrl });
+
+      setUploadProgress(70);
+      setUploadStatus('Saving to database...');
+
+      // Save to Supabase database
       const { data: dbData, error: dbError } = await supabase
         .from('wallpapers')
         .insert({
-          user_id: user.id, 
-          title: uploadTitle.trim(), 
+          user_id: user.id,
+          title: uploadTitle.trim(),
           description: uploadDescription.trim() || null,
-          image_url: publicUrl, 
-          thumbnail_url: publicUrl, 
-          category: 'Other', 
-          tags: [], 
-          is_public: true, 
-          views: 0, 
+          image_url: imageUrl,
+          thumbnail_url: thumbnailUrl || imageUrl,
+          category: 'Other',
+          tags: [],
+          is_public: true,
+          views: 0,
           downloads: 0,
         })
         .select()
@@ -240,44 +245,54 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: UploadModalProps) =>
 
       if (dbError) {
         console.error('❌ DB error:', dbError);
-        await supabase.storage.from('wallpapers').remove([filePath]);
-        
-        let errorMessage = `Database: ${dbError.message}`;
+
+        // Try to delete the uploaded file if database insert fails
+        try {
+          await fetch(`${uploadApiUrl}/api/delete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ imageUrl }),
+          });
+        } catch (deleteError) {
+          console.error('Failed to cleanup uploaded file:', deleteError);
+        }
+
+        let errorMessage = `Database Error: ${dbError.message}`;
         if (dbError.code) errorMessage += `\nCode: ${dbError.code}`;
         if (dbError.details) errorMessage += `\nDetails: ${dbError.details}`;
-        errorMessage += `\n\nCheck RLS policies!`;
-        
+        errorMessage += `\n\nCheck RLS policies in Supabase!`;
+
         throw new Error(errorMessage);
       }
 
       console.log('✅ Success!');
 
-      setUploadProgress(100); 
+      setUploadProgress(100);
       setUploadStatus('Complete!');
       showToast('Wallpaper uploaded successfully!', 'success');
 
-      setTimeout(() => { 
-        handleClose(); 
-        if (onSuccess) onSuccess(); 
+      setTimeout(() => {
+        handleClose();
+        if (onSuccess) onSuccess();
       }, 1000);
 
     } catch (error: any) {
-      console.error('❌ Failed:', error);
-      setUploadError(error.message || 'Upload failed');
+      console.error('❌ Upload failed:', error);
+      setUploadError(error.message || 'Upload failed. Please try again.');
     }
   };
 
-  const handleRetry = () => { 
-    setUploadError(null); 
-    setUploadProgress(0); 
-    performUpload(); 
+  const handleRetry = () => {
+    setUploadError(null);
+    setUploadProgress(0);
+    performUpload();
   };
-  
-  const handleCancelUpload = () => { 
-    setUploadError(null); 
-    setIsUploading(false); 
-    setUploadProgress(0); 
-    setUploadStatus(''); 
+
+  const handleCancelUpload = () => {
+    setUploadError(null);
+    setIsUploading(false);
+    setUploadProgress(0);
+    setUploadStatus('');
   };
 
   if (!isOpen) return null;
@@ -318,7 +333,8 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: UploadModalProps) =>
           <div className="flex-1 overflow-y-auto p-4 md:p-6">
             <div className="space-y-4">
               <div onClick={() => !previewUrl && !isUploading && fileInputRef.current?.click()}
-                   onDragOver={e=>{e.preventDefault();setIsDragging(true);}} onDragLeave={e=>{e.preventDefault();setIsDragging(false);}}
+                   onDragOver={e=>{e.preventDefault();setIsDragging(true);}} 
+                   onDragLeave={e=>{e.preventDefault();setIsDragging(false);}}
                    onDrop={e=>{e.preventDefault();setIsDragging(false);const f=e.dataTransfer.files[0];if(f)handleFileSelect(f);}}
                    className={`relative border-2 border-dashed rounded-xl transition-all overflow-hidden ${isDragging?'border-blue-500 bg-blue-500/5':previewUrl?'border-white/20':'border-white/10 hover:border-white/20 cursor-pointer'}`}>
                 {previewUrl ? (
