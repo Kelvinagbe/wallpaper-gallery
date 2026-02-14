@@ -3,536 +3,266 @@ import { X, Upload, Image as ImageIcon, Check, AlertCircle, User, Wifi, WifiOff 
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/app/components/AuthProvider';
 
-type UploadModalProps = {
-  isOpen: boolean;
-  onClose: () => void;
-  onSuccess?: () => void;
-};
-
-const Toast = ({ message, type, onClose }: { message: string; type: 'success' | 'error'; onClose: () => void }) => (
-  <div style={{position:'fixed',top:16,right:16,zIndex:60,animation:'slideIn 0.3s ease-out'}}>
-    <div className={`flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg backdrop-blur-sm ${type === 'success' ? 'bg-emerald-500/90' : 'bg-red-500/90'}`}>
-      {type === 'success' ? <Check className="w-5 h-5 text-white" /> : <AlertCircle className="w-5 h-5 text-white" />}
+const Toast = ({ message, type, onClose }: any) => (
+  <div style={{position:'fixed',top:16,right:16,zIndex:60,animation:'slideIn 0.3s'}}>
+    <div className={`flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg backdrop-blur-sm ${type==='success'?'bg-emerald-500/90':'bg-red-500/90'}`}>
+      {type==='success'?<Check className="w-5 h-5 text-white"/>:<AlertCircle className="w-5 h-5 text-white"/>}
       <p className="text-sm font-medium text-white">{message}</p>
-      <button onClick={onClose} className="ml-2 hover:bg-white/20 rounded-lg p-1 transition-colors">
-        <X className="w-4 h-4 text-white" />
-      </button>
+      <button onClick={onClose} className="ml-2 hover:bg-white/20 rounded-lg p-1"><X className="w-4 h-4 text-white"/></button>
     </div>
   </div>
 );
 
-const UploadProgress = ({ progress, status, error, onRetry, onCancel }: { 
-  progress: number; status: string; error: string | null; onRetry: () => void; onCancel: () => void;
-}) => {
-  const circumference = 2 * Math.PI * 28;
-  return (
-    <div style={{position:'fixed',inset:0,zIndex:60,animation:'fadeIn 0.2s ease-out'}} className="bg-black/80 backdrop-blur-sm flex items-center justify-center">
-      <div className="bg-zinc-900 rounded-2xl p-8 max-w-md w-full mx-4 border border-white/10">
-        {error ? (
-          <div className="text-center">
-            <div className="w-16 h-16 mx-auto mb-4 bg-red-500/10 rounded-full flex items-center justify-center">
-              <AlertCircle className="w-8 h-8 text-red-500" />
-            </div>
-            <h3 className="text-lg font-semibold text-white mb-2">Upload Failed</h3>
-            <p className="text-sm text-white/60 mb-6 whitespace-pre-wrap max-h-60 overflow-y-auto text-left">{error}</p>
-            <div className="flex gap-3">
-              <button onClick={onCancel} className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-white/70 hover:bg-white/5 transition-colors border border-white/10">Cancel</button>
-              <button onClick={onRetry} className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium bg-white text-black hover:bg-white/90 transition-colors">Retry</button>
-            </div>
+const Progress = ({ progress, status, error, onRetry, onCancel }: any) => (
+  <div style={{position:'fixed',inset:0,zIndex:60,animation:'fadeIn 0.2s'}} className="bg-black/80 backdrop-blur-sm flex items-center justify-center">
+    <div className="bg-zinc-900 rounded-2xl p-8 max-w-md w-full mx-4 border border-white/10">
+      {error ? (
+        <div className="text-center">
+          <div className="w-16 h-16 mx-auto mb-4 bg-red-500/10 rounded-full flex items-center justify-center"><AlertCircle className="w-8 h-8 text-red-500"/></div>
+          <h3 className="text-lg font-semibold text-white mb-2">Upload Failed</h3>
+          <p className="text-sm text-white/60 mb-6 whitespace-pre-wrap max-h-60 overflow-y-auto text-left">{error}</p>
+          <div className="flex gap-3">
+            <button onClick={onCancel} className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-white/70 hover:bg-white/5 border border-white/10">Cancel</button>
+            <button onClick={onRetry} className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium bg-white text-black hover:bg-white/90">Retry</button>
           </div>
-        ) : (
-          <div className="text-center">
-            <div className="w-16 h-16 mx-auto mb-4 relative">
-              <svg className="w-16 h-16" style={{transform:'rotate(-90deg)'}}>
-                <circle cx="32" cy="32" r="28" stroke="currentColor" strokeWidth="4" fill="none" className="text-white/10" />
-                <circle cx="32" cy="32" r="28" stroke="currentColor" strokeWidth="4" fill="none" className="text-blue-500 transition-all duration-300" strokeLinecap="round"
-                  strokeDasharray={circumference} strokeDashoffset={circumference * (1 - progress / 100)} />
-              </svg>
-              <div style={{position:'absolute',inset:0}} className="flex items-center justify-center">
-                <span className="text-lg font-bold text-white">{progress}%</span>
-              </div>
-            </div>
-            <h3 className="text-lg font-semibold text-white mb-2">Uploading...</h3>
-            <p className="text-sm text-white/60">{status}</p>
+        </div>
+      ) : (
+        <div className="text-center">
+          <div className="w-16 h-16 mx-auto mb-4 relative">
+            <svg className="w-16 h-16" style={{transform:'rotate(-90deg)'}}>
+              <circle cx="32" cy="32" r="28" stroke="currentColor" strokeWidth="4" fill="none" className="text-white/10"/>
+              <circle cx="32" cy="32" r="28" stroke="currentColor" strokeWidth="4" fill="none" className="text-blue-500" strokeLinecap="round" strokeDasharray={175.93} strokeDashoffset={175.93*(1-progress/100)}/>
+            </svg>
+            <div style={{position:'absolute',inset:0}} className="flex items-center justify-center"><span className="text-lg font-bold text-white">{progress}%</span></div>
           </div>
-        )}
-      </div>
+          <h3 className="text-lg font-semibold text-white mb-2">Uploading...</h3>
+          <p className="text-sm text-white/60">{status}</p>
+        </div>
+      )}
     </div>
-  );
-};
+  </div>
+);
 
-export const UploadModal = ({ isOpen, onClose, onSuccess }: UploadModalProps) => {
+export const UploadModal = ({ isOpen, onClose, onSuccess }: any) => {
   const { session } = useAuth();
-  const [currentUser, setCurrentUser] = useState<any>(null);
-  const [isClosing, setIsClosing] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadStatus, setUploadStatus] = useState('');
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const [uploadTitle, setUploadTitle] = useState('');
-  const [uploadDescription, setUploadDescription] = useState('');
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string>('');
-  const [isDragging, setIsDragging] = useState(false);
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
-  const [isOnline, setIsOnline] = useState(true);
-  const [connectionSpeed, setConnectionSpeed] = useState<'fast' | 'slow' | 'offline'>('fast');
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const uploadAbortController = useRef<AbortController | null>(null);
+  const [user, setUser] = useState<any>(null);
+  const [closing, setClosing] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [status, setStatus] = useState('');
+  const [error, setError] = useState<string|null>(null);
+  const [title, setTitle] = useState('');
+  const [desc, setDesc] = useState('');
+  const [file, setFile] = useState<File|null>(null);
+  const [preview, setPreview] = useState('');
+  const [dragging, setDragging] = useState(false);
+  const [toast, setToast] = useState<any>(null);
+  const [online, setOnline] = useState(true);
+  const [speed, setSpeed] = useState<'fast'|'slow'|'offline'>('fast');
+  const fileRef = useRef<HTMLInputElement>(null);
+  const abortRef = useRef<AbortController|null>(null);
   const supabase = createClient();
 
-  // Network detection
   useEffect(() => {
-    const handleOnline = () => {
-      setIsOnline(true);
-      setConnectionSpeed('fast');
-      showToast('Connection restored', 'success');
-    };
-    
-    const handleOffline = () => {
-      setIsOnline(false);
-      setConnectionSpeed('offline');
-      showToast('No internet connection', 'error');
-    };
-
-    // Check connection speed
-    const checkConnectionSpeed = async () => {
-      if (!navigator.onLine) {
-        setConnectionSpeed('offline');
-        setIsOnline(false);
-        return;
-      }
-
+    const checkSpeed = async () => {
+      if (!navigator.onLine) { setSpeed('offline'); setOnline(false); return; }
       try {
-        const startTime = Date.now();
-        const response = await fetch('https://www.google.com/favicon.ico', { 
-          method: 'HEAD',
-          cache: 'no-cache',
-          signal: AbortSignal.timeout(5000)
-        });
-        const endTime = Date.now();
-        const duration = endTime - startTime;
-
-        if (response.ok) {
-          setIsOnline(true);
-          if (duration > 2000) {
-            setConnectionSpeed('slow');
-          } else {
-            setConnectionSpeed('fast');
-          }
-        }
-      } catch (error) {
-        setConnectionSpeed('slow');
-      }
+        const t = Date.now();
+        const r = await fetch('https://www.google.com/favicon.ico', {method:'HEAD',cache:'no-cache',signal:AbortSignal.timeout(5000)});
+        if (r.ok) { setOnline(true); setSpeed(Date.now()-t>2000?'slow':'fast'); }
+      } catch { setSpeed('slow'); }
     };
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-    
-    // Initial check
-    checkConnectionSpeed();
-    
-    // Periodic check every 30 seconds
-    const interval = setInterval(checkConnectionSpeed, 30000);
-
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-      clearInterval(interval);
-    };
+    const onOnline = () => { setOnline(true); setSpeed('fast'); show('Connection restored','success'); };
+    const onOffline = () => { setOnline(false); setSpeed('offline'); show('No internet','error'); };
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    checkSpeed();
+    const iv = setInterval(checkSpeed, 30000);
+    return () => { window.removeEventListener('online', onOnline); window.removeEventListener('offline', onOffline); clearInterval(iv); };
   }, []);
 
-  // Check auth when modal opens
-  useEffect(() => {
-    if (isOpen) {
-      checkCurrentUser();
-    }
-  }, [isOpen]);
+  useEffect(() => { if (isOpen) checkUser(); }, [isOpen]);
 
-  const checkCurrentUser = async () => {
-    console.log('🔐 Checking auth...');
-    console.log('Session from context:', session);
-
-    const { data: { session: directSession } } = await supabase.auth.getSession();
-    console.log('Session from Supabase:', directSession);
-
-    if (session?.user) {
-      console.log('✅ User from context:', {
-        id: session.user.id,
-        email: session.user.email,
-        role: session.user.role
-      });
-      setCurrentUser(session.user);
-    } else if (directSession?.user) {
-      console.log('✅ User from Supabase:', {
-        id: directSession.user.id,
-        email: directSession.user.email,
-        role: directSession.user.role
-      });
-      setCurrentUser(directSession.user);
-    } else {
-      console.log('❌ No user found');
-      setCurrentUser(null);
-    }
+  const checkUser = async () => {
+    const {data:{session:s}} = await supabase.auth.getSession();
+    setUser(session?.user || s?.user || null);
   };
 
-  const showToast = (message: string, type: 'success' | 'error') => {
-    setToast({ message, type });
+  const show = (message: string, type: 'success'|'error') => {
+    setToast({message,type});
     setTimeout(() => setToast(null), 5000);
   };
 
-  const resetModal = () => {
-    setUploadTitle(''); 
-    setUploadDescription(''); 
-    setSelectedFile(null); 
-    setPreviewUrl('');
-    setUploadProgress(0); 
-    setUploadStatus(''); 
-    setUploadError(null); 
-    setIsUploading(false);
-    if (uploadAbortController.current) {
-      uploadAbortController.current.abort();
-      uploadAbortController.current = null;
-    }
+  const reset = () => {
+    setTitle(''); setDesc(''); setFile(null); setPreview(''); setProgress(0); setStatus(''); setError(null); setUploading(false);
+    if (abortRef.current) { abortRef.current.abort(); abortRef.current = null; }
   };
 
-  const handleClose = () => {
-    if (isUploading && !uploadError) return;
-    setIsClosing(true);
-    setTimeout(() => { 
-      onClose(); 
-      setIsClosing(false); 
-      resetModal(); 
-    }, 300);
+  const close = () => {
+    if (uploading && !error) return;
+    setClosing(true);
+    setTimeout(() => { onClose(); setClosing(false); reset(); }, 300);
   };
 
-  const handleFileSelect = useCallback((file: File) => {
-    if (!file?.type.startsWith('image/')) {
-      return showToast('Please select a valid image file', 'error');
-    }
-    if (file.size > 10 * 1024 * 1024) {
-      return showToast('File size must be less than 10MB', 'error');
-    }
-    setSelectedFile(file);
-    setPreviewUrl(URL.createObjectURL(file));
+  const selectFile = useCallback((f: File) => {
+    if (!f?.type.startsWith('image/')) return show('Invalid image file','error');
+    if (f.size > 10*1024*1024) return show('File too large (max 10MB)','error');
+    setFile(f); setPreview(URL.createObjectURL(f));
   }, []);
 
-  const performUpload = async () => {
-    if (!selectedFile || !uploadTitle) {
-      return showToast('Please fill in all required fields', 'error');
-    }
+  const upload = async () => {
+    if (!file || !title) return show('Fill required fields','error');
+    if (!online || speed==='offline') return show('No internet connection','error');
+    if (speed==='slow') show('Slow connection detected','error');
+    if (!user?.id) return show('Must be logged in','error');
 
-    // Check internet connection
-    if (!isOnline || connectionSpeed === 'offline') {
-      return showToast('No internet connection. Please check your network and try again.', 'error');
-    }
-
-    // Warn if slow connection
-    if (connectionSpeed === 'slow') {
-      showToast('Slow connection detected. Upload may take longer than usual.', 'error');
-    }
-
-    const user = currentUser || session?.user;
-
-    if (!user?.id) {
-      console.error('❌ No user found:', { currentUser, session });
-      return showToast('You must be logged in to upload wallpapers. Please refresh and try again.', 'error');
-    }
-
-    const uploadApiUrl = 'https://ovrica.name.ng';
-
-    // Create abort controller for timeout
-    uploadAbortController.current = new AbortController();
-    const timeoutId = setTimeout(() => {
-      if (uploadAbortController.current) {
-        uploadAbortController.current.abort();
-      }
-    }, 120000); // 2 minute timeout
+    abortRef.current = new AbortController();
+    const tid = setTimeout(() => abortRef.current?.abort(), 120000);
 
     try {
-      setIsUploading(true);
-      setUploadError(null);
-      setUploadProgress(5);
-      setUploadStatus('Preparing upload...');
+      setUploading(true); setError(null); setProgress(5); setStatus('Preparing...');
 
-      console.log('🔐 Uploading as:', {
-        userId: user.id,
-        email: user.email,
-        role: user.role
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('userId', user.id);
+      fd.append('folder', 'wallpapers');
+
+      setProgress(15); setStatus('Uploading...');
+
+      const res = await fetch('https://ovrica.name.ng/api/blob-upload', {
+        method:'POST', body:fd, signal:abortRef.current.signal, mode:'cors', credentials:'omit'
       });
 
-      console.log('📦 File:', {
-        name: selectedFile.name,
-        size: `${(selectedFile.size / 1024 / 1024).toFixed(2)} MB`,
-        type: selectedFile.type
+      clearTimeout(tid);
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({error:res.statusText}));
+        throw new Error(err?.error || `Upload failed: ${res.statusText}`);
+      }
+
+      const data = await res.json();
+      if (!data.success || !data.url) throw new Error('No image URL returned');
+
+      setProgress(70); setStatus('Saving...');
+
+      const {error:dbErr} = await supabase.from('wallpapers').insert({
+        user_id:user.id, title:title.trim(), description:desc.trim()||null,
+        image_url:data.url, thumbnail_url:data.url, category:'Other',
+        tags:[], is_public:true, views:0, downloads:0
       });
 
-      // Create FormData for upload
-      const formData = new FormData();
-      formData.append('file', selectedFile);
-      formData.append('userId', user.id);
-      formData.append('title', uploadTitle.trim());
-      if (uploadDescription.trim()) {
-        formData.append('description', uploadDescription.trim());
+      if (dbErr) {
+        await fetch('https://ovrica.name.ng/api/blob-upload', {
+          method:'DELETE', headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({url:data.url}), mode:'cors'
+        }).catch(console.error);
+        throw new Error(`DB Error: ${dbErr.message}`);
       }
 
-      setUploadProgress(15);
-      setUploadStatus('Uploading to server...');
+      setProgress(100); setStatus('Complete!');
+      show('Upload successful!','success');
+      setTimeout(() => { close(); onSuccess?.(); }, 1000);
 
-      // Upload to custom API with timeout
-      const uploadResponse = await fetch(`${uploadApiUrl}/api/blob-upload`, {
-        method: 'POST',
-        body: formData,
-        signal: uploadAbortController.current.signal,
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!uploadResponse.ok) {
-        const errorData = await uploadResponse.json().catch(() => null);
-        throw new Error(errorData?.error || `Upload failed: ${uploadResponse.statusText}`);
-      }
-
-      const uploadResult = await uploadResponse.json();
-      console.log('📤 Upload response:', uploadResult);
-
-      if (!uploadResult.success || !uploadResult.imageUrl) {
-        throw new Error('Upload failed: No image URL returned');
-      }
-
-      const { imageUrl, thumbnailUrl } = uploadResult;
-
-      console.log('✅ Upload successful:', { imageUrl, thumbnailUrl });
-
-      setUploadProgress(70);
-      setUploadStatus('Saving to database...');
-
-      // Save to Supabase database
-      const { data: dbData, error: dbError } = await supabase
-        .from('wallpapers')
-        .insert({
-          user_id: user.id,
-          title: uploadTitle.trim(),
-          description: uploadDescription.trim() || null,
-          image_url: imageUrl,
-          thumbnail_url: thumbnailUrl || imageUrl,
-          category: 'Other',
-          tags: [],
-          is_public: true,
-          views: 0,
-          downloads: 0,
-        })
-        .select()
-        .single();
-
-      console.log('💾 DB response:', { dbData, dbError });
-
-      if (dbError) {
-        console.error('❌ DB error:', dbError);
-
-        // Try to delete the uploaded file if database insert fails
-        try {
-          await fetch('https://ovrica.name.ng/api/blob-upload', {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: imageUrl }),
-          });
-        } catch (deleteError) {
-          console.error('Failed to cleanup uploaded file:', deleteError);
-        }
-
-        let errorMessage = `Database Error: ${dbError.message}`;
-        if (dbError.code) errorMessage += `\nCode: ${dbError.code}`;
-        if (dbError.details) errorMessage += `\nDetails: ${dbError.details}`;
-        errorMessage += `\n\nCheck RLS policies in Supabase!`;
-
-        throw new Error(errorMessage);
-      }
-
-      console.log('✅ Success!');
-
-      setUploadProgress(100);
-      setUploadStatus('Complete!');
-      showToast('Wallpaper uploaded successfully!', 'success');
-
-      setTimeout(() => {
-        handleClose();
-        if (onSuccess) onSuccess();
-      }, 1000);
-
-    } catch (error: any) {
-      console.error('❌ Upload failed:', error);
-      
-      clearTimeout(timeoutId);
-
-      let errorMessage = 'Upload failed. Please try again.';
-      
-      if (error.name === 'AbortError') {
-        errorMessage = 'Upload timed out. Please check your internet connection and try again.';
-      } else if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
-        errorMessage = 'Network error. Please check your internet connection and try again.';
-      } else {
-        errorMessage = error.message || errorMessage;
-      }
-      
-      setUploadError(errorMessage);
+    } catch (e: any) {
+      clearTimeout(tid);
+      let msg = 'Upload failed';
+      if (e.name==='AbortError') msg = 'Upload timed out';
+      else if (e.message.includes('Failed to fetch')) msg = 'Cannot connect to server (CORS)';
+      else msg = e.message || msg;
+      setError(msg);
     }
-  };
-
-  const handleRetry = () => {
-    setUploadError(null);
-    setUploadProgress(0);
-    performUpload();
-  };
-
-  const handleCancelUpload = () => {
-    if (uploadAbortController.current) {
-      uploadAbortController.current.abort();
-      uploadAbortController.current = null;
-    }
-    setUploadError(null);
-    setIsUploading(false);
-    setUploadProgress(0);
-    setUploadStatus('');
   };
 
   if (!isOpen) return null;
 
-  const inputClass = "w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-white/30 focus:bg-white/[0.07] transition-all disabled:opacity-50";
+  const inp = "w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-white/30 focus:bg-white/[0.07] disabled:opacity-50";
 
-  return (
-    <>
-      {isUploading && <UploadProgress progress={uploadProgress} status={uploadStatus} error={uploadError} onRetry={handleRetry} onCancel={handleCancelUpload} />}
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+  return (<>
+    {uploading && <Progress progress={progress} status={status} error={error} onRetry={upload} onCancel={()=>{abortRef.current?.abort();setError(null);setUploading(false);setProgress(0);}}/>}
+    {toast && <Toast {...toast} onClose={()=>setToast(null)}/>}
+    
+    <div style={{position:'fixed',inset:0,zIndex:50,animation:closing?'fadeOut 0.2s':'fadeIn 0.2s'}} className="bg-black/60 backdrop-blur-sm" onClick={close}>
+      <div style={{position:'absolute',bottom:0,left:0,right:0,animation:closing?'slideDown 0.3s':'slideUp 0.3s cubic-bezier(0.34,1.56,0.64,1)'}} 
+           className="md:inset-4 md:m-auto md:max-w-2xl md:max-h-[90vh] bg-zinc-950 md:rounded-2xl border-t md:border border-white/10 shadow-2xl flex flex-col" onClick={e=>e.stopPropagation()}>
+        
+        <div className="flex items-center justify-between px-4 md:px-6 py-4 border-b border-white/10">
+          <div>
+            <h2 className="text-base md:text-lg font-semibold">Upload Wallpaper</h2>
+            <div className="flex items-center gap-3 mt-1">
+              {user ? <><User className="w-3 h-3 text-emerald-500"/><p className="text-xs text-emerald-500">{user.email}</p></> 
+                    : <><AlertCircle className="w-3 h-3 text-red-500"/><p className="text-xs text-red-500">Not logged in</p></>}
+              <div className="flex items-center gap-1.5 ml-auto">
+                {speed==='offline'?<><WifiOff className="w-3 h-3 text-red-500"/><p className="text-xs text-red-500">Offline</p></>
+                :speed==='slow'?<><Wifi className="w-3 h-3 text-yellow-500"/><p className="text-xs text-yellow-500">Slow</p></>
+                :<><Wifi className="w-3 h-3 text-emerald-500"/><p className="text-xs text-emerald-500">Online</p></>}
+              </div>
+            </div>
+          </div>
+          <button onClick={close} disabled={uploading&&!error} className="p-2 hover:bg-white/5 rounded-lg disabled:opacity-50"><X className="w-5 h-5"/></button>
+        </div>
 
-      <div style={{position:'fixed',inset:0,zIndex:50,animation:isClosing?'fadeOut 0.2s ease-out':'fadeIn 0.2s ease-out'}} className="bg-black/60 backdrop-blur-sm" onClick={handleClose}>
-        <div style={{position:'absolute',bottom:0,left:0,right:0,animation:isClosing?'slideDown 0.3s ease-out':'slideUp 0.3s cubic-bezier(0.34,1.56,0.64,1)'}} 
-             className="md:inset-4 md:m-auto md:max-w-2xl md:max-h-[90vh] bg-zinc-950 md:rounded-2xl border-t md:border border-white/10 shadow-2xl flex flex-col" onClick={e=>e.stopPropagation()}>
-
-          <div className="flex items-center justify-between px-4 md:px-6 py-4 border-b border-white/10">
-            <div>
-              <h2 className="text-base md:text-lg font-semibold">Upload Wallpaper</h2>
-              <div className="flex items-center gap-3 mt-1">
-                {currentUser ? (
-                  <>
-                    <User className="w-3 h-3 text-emerald-500" />
-                    <p className="text-xs text-emerald-500">{currentUser.email}</p>
-                  </>
-                ) : (
-                  <>
-                    <AlertCircle className="w-3 h-3 text-red-500" />
-                    <p className="text-xs text-red-500">Not logged in</p>
-                  </>
-                )}
-                
-                {/* Network Status Indicator */}
-                <div className="flex items-center gap-1.5 ml-auto">
-                  {connectionSpeed === 'offline' ? (
-                    <>
-                      <WifiOff className="w-3 h-3 text-red-500" />
-                      <p className="text-xs text-red-500">Offline</p>
-                    </>
-                  ) : connectionSpeed === 'slow' ? (
-                    <>
-                      <Wifi className="w-3 h-3 text-yellow-500" />
-                      <p className="text-xs text-yellow-500">Slow</p>
-                    </>
-                  ) : (
-                    <>
-                      <Wifi className="w-3 h-3 text-emerald-500" />
-                      <p className="text-xs text-emerald-500">Online</p>
-                    </>
-                  )}
+        <div className="flex-1 overflow-y-auto p-4 md:p-6">
+          <div className="space-y-4">
+            <div onClick={()=>!preview&&!uploading&&fileRef.current?.click()}
+                 onDragOver={e=>{e.preventDefault();setDragging(true);}} 
+                 onDragLeave={e=>{e.preventDefault();setDragging(false);}}
+                 onDrop={e=>{e.preventDefault();setDragging(false);const f=e.dataTransfer.files[0];if(f)selectFile(f);}}
+                 className={`relative border-2 border-dashed rounded-xl overflow-hidden ${dragging?'border-blue-500 bg-blue-500/5':preview?'border-white/20':'border-white/10 hover:border-white/20 cursor-pointer'}`}>
+              {preview ? (
+                <div className="relative aspect-video md:aspect-[16/10]">
+                  <img src={preview} alt="Preview" className="w-full h-full object-cover"/>
+                  <div style={{position:'absolute',inset:0}} className="bg-gradient-to-t from-black/60 via-transparent"/>
+                  {!uploading && (<>
+                    <button onClick={e=>{e.stopPropagation();setPreview('');setFile(null);}} style={{position:'absolute',top:8,right:8}} className="p-1.5 rounded-lg bg-black/60 hover:bg-black/80 backdrop-blur-sm"><X className="w-4 h-4"/></button>
+                    <button onClick={e=>{e.stopPropagation();fileRef.current?.click();}} style={{position:'absolute',bottom:8,right:8}} className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 backdrop-blur-sm text-xs font-medium flex items-center gap-1.5"><Upload className="w-3 h-3"/>Change</button>
+                  </>)}
+                  {file && <div style={{position:'absolute',bottom:8,left:8}} className="px-2 py-1 rounded-lg bg-black/60 backdrop-blur-sm text-xs text-white/60">{(file.size/1024/1024).toFixed(2)} MB</div>}
                 </div>
-              </div>
-            </div>
-            <button onClick={handleClose} disabled={isUploading && !uploadError} className="p-2 hover:bg-white/5 rounded-lg transition-colors disabled:opacity-50">
-              <X className="w-5 h-5"/>
-            </button>
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-4 md:p-6">
-            <div className="space-y-4">
-              <div onClick={() => !previewUrl && !isUploading && fileInputRef.current?.click()}
-                   onDragOver={e=>{e.preventDefault();setIsDragging(true);}} 
-                   onDragLeave={e=>{e.preventDefault();setIsDragging(false);}}
-                   onDrop={e=>{e.preventDefault();setIsDragging(false);const f=e.dataTransfer.files[0];if(f)handleFileSelect(f);}}
-                   className={`relative border-2 border-dashed rounded-xl transition-all overflow-hidden ${isDragging?'border-blue-500 bg-blue-500/5':previewUrl?'border-white/20':'border-white/10 hover:border-white/20 cursor-pointer'}`}>
-                {previewUrl ? (
-                  <div className="relative aspect-video md:aspect-[16/10]">
-                    <img src={previewUrl} alt="Preview" className="w-full h-full object-cover"/>
-                    <div style={{position:'absolute',inset:0}} className="bg-gradient-to-t from-black/60 via-transparent to-transparent"/>
-                    {!isUploading && (
-                      <>
-                        <button onClick={e=>{e.stopPropagation();setPreviewUrl('');setSelectedFile(null);}} style={{position:'absolute',top:8,right:8}} className="p-1.5 rounded-lg bg-black/60 hover:bg-black/80 backdrop-blur-sm transition-colors">
-                          <X className="w-4 h-4"/>
-                        </button>
-                        <button onClick={e=>{e.stopPropagation();fileInputRef.current?.click();}} style={{position:'absolute',bottom:8,right:8}} className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 backdrop-blur-sm text-xs font-medium transition-colors flex items-center gap-1.5">
-                          <Upload className="w-3 h-3"/>Change
-                        </button>
-                      </>
-                    )}
-                    {selectedFile && (
-                      <div style={{position:'absolute',bottom:8,left:8}} className="px-2 py-1 rounded-lg bg-black/60 backdrop-blur-sm text-xs text-white/60">
-                        {(selectedFile.size/1024/1024).toFixed(2)} MB
-                      </div>
-                    )}
+              ) : (
+                <div className="aspect-video md:aspect-[16/10] flex items-center justify-center p-4">
+                  <div className="text-center">
+                    <div className="w-12 h-12 md:w-14 md:h-14 mx-auto mb-3 bg-white/5 rounded-full flex items-center justify-center"><ImageIcon className="w-6 h-6 md:w-7 md:h-7 text-white/40"/></div>
+                    <p className="text-sm font-medium mb-1">Click or drag to upload</p>
+                    <p className="text-xs text-white/40">PNG, JPG, WEBP up to 10MB</p>
                   </div>
-                ) : (
-                  <div className="aspect-video md:aspect-[16/10] flex items-center justify-center p-4">
-                    <div className="text-center">
-                      <div className="w-12 h-12 md:w-14 md:h-14 mx-auto mb-3 bg-white/5 rounded-full flex items-center justify-center">
-                        <ImageIcon className="w-6 h-6 md:w-7 md:h-7 text-white/40"/>
-                      </div>
-                      <p className="text-sm font-medium mb-1">Click or drag to upload</p>
-                      <p className="text-xs text-white/40">PNG, JPG, WEBP up to 10MB</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-           <input ref={fileInputRef} type="file" accept="image/*" style={{display:'none'}} onChange={e=>{const f=e.target.files?.[0];if(f)handleFileSelect(f);}} />
-
-              <div>
-                <label className="block text-xs md:text-sm font-medium text-white/70 mb-1.5">Title *</label>
-                <input type="text" value={uploadTitle} onChange={e=>setUploadTitle(e.target.value)} placeholder="e.g., Minimal Dark Abstract" disabled={isUploading} className={inputClass} maxLength={100} />
-                <p className="text-xs text-white/30 mt-1">{uploadTitle.length}/100</p>
-              </div>
-
-              <div>
-                <label className="block text-xs md:text-sm font-medium text-white/70 mb-1.5">Description <span className="text-white/40 text-xs font-normal">(optional)</span></label>
-                <textarea value={uploadDescription} onChange={e=>setUploadDescription(e.target.value)} placeholder="Add details about your wallpaper..." rows={3} disabled={isUploading} className={inputClass+" resize-none"} maxLength={300} />
-                <p className="text-xs text-white/30 mt-1">{uploadDescription.length}/300</p>
-              </div>
-
-              <div className="p-3 bg-white/5 border border-white/10 rounded-lg">
-                <p className="text-xs font-medium mb-1.5">Guidelines</p>
-                <ul className="space-y-1 text-xs text-white/50">
-                  <li className="flex gap-2"><span className="text-white/30">•</span><span>High-quality images recommended</span></li>
-                  <li className="flex gap-2"><span className="text-white/30">•</span><span>Ensure you have rights to share</span></li>
-                  <li className="flex gap-2"><span className="text-white/30">•</span><span>Max file size: 10MB</span></li>
-                  <li className="flex gap-2"><span className="text-white/30">•</span><span>Upload timeout: 2 minutes</span></li>
-                </ul>
-              </div>
+                </div>
+              )}
             </div>
-          </div>
 
-          <div className="flex gap-2 px-4 md:px-6 py-3 md:py-4 border-t border-white/10">
-            <button onClick={handleClose} disabled={isUploading && !uploadError} className="flex-1 md:flex-none md:px-6 py-2.5 rounded-lg text-sm font-medium text-white/70 hover:bg-white/5 transition-colors disabled:opacity-50">Cancel</button>
-            <button onClick={performUpload} disabled={!selectedFile || !uploadTitle || isUploading || !currentUser || !isOnline} className="flex-1 md:flex-none md:px-6 py-2.5 rounded-lg text-sm font-medium bg-white text-black hover:bg-white/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
-              <Upload className="w-4 h-4"/><span>Upload</span>
-            </button>
+            <input ref={fileRef} type="file" accept="image/*" style={{display:'none'}} onChange={e=>{const f=e.target.files?.[0];if(f)selectFile(f);}}/>
+
+            <div>
+              <label className="block text-xs md:text-sm font-medium text-white/70 mb-1.5">Title *</label>
+              <input type="text" value={title} onChange={e=>setTitle(e.target.value)} placeholder="e.g., Minimal Dark Abstract" disabled={uploading} className={inp} maxLength={100}/>
+              <p className="text-xs text-white/30 mt-1">{title.length}/100</p>
+            </div>
+
+            <div>
+              <label className="block text-xs md:text-sm font-medium text-white/70 mb-1.5">Description <span className="text-white/40 text-xs font-normal">(optional)</span></label>
+              <textarea value={desc} onChange={e=>setDesc(e.target.value)} placeholder="Add details..." rows={3} disabled={uploading} className={inp+" resize-none"} maxLength={300}/>
+              <p className="text-xs text-white/30 mt-1">{desc.length}/300</p>
+            </div>
+
+            <div className="p-3 bg-white/5 border border-white/10 rounded-lg">
+              <p className="text-xs font-medium mb-1.5">Guidelines</p>
+              <ul className="space-y-1 text-xs text-white/50">
+                <li className="flex gap-2"><span className="text-white/30">•</span><span>High-quality images recommended</span></li>
+                <li className="flex gap-2"><span className="text-white/30">•</span><span>Ensure you have rights to share</span></li>
+                <li className="flex gap-2"><span className="text-white/30">•</span><span>Max: 10MB, Timeout: 2min</span></li>
+              </ul>
+            </div>
           </div>
         </div>
-      </div>
 
-      <style>{`
-        @keyframes fadeIn{from{opacity:0}to{opacity:1}}
-        @keyframes fadeOut{from{opacity:1}to{opacity:0}}
-        @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
-        @keyframes slideDown{from{transform:translateY(0)}to{transform:translateY(100%)}}
-        @keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
-      `}</style>
-    </>
-  );
+        <div className="flex gap-2 px-4 md:px-6 py-3 md:py-4 border-t border-white/10">
+          <button onClick={close} disabled={uploading&&!error} className="flex-1 md:flex-none md:px-6 py-2.5 rounded-lg text-sm font-medium text-white/70 hover:bg-white/5 disabled:opacity-50">Cancel</button>
+          <button onClick={upload} disabled={!file||!title||uploading||!user||!online} className="flex-1 md:flex-none md:px-6 py-2.5 rounded-lg text-sm font-medium bg-white text-black hover:bg-white/90 disabled:opacity-40 flex items-center justify-center gap-2">
+            <Upload className="w-4 h-4"/><span>Upload</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <style>{`@keyframes fadeIn{from{opacity:0}to{opacity:1}}@keyframes fadeOut{from{opacity:1}to{opacity:0}}@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}@keyframes slideDown{from{transform:translateY(0)}to{transform:translateY(100%)}}@keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}`}</style>
+  </>);
 };
