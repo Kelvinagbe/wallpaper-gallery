@@ -1,5 +1,5 @@
-import { useState, useRef, useCallback } from 'react';
-import { X, Upload, Image as ImageIcon, Check, AlertCircle } from 'lucide-react';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { X, Upload, Image as ImageIcon, Check, AlertCircle, User } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/app/components/AuthProvider';
 
@@ -63,6 +63,7 @@ const UploadProgress = ({ progress, status, error, onRetry, onCancel }: {
 
 export const UploadModal = ({ isOpen, onClose, onSuccess }: UploadModalProps) => {
   const { session } = useAuth();
+  const [currentUser, setCurrentUser] = useState<any>(null);
   const [isClosing, setIsClosing] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -76,6 +77,41 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: UploadModalProps) =>
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const supabase = createClient();
+
+  // Check auth when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      checkCurrentUser();
+    }
+  }, [isOpen]);
+
+  const checkCurrentUser = async () => {
+    console.log('🔐 Checking auth...');
+    console.log('Session from context:', session);
+    
+    // Double check with Supabase directly
+    const { data: { session: directSession } } = await supabase.auth.getSession();
+    console.log('Session from Supabase:', directSession);
+    
+    if (session?.user) {
+      console.log('✅ User from context:', {
+        id: session.user.id,
+        email: session.user.email,
+        role: session.user.role
+      });
+      setCurrentUser(session.user);
+    } else if (directSession?.user) {
+      console.log('✅ User from Supabase:', {
+        id: directSession.user.id,
+        email: directSession.user.email,
+        role: directSession.user.role
+      });
+      setCurrentUser(directSession.user);
+    } else {
+      console.log('❌ No user found');
+      setCurrentUser(null);
+    }
+  };
 
   const showToast = (message: string, type: 'success' | 'error') => {
     setToast({ message, type });
@@ -103,8 +139,12 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: UploadModalProps) =>
   const performUpload = async () => {
     if (!selectedFile || !uploadTitle) return showToast('Please fill in all required fields', 'error');
     
-    if (!session?.user?.id) {
-      return showToast('You must be logged in to upload wallpapers', 'error');
+    // Use currentUser from state
+    const user = currentUser || session?.user;
+    
+    if (!user?.id) {
+      console.error('❌ No user found:', { currentUser, session });
+      return showToast('You must be logged in to upload wallpapers. Please refresh and try again.', 'error');
     }
 
     try {
@@ -113,19 +153,18 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: UploadModalProps) =>
       setUploadProgress(5); 
       setUploadStatus('Preparing upload...');
 
-      // Log user info for debugging
-      console.log('🔐 User authenticated:', {
-        userId: session.user.id,
-        email: session.user.email,
-        role: session.user.role
+      console.log('🔐 Uploading as:', {
+        userId: user.id,
+        email: user.email,
+        role: user.role
       });
 
       const fileExt = selectedFile.name.split('.').pop();
       const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
-      const filePath = `${session.user.id}/${fileName}`;
+      const filePath = `${user.id}/${fileName}`;
 
       console.log('📁 Upload path:', filePath);
-      console.log('📦 File details:', {
+      console.log('📦 File:', {
         name: selectedFile.name,
         size: `${(selectedFile.size / 1024 / 1024).toFixed(2)} MB`,
         type: selectedFile.type
@@ -144,98 +183,77 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: UploadModalProps) =>
       console.log('📤 Upload response:', { uploadData, uploadError });
 
       if (uploadError) {
-        console.error('❌ Storage upload error:', uploadError);
+        console.error('❌ Storage error:', uploadError);
         
-        // Detailed error message
         let errorMessage = `Storage Error: ${uploadError.message}`;
         
-        if (uploadError.statusCode) {
-          errorMessage += `\n\nHTTP Status: ${uploadError.statusCode}`;
-        }
+        if (uploadError.statusCode) errorMessage += `\n\nHTTP: ${uploadError.statusCode}`;
         
         const cause = (uploadError as any).cause;
-        if (cause) {
-          if (cause.status) errorMessage += `\nStatus Code: ${cause.status}`;
-          if (cause.statusText) errorMessage += `\nStatus: ${cause.statusText}`;
-        }
+        if (cause?.status) errorMessage += `\nStatus: ${cause.status}`;
+        if (cause?.statusText) errorMessage += `\n${cause.statusText}`;
         
-        errorMessage += `\n\nFile Path: ${filePath}`;
-        errorMessage += `\nBucket: wallpapers`;
-        errorMessage += `\n\nPossible issues:`;
-        errorMessage += `\n• Storage bucket policies not configured`;
-        errorMessage += `\n• User not authenticated properly`;
-        errorMessage += `\n• Storage bucket does not exist`;
-        errorMessage += `\n• File size exceeds limit`;
+        errorMessage += `\n\nPath: ${filePath}`;
+        errorMessage += `\nUser: ${user.id}`;
+        errorMessage += `\n\nCheck:`;
+        errorMessage += `\n• Storage policies configured?`;
+        errorMessage += `\n• Bucket "wallpapers" exists?`;
+        errorMessage += `\n• Bucket is public?`;
         
         throw new Error(errorMessage);
       }
 
-      if (!uploadData) {
-        throw new Error('Upload completed but no data returned from storage');
-      }
+      if (!uploadData) throw new Error('No data returned');
 
-      console.log('✅ Upload successful:', uploadData);
+      console.log('✅ Upload OK:', uploadData);
 
       setUploadProgress(50); 
-      setUploadStatus('Processing image...');
+      setUploadStatus('Processing...');
 
       const { data: { publicUrl } } = supabase.storage
         .from('wallpapers')
         .getPublicUrl(filePath);
 
-      console.log('🔗 Public URL:', publicUrl);
+      console.log('🔗 URL:', publicUrl);
 
       setUploadProgress(70); 
-      setUploadStatus('Saving to database...');
-
-      const wallpaperData = {
-        user_id: session.user.id, 
-        title: uploadTitle.trim(), 
-        description: uploadDescription.trim() || null,
-        image_url: publicUrl, 
-        thumbnail_url: publicUrl, 
-        category: 'Other', 
-        tags: [], 
-        is_public: true, 
-        views: 0, 
-        downloads: 0,
-      };
-
-      console.log('💾 Inserting to database:', wallpaperData);
+      setUploadStatus('Saving...');
 
       const { data: dbData, error: dbError } = await supabase
         .from('wallpapers')
-        .insert(wallpaperData)
+        .insert({
+          user_id: user.id, 
+          title: uploadTitle.trim(), 
+          description: uploadDescription.trim() || null,
+          image_url: publicUrl, 
+          thumbnail_url: publicUrl, 
+          category: 'Other', 
+          tags: [], 
+          is_public: true, 
+          views: 0, 
+          downloads: 0,
+        })
         .select()
         .single();
 
-      console.log('💾 Database response:', { dbData, dbError });
+      console.log('💾 DB response:', { dbData, dbError });
 
       if (dbError) {
-        console.error('❌ Database error:', dbError);
-        
-        // Try to cleanup uploaded file
-        console.log('🗑️ Cleaning up uploaded file...');
+        console.error('❌ DB error:', dbError);
         await supabase.storage.from('wallpapers').remove([filePath]);
         
-        let errorMessage = `Database Error: ${dbError.message}`;
-        
-        if (dbError.code) errorMessage += `\n\nError Code: ${dbError.code}`;
+        let errorMessage = `Database: ${dbError.message}`;
+        if (dbError.code) errorMessage += `\nCode: ${dbError.code}`;
         if (dbError.details) errorMessage += `\nDetails: ${dbError.details}`;
-        if (dbError.hint) errorMessage += `\nHint: ${dbError.hint}`;
-        
-        errorMessage += `\n\nPossible issues:`;
-        errorMessage += `\n• RLS policies not configured`;
-        errorMessage += `\n• Missing required fields`;
-        errorMessage += `\n• Foreign key constraint failed`;
+        errorMessage += `\n\nCheck RLS policies!`;
         
         throw new Error(errorMessage);
       }
 
-      console.log('✅ Database insert successful:', dbData);
+      console.log('✅ Success!');
 
       setUploadProgress(100); 
-      setUploadStatus('Upload complete!');
+      setUploadStatus('Complete!');
       showToast('Wallpaper uploaded successfully!', 'success');
 
       setTimeout(() => { 
@@ -244,8 +262,8 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: UploadModalProps) =>
       }, 1000);
 
     } catch (error: any) {
-      console.error('❌ Upload failed:', error);
-      setUploadError(error.message || 'An unexpected error occurred. Please try again.');
+      console.error('❌ Failed:', error);
+      setUploadError(error.message || 'Upload failed');
     }
   };
 
@@ -278,7 +296,19 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: UploadModalProps) =>
           <div className="flex items-center justify-between px-4 md:px-6 py-4 border-b border-white/10">
             <div>
               <h2 className="text-base md:text-lg font-semibold">Upload Wallpaper</h2>
-              <p className="text-xs text-white/50 mt-0.5">Share your creation</p>
+              <div className="flex items-center gap-2 mt-1">
+                {currentUser ? (
+                  <>
+                    <User className="w-3 h-3 text-emerald-500" />
+                    <p className="text-xs text-emerald-500">{currentUser.email}</p>
+                  </>
+                ) : (
+                  <>
+                    <AlertCircle className="w-3 h-3 text-red-500" />
+                    <p className="text-xs text-red-500">Not logged in</p>
+                  </>
+                )}
+              </div>
             </div>
             <button onClick={handleClose} disabled={isUploading && !uploadError} className="p-2 hover:bg-white/5 rounded-lg transition-colors disabled:opacity-50">
               <X className="w-5 h-5"/>
@@ -351,7 +381,7 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: UploadModalProps) =>
 
           <div className="flex gap-2 px-4 md:px-6 py-3 md:py-4 border-t border-white/10">
             <button onClick={handleClose} disabled={isUploading && !uploadError} className="flex-1 md:flex-none md:px-6 py-2.5 rounded-lg text-sm font-medium text-white/70 hover:bg-white/5 transition-colors disabled:opacity-50">Cancel</button>
-            <button onClick={performUpload} disabled={!selectedFile || !uploadTitle || isUploading} className="flex-1 md:flex-none md:px-6 py-2.5 rounded-lg text-sm font-medium bg-white text-black hover:bg-white/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+            <button onClick={performUpload} disabled={!selectedFile || !uploadTitle || isUploading || !currentUser} className="flex-1 md:flex-none md:px-6 py-2.5 rounded-lg text-sm font-medium bg-white text-black hover:bg-white/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
               <Upload className="w-4 h-4"/><span>Upload</span>
             </button>
           </div>
