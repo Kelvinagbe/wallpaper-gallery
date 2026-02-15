@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { Heart, Download, Eye } from 'lucide-react';
+import { Heart, Download, Eye, MoreVertical, Share2, Bookmark, Flag } from 'lucide-react';
 import { VerifiedBadge } from './VerifiedBadge';
-import { toggleLike as toggleLikeAction, isWallpaperLiked } from '@/lib/stores/userStore';
+import { toggleLike as toggleLikeAction, isWallpaperLiked, toggleSave } from '@/lib/stores/userStore';
 import { useAuth } from '@/app/components/AuthProvider';
 import type { Wallpaper } from '../types';
 
@@ -13,13 +13,14 @@ type WallpaperCardProps = {
 export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
   const { user } = useAuth();
   const cardRef = useRef<HTMLDivElement>(null);
-  const [loaded, setLoaded] = useState(false);
   const [inView, setInView] = useState(false);
   const [liked, setLiked] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
   const [likeCount, setLikeCount] = useState(wp.likes || 0);
-  const [viewCount, setViewCount] = useState(wp.views || 0);
+  const [viewCount] = useState(wp.views || 0);
 
-  // Lazy loading - only load image when in viewport
+  // Aggressive lazy loading like Pinterest
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
@@ -30,7 +31,7 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
           }
         });
       },
-      { rootMargin: '100px' }
+      { rootMargin: '200px' } // Load earlier
     );
 
     if (cardRef.current) {
@@ -40,10 +41,9 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
     return () => observer.disconnect();
   }, []);
 
-  // Load like status when in view
+  // Load like status
   useEffect(() => {
     if (!inView || !user) return;
-
     (async () => {
       const isLiked = await isWallpaperLiked(wp.id, user.id);
       setLiked(isLiked);
@@ -51,35 +51,40 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
   }, [inView, wp.id, user]);
 
   const handleLike = async (e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent card click
+    e.stopPropagation();
+    if (!user) return alert('Please login to like wallpapers');
 
-    if (!user) {
-      alert('Please login to like wallpapers');
-      return;
-    }
-
-    // Optimistic update
     const newLikedState = !liked;
     setLiked(newLikedState);
     setLikeCount(prev => newLikedState ? prev + 1 : Math.max(0, prev - 1));
-    
-    // Haptic feedback
     if (navigator.vibrate) navigator.vibrate(50);
 
-    // Background sync
     try {
       await toggleLikeAction(wp.id);
     } catch (error) {
-      console.error('Error toggling like:', error);
-      // Revert on error
       setLiked(!newLikedState);
       setLikeCount(prev => newLikedState ? Math.max(0, prev - 1) : prev + 1);
     }
   };
 
-  const handleDownload = async (e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent card click
+  const handleSave = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!user) return alert('Please login to save wallpapers');
 
+    const newSavedState = !saved;
+    setSaved(newSavedState);
+    if (navigator.vibrate) navigator.vibrate(50);
+
+    try {
+      await toggleSave(wp.id);
+    } catch (error) {
+      setSaved(!newSavedState);
+    }
+    setShowMenu(false);
+  };
+
+  const handleDownload = async (e: React.MouseEvent) => {
+    e.stopPropagation();
     if (navigator.vibrate) navigator.vibrate(50);
 
     try {
@@ -94,14 +99,33 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
     } catch (error) {
-      console.error('Download error:', error);
-      // Fallback to direct link
       const link = document.createElement('a');
       link.href = wp.url;
       link.download = wp.title || 'wallpaper';
       link.target = '_blank';
       link.click();
     }
+    setShowMenu(false);
+  };
+
+  const handleShare = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: wp.title,
+          text: `Check out "${wp.title}" on Gallery`,
+          url: window.location.href,
+        });
+      } catch (error) {
+        // User cancelled
+      }
+    } else {
+      navigator.clipboard.writeText(window.location.href);
+      alert('Link copied to clipboard!');
+    }
+    setShowMenu(false);
   };
 
   const formatCount = (count: number) => {
@@ -110,99 +134,152 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
     return count.toString();
   };
 
+  if (!inView) {
+    return (
+      <div 
+        ref={cardRef}
+        className="rounded-xl bg-white/5"
+        style={{ height: '250px' }}
+      />
+    );
+  }
+
   return (
     <div 
       ref={cardRef}
-      className="card group relative rounded-xl overflow-hidden cursor-pointer"
+      className="card group relative rounded-xl overflow-hidden cursor-pointer hover:opacity-90 transition-opacity"
       onClick={onClick}
     >
-      {!inView ? (
-        <div className="skeleton rounded-xl" style={{ height: '250px' }} />
-      ) : (
-        <>
-          <img
-            src={wp.thumbnail || wp.url}
-            alt={wp.title}
-            loading="lazy"
-            className={`w-full h-auto transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`}
-            onLoad={() => setLoaded(true)}
-          />
+      {/* Image - loads instantly like Pinterest */}
+      <img
+        src={wp.thumbnail || wp.url}
+        alt={wp.title}
+        loading="lazy"
+        decoding="async"
+        className="w-full h-auto block"
+        style={{ 
+          contentVisibility: 'auto',
+          backgroundColor: '#1a1a1a'
+        }}
+      />
+
+      {/* Hover overlay */}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+        <div className="absolute top-3 right-3 flex items-center gap-2">
+          <button
+            onClick={handleLike}
+            className={`p-2 rounded-full backdrop-blur-md transition-all hover:scale-110 active:scale-95 ${
+              liked 
+                ? 'bg-rose-500 hover:bg-rose-600' 
+                : 'bg-black/40 hover:bg-black/60'
+            }`}
+          >
+            <Heart 
+              className={`w-4 h-4 ${liked ? 'text-white fill-white' : 'text-white'}`} 
+            />
+          </button>
+          <button
+            onClick={handleDownload}
+            className="p-2 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-md transition-all hover:scale-110 active:scale-95"
+          >
+            <Download className="w-4 h-4 text-white" />
+          </button>
+        </div>
+      </div>
+
+      {/* Bottom info bar - always visible */}
+      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/95 via-black/80 to-transparent p-2.5">
+        <div className="flex items-center justify-between gap-2 mb-1.5">
+          <h3 className="font-medium line-clamp-1 text-xs flex-1">{wp.title}</h3>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowMenu(!showMenu);
+            }}
+            className="p-1 rounded-full hover:bg-white/10 transition-colors flex-shrink-0"
+          >
+            <MoreVertical className="w-4 h-4 text-white/80" />
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+            <img 
+              src={wp.userAvatar} 
+              alt={wp.uploadedBy} 
+              className="w-5 h-5 rounded-full flex-shrink-0 border border-white/20" 
+            />
+            <span className="text-[10px] text-white/80 truncate font-medium">
+              {wp.uploadedBy}
+            </span>
+            {wp.verified && <VerifiedBadge size="sm" />}
+          </div>
           
-          {!loaded && (
-            <div className="absolute inset-0 skeleton rounded-xl" style={{ height: '250px' }} />
-          )}
-
-          {loaded && (
-            <>
-              {/* Hover overlay with actions */}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-3">
-                  <button
-                    onClick={handleLike}
-                    className={`p-3 rounded-full transition-all hover:scale-110 active:scale-95 ${
-                      liked 
-                        ? 'bg-rose-500 hover:bg-rose-600' 
-                        : 'bg-white/90 hover:bg-white'
-                    }`}
-                  >
-                    <Heart 
-                      className={`w-5 h-5 transition-all ${
-                        liked 
-                          ? 'text-white fill-white' 
-                          : 'text-black'
-                      }`} 
-                    />
-                  </button>
-                  <button
-                    onClick={handleDownload}
-                    className="p-3 rounded-full bg-white/90 hover:bg-white transition-all hover:scale-110 active:scale-95"
-                  >
-                    <Download className="w-5 h-5 text-black" />
-                  </button>
-                </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {likeCount > 0 && (
+              <div className="flex items-center gap-0.5">
+                <Heart className="w-3 h-3 text-rose-400 fill-rose-400" />
+                <span className="text-[10px] font-medium text-rose-400">
+                  {formatCount(likeCount)}
+                </span>
               </div>
-
-              {/* Bottom info - always visible */}
-              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent p-3">
-                <h3 className="font-semibold mb-2 line-clamp-1 text-sm">{wp.title}</h3>
-                
-                <div className="flex items-center justify-between gap-2">
-                  {/* User info */}
-                  <div className="flex items-center gap-2 min-w-0 flex-1">
-                    <img 
-                      src={wp.userAvatar} 
-                      alt={wp.uploadedBy} 
-                      className="w-6 h-6 rounded-full flex-shrink-0 border border-white/20" 
-                    />
-                    <span className="text-xs text-white/90 truncate font-medium">
-                      {wp.uploadedBy}
-                    </span>
-                    {wp.verified && <VerifiedBadge size="sm" />}
-                  </div>
-                  
-                  {/* Stats */}
-                  <div className="flex items-center gap-3 flex-shrink-0">
-                    {likeCount > 0 && (
-                      <div className="flex items-center gap-1">
-                        <Heart className="w-3.5 h-3.5 text-rose-400 fill-rose-400" />
-                        <span className="text-xs font-medium text-rose-400">
-                          {formatCount(likeCount)}
-                        </span>
-                      </div>
-                    )}
-                    {viewCount > 0 && (
-                      <div className="flex items-center gap-1">
-                        <Eye className="w-3.5 h-3.5 text-white/70" />
-                        <span className="text-xs font-medium text-white/70">
-                          {formatCount(viewCount)}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
+            )}
+            {viewCount > 0 && (
+              <div className="flex items-center gap-0.5">
+                <Eye className="w-3 h-3 text-white/60" />
+                <span className="text-[10px] font-medium text-white/60">
+                  {formatCount(viewCount)}
+                </span>
               </div>
-            </>
-          )}
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Dropdown Menu */}
+      {showMenu && (
+        <>
+          <div 
+            className="fixed inset-0 z-40" 
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowMenu(false);
+            }}
+          />
+          <div className="absolute bottom-14 right-2 z-50 bg-zinc-900 border border-white/10 rounded-xl overflow-hidden shadow-2xl min-w-[180px]">
+            <button
+              onClick={handleSave}
+              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 transition-colors text-left"
+            >
+              <Bookmark className={`w-4 h-4 ${saved ? 'fill-blue-400 text-blue-400' : 'text-white/80'}`} />
+              <span className="text-sm">{saved ? 'Unsave' : 'Save'}</span>
+            </button>
+            <button
+              onClick={handleDownload}
+              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 transition-colors text-left"
+            >
+              <Download className="w-4 h-4 text-white/80" />
+              <span className="text-sm">Download</span>
+            </button>
+            <button
+              onClick={handleShare}
+              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 transition-colors text-left"
+            >
+              <Share2 className="w-4 h-4 text-white/80" />
+              <span className="text-sm">Share</span>
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                alert('Report functionality coming soon');
+                setShowMenu(false);
+              }}
+              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 transition-colors text-left border-t border-white/5"
+            >
+              <Flag className="w-4 h-4 text-red-400" />
+              <span className="text-sm text-red-400">Report</span>
+            </button>
+          </div>
         </>
       )}
     </div>
