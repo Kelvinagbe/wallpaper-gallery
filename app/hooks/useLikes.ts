@@ -1,38 +1,46 @@
 import { useState, useEffect } from 'react';
-import { getLiked, likeWallpaper, unlikeWallpaper } from '@/lib/stores/userStore';
-import type { LikedWallpaper } from '@/lib/stores/userStore';
+import { getLiked, toggleLike as toggleLikeAction, isWallpaperLiked } from '@/lib/stores/userStore';
+import type { Wallpaper } from '@/app/types';
 
 /**
- * Hook to manage wallpaper likes
+ * Hook to manage wallpaper likes with optimistic updates and caching
  */
 export const useLikes = () => {
-  const [likedWallpapers, setLikedWallpapers] = useState<LikedWallpaper[]>([]);
+  const [likedWallpapers, setLikedWallpapers] = useState<Wallpaper[]>([]);
   const [loading, setLoading] = useState(true);
 
   const loadLikes = async () => {
-    setLoading(true);
-    const likes = await getLiked();
-    setLikedWallpapers(likes);
-    setLoading(false);
+    try {
+      setLoading(true);
+      const data = await getLiked();
+      setLikedWallpapers(data.wallpapers);
+    } catch (error) {
+      console.error('Error loading likes:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
     loadLikes();
   }, []);
 
-  const toggleLike = async (wallpaperId: string) => {
+  const toggleLike = async (wallpaperId: string, wallpaper?: Wallpaper) => {
     const liked = likedWallpapers.some(w => w.id === wallpaperId);
-    
+
+    // Optimistic update
     if (liked) {
-      const success = await unlikeWallpaper(wallpaperId);
-      if (success) {
-        setLikedWallpapers(prev => prev.filter(w => w.id !== wallpaperId));
-      }
-    } else {
-      const success = await likeWallpaper(wallpaperId);
-      if (success) {
-        loadLikes(); // Reload to get full wallpaper data
-      }
+      setLikedWallpapers(prev => prev.filter(w => w.id !== wallpaperId));
+    } else if (wallpaper) {
+      setLikedWallpapers(prev => [wallpaper, ...prev]);
+    }
+
+    // Perform actual update
+    const success = await toggleLikeAction(wallpaperId);
+    
+    // Revert on failure
+    if (!success) {
+      await loadLikes(); // Reload fresh data
     }
   };
 
@@ -46,5 +54,6 @@ export const useLikes = () => {
     toggleLike,
     isLiked: checkIsLiked,
     refetch: loadLikes,
+    count: likedWallpapers.length,
   };
 };
