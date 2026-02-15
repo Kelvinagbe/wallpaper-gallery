@@ -2,7 +2,14 @@
 import { createClient } from '@/lib/supabase/client';
 import type { Wallpaper, UserProfile } from '@/app/types';
 
-const supabase = createClient();
+// Create a singleton instance
+let supabaseInstance: ReturnType<typeof createClient> | null = null;
+const getSupabase = () => {
+  if (!supabaseInstance) {
+    supabaseInstance = createClient();
+  }
+  return supabaseInstance;
+};
 
 // Optimized page size
 const DEFAULT_PAGE_SIZE = 17;
@@ -16,12 +23,12 @@ const transformWallpaper = (wp: any): Wallpaper => ({
   description: wp.description || '',
   tags: wp.tags || [],
   downloads: wp.downloads || 0,
-  likes: 0,
+  likes: wp.likes || 0, // Added fallback
   views: wp.views || 0,
   uploadedBy: wp.profiles?.full_name || wp.profiles?.username || 'Unknown',
   userId: wp.user_id,
   userAvatar: wp.profiles?.avatar_url || 'https://avatar.iran.liara.run/public',
-  aspectRatio: 1.5,
+  aspectRatio: wp.aspect_ratio || 1.5, // Use DB value if available
   verified: wp.profiles?.verified || false,
   createdAt: wp.created_at,
   category: wp.category || 'Other',
@@ -36,26 +43,20 @@ const transformProfile = (p: any): UserProfile => ({
   bio: p.bio || '',
   verified: p.verified || false,
   createdAt: p.created_at,
-  followers: 0,
-  following: 0,
-  posts: 0,
+  followers: p.followers_count || 0,
+  following: p.following_count || 0,
+  posts: p.posts_count || 0,
   isFollowing: false,
 });
 
-// Base wallpaper query with profile join
-const baseWallpaperQuery = () => 
-  supabase.from('wallpapers').select(`
-    *,
-    profiles:user_id(username,full_name,avatar_url,verified)
-  `);
-
 // Fetch paginated wallpapers (optimized)
 export const fetchWallpapers = async (page = 0, pageSize = DEFAULT_PAGE_SIZE) => {
+  const supabase = getSupabase();
   console.log(`🔍 Fetching wallpapers - Page ${page}, Size ${pageSize}`);
-  
+
   const start = page * pageSize;
   const end = start + pageSize - 1;
-  
+
   const { data, error, count } = await supabase
     .from('wallpapers')
     .select(`
@@ -65,19 +66,19 @@ export const fetchWallpapers = async (page = 0, pageSize = DEFAULT_PAGE_SIZE) =>
     .eq('is_public', true)
     .order('created_at', { ascending: false })
     .range(start, end);
-  
+
   if (error) {
     console.error('❌ Error fetching wallpapers:', error);
-    return { wallpapers: [], hasMore: false, total: 0 };
+    throw new Error(error.message); // Throw instead of returning empty
   }
-  
+
   if (!data || data.length === 0) {
     console.warn('⚠️ No wallpapers found');
     return { wallpapers: [], hasMore: false, total: count || 0 };
   }
-  
+
   console.log(`✅ Found ${data.length} wallpapers (Total: ${count})`);
-  
+
   return {
     wallpapers: data.map(transformWallpaper),
     hasMore: end < (count || 0) - 1,
@@ -91,9 +92,10 @@ export const fetchWallpapersByCategory = async (
   page = 0, 
   pageSize = DEFAULT_PAGE_SIZE
 ) => {
+  const supabase = getSupabase();
   const start = page * pageSize;
   const end = start + pageSize - 1;
-  
+
   const { data, error, count } = await supabase
     .from('wallpapers')
     .select(`
@@ -104,10 +106,15 @@ export const fetchWallpapersByCategory = async (
     .eq('category', category)
     .order('created_at', { ascending: false })
     .range(start, end);
-  
+
+  if (error) {
+    console.error('❌ Error fetching category wallpapers:', error);
+    throw new Error(error.message);
+  }
+
   return {
-    wallpapers: error ? [] : data.map(transformWallpaper),
-    hasMore: !error && end < (count || 0) - 1,
+    wallpapers: data ? data.map(transformWallpaper) : [],
+    hasMore: data && end < (count || 0) - 1,
     total: count || 0,
   };
 };
@@ -118,9 +125,10 @@ export const fetchWallpapersByTags = async (
   page = 0, 
   pageSize = DEFAULT_PAGE_SIZE
 ) => {
+  const supabase = getSupabase();
   const start = page * pageSize;
   const end = start + pageSize - 1;
-  
+
   const { data, error, count } = await supabase
     .from('wallpapers')
     .select(`
@@ -131,19 +139,25 @@ export const fetchWallpapersByTags = async (
     .overlaps('tags', tags)
     .order('created_at', { ascending: false })
     .range(start, end);
-  
+
+  if (error) {
+    console.error('❌ Error fetching wallpapers by tags:', error);
+    throw new Error(error.message);
+  }
+
   return {
-    wallpapers: error ? [] : data.map(transformWallpaper),
-    hasMore: !error && end < (count || 0) - 1,
+    wallpapers: data ? data.map(transformWallpaper) : [],
+    hasMore: data && end < (count || 0) - 1,
     total: count || 0,
   };
 };
 
 // Fetch trending (last 7 days, most viewed) - limited to 24
 export const fetchTrendingWallpapers = async (limit = DEFAULT_PAGE_SIZE) => {
+  const supabase = getSupabase();
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-  
+
   const { data, error } = await supabase
     .from('wallpapers')
     .select(`
@@ -154,8 +168,13 @@ export const fetchTrendingWallpapers = async (limit = DEFAULT_PAGE_SIZE) => {
     .gte('created_at', sevenDaysAgo.toISOString())
     .order('views', { ascending: false })
     .limit(limit);
-  
-  return error ? [] : data.map(transformWallpaper);
+
+  if (error) {
+    console.error('❌ Error fetching trending wallpapers:', error);
+    throw new Error(error.message);
+  }
+
+  return data ? data.map(transformWallpaper) : [];
 };
 
 // Fetch user's wallpapers (paginated)
@@ -164,9 +183,10 @@ export const fetchUserWallpapers = async (
   page = 0, 
   pageSize = DEFAULT_PAGE_SIZE
 ) => {
+  const supabase = getSupabase();
   const start = page * pageSize;
   const end = start + pageSize - 1;
-  
+
   const { data, error, count } = await supabase
     .from('wallpapers')
     .select(`
@@ -176,10 +196,15 @@ export const fetchUserWallpapers = async (
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .range(start, end);
-  
+
+  if (error) {
+    console.error('❌ Error fetching user wallpapers:', error);
+    throw new Error(error.message);
+  }
+
   return {
-    wallpapers: error ? [] : data.map(transformWallpaper),
-    hasMore: !error && end < (count || 0) - 1,
+    wallpapers: data ? data.map(transformWallpaper) : [],
+    hasMore: data && end < (count || 0) - 1,
     total: count || 0,
   };
 };
@@ -190,9 +215,11 @@ export const searchWallpapers = async (
   page = 0, 
   pageSize = DEFAULT_PAGE_SIZE
 ) => {
+  const supabase = getSupabase();
   const start = page * pageSize;
   const end = start + pageSize - 1;
-  
+
+  // Use text search for better performance (if available)
   const { data, error, count } = await supabase
     .from('wallpapers')
     .select(`
@@ -200,50 +227,90 @@ export const searchWallpapers = async (
       profiles:user_id(username,full_name,avatar_url,verified)
     `, { count: 'exact' })
     .eq('is_public', true)
-    .or(`title.ilike.%${query}%,description.ilike.%${query}%`)
+    .or(`title.ilike.%${query}%,description.ilike.%${query}%,tags.cs.{${query}}`)
     .order('created_at', { ascending: false })
     .range(start, end);
-  
+
+  if (error) {
+    console.error('❌ Error searching wallpapers:', error);
+    throw new Error(error.message);
+  }
+
   return {
-    wallpapers: error ? [] : data.map(transformWallpaper),
-    hasMore: !error && end < (count || 0) - 1,
+    wallpapers: data ? data.map(transformWallpaper) : [],
+    hasMore: data && end < (count || 0) - 1,
     total: count || 0,
   };
 };
 
+// Fetch single wallpaper by ID
+export const fetchWallpaperById = async (wallpaperId: string) => {
+  const supabase = getSupabase();
+  
+  const { data, error } = await supabase
+    .from('wallpapers')
+    .select(`
+      *,
+      profiles:user_id(username,full_name,avatar_url,verified)
+    `)
+    .eq('id', wallpaperId)
+    .single();
+
+  if (error) {
+    console.error('❌ Error fetching wallpaper:', error);
+    throw new Error(error.message);
+  }
+
+  return data ? transformWallpaper(data) : null;
+};
+
 // Increment views (optimized with RPC)
 export const incrementViews = async (wallpaperId: string) => {
+  const supabase = getSupabase();
   const { error } = await supabase.rpc('increment_views', { wallpaper_id: wallpaperId });
   if (error) console.error('Error incrementing views:', error);
 };
 
 // Increment downloads (optimized with RPC)
 export const incrementDownloads = async (wallpaperId: string) => {
+  const supabase = getSupabase();
   const { error } = await supabase.rpc('increment_downloads', { wallpaper_id: wallpaperId });
   if (error) console.error('Error incrementing downloads:', error);
 };
 
 // Fetch profile by ID
 export const fetchProfile = async (userId: string) => {
+  const supabase = getSupabase();
   const { data, error } = await supabase
     .from('profiles')
     .select('*')
     .eq('id', userId)
     .single();
-  
-  return error ? null : transformProfile(data);
+
+  if (error) {
+    console.error('❌ Error fetching profile:', error);
+    return null;
+  }
+
+  return data ? transformProfile(data) : null;
 };
 
 // Fetch multiple profiles (batch optimization)
 export const fetchProfiles = async (userIds: string[]) => {
   if (userIds.length === 0) return [];
-  
+
+  const supabase = getSupabase();
   const { data, error } = await supabase
     .from('profiles')
     .select('*')
     .in('id', userIds);
-  
-  return error ? [] : data.map(transformProfile);
+
+  if (error) {
+    console.error('❌ Error fetching profiles:', error);
+    return [];
+  }
+
+  return data ? data.map(transformProfile) : [];
 };
 
 // Search profiles (paginated)
@@ -252,24 +319,32 @@ export const searchProfiles = async (
   page = 0, 
   pageSize = 20
 ) => {
+  const supabase = getSupabase();
   const start = page * pageSize;
   const end = start + pageSize - 1;
-  
+
   const { data, error, count } = await supabase
     .from('profiles')
     .select('*', { count: 'exact' })
     .or(`username.ilike.%${query}%,full_name.ilike.%${query}%`)
     .range(start, end);
-  
+
+  if (error) {
+    console.error('❌ Error searching profiles:', error);
+    throw new Error(error.message);
+  }
+
   return {
-    profiles: error ? [] : data.map(transformProfile),
-    hasMore: !error && end < (count || 0) - 1,
+    profiles: data ? data.map(transformProfile) : [],
+    hasMore: data && end < (count || 0) - 1,
     total: count || 0,
   };
 };
 
 // Get user stats (cached for 5 minutes recommended)
 export const getUserCounts = async (userId: string) => {
+  const supabase = getSupabase();
+  
   const [followersResult, followingResult, postsResult] = await Promise.all([
     supabase
       .from('follows')
@@ -284,7 +359,7 @@ export const getUserCounts = async (userId: string) => {
       .select('id', { count: 'exact', head: true })
       .eq('user_id', userId),
   ]);
-  
+
   return {
     followers: followersResult.count || 0,
     following: followingResult.count || 0,
@@ -294,18 +369,49 @@ export const getUserCounts = async (userId: string) => {
 
 // Check if following user
 export const checkIsFollowing = async (currentUserId: string, targetUserId: string) => {
+  const supabase = getSupabase();
   const { data } = await supabase
     .from('follows')
     .select('id')
     .eq('follower_id', currentUserId)
     .eq('following_id', targetUserId)
     .maybeSingle();
-  
+
   return !!data;
+};
+
+// Follow user
+export const followUser = async (currentUserId: string, targetUserId: string) => {
+  const supabase = getSupabase();
+  const { error } = await supabase
+    .from('follows')
+    .insert({ follower_id: currentUserId, following_id: targetUserId });
+
+  if (error) {
+    console.error('❌ Error following user:', error);
+    throw new Error(error.message);
+  }
+};
+
+// Unfollow user
+export const unfollowUser = async (currentUserId: string, targetUserId: string) => {
+  const supabase = getSupabase();
+  const { error } = await supabase
+    .from('follows')
+    .delete()
+    .eq('follower_id', currentUserId)
+    .eq('following_id', targetUserId);
+
+  if (error) {
+    console.error('❌ Error unfollowing user:', error);
+    throw new Error(error.message);
+  }
 };
 
 // Subscribe to new wallpapers (real-time)
 export const subscribeToWallpapers = (callback: (wallpaper: Wallpaper) => void) => {
+  const supabase = getSupabase();
+  
   const channel = supabase
     .channel('wallpapers-changes')
     .on(
@@ -326,14 +432,53 @@ export const subscribeToWallpapers = (callback: (wallpaper: Wallpaper) => void) 
           `)
           .eq('id', payload.new.id)
           .single();
-        
+
         if (data) {
           callback(transformWallpaper(data));
         }
       }
     )
     .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+};
+
+// Subscribe to wallpaper updates (real-time)
+export const subscribeToWallpaperUpdates = (
+  wallpaperId: string,
+  callback: (wallpaper: Wallpaper) => void
+) => {
+  const supabase = getSupabase();
   
+  const channel = supabase
+    .channel(`wallpaper-${wallpaperId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'wallpapers',
+        filter: `id=eq.${wallpaperId}`,
+      },
+      async (payload) => {
+        const { data } = await supabase
+          .from('wallpapers')
+          .select(`
+            *,
+            profiles:user_id(username,full_name,avatar_url,verified)
+          `)
+          .eq('id', payload.new.id)
+          .single();
+
+        if (data) {
+          callback(transformWallpaper(data));
+        }
+      }
+    )
+    .subscribe();
+
   return () => {
     supabase.removeChannel(channel);
   };
