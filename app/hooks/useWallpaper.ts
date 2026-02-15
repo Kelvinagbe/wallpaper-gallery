@@ -9,7 +9,10 @@ import {
   fetchWallpapersByCategory 
 } from '@/lib/stores/wallpaperStore';
 import type { Wallpaper } from '@/app/types';
-import type { RealtimeChannel } from '@supabase/supabase-js';
+import type { 
+  RealtimeChannel, 
+  RealtimePostgresChangesPayload 
+} from '@supabase/supabase-js';
 
 // Cache structure
 type CacheEntry = {
@@ -89,7 +92,7 @@ export const useWallpapers = (page = 0, pageSize = 24) => {
           schema: 'public', 
           table: 'wallpapers' 
         },
-        (payload) => {
+        (payload: RealtimePostgresChangesPayload<Wallpaper>) => {
           if (payload.eventType === 'INSERT') {
             const newWallpaper = payload.new as Wallpaper;
             // Only add if it's on the first page
@@ -194,7 +197,7 @@ export const useTrendingWallpapers = (limit = 24) => {
           schema: 'public', 
           table: 'wallpapers' 
         },
-        () => {
+        (_payload: RealtimePostgresChangesPayload<Wallpaper>) => {
           // Refresh trending when any wallpaper changes
           // (since trending depends on views/downloads)
           cache.delete(cacheKey);
@@ -293,7 +296,7 @@ export const useWallpapersByCategory = (
           table: 'wallpapers',
           filter: `category=eq.${category}`
         },
-        (payload) => {
+        (payload: RealtimePostgresChangesPayload<Wallpaper>) => {
           if (payload.eventType === 'INSERT') {
             if (page === 0) {
               const newWallpaper = payload.new as Wallpaper;
