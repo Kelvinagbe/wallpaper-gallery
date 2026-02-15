@@ -1,4 +1,3 @@
-import { Loader2 } from 'lucide-react';
 import { WallpaperCard } from './WallpaperCard';
 import type { Wallpaper } from '../types';
 
@@ -13,14 +12,18 @@ export const WallpaperGrid = ({
   isLoading, 
   onWallpaperClick
 }: WallpaperGridProps) => {
-  if (isLoading) {
+  // Pinterest style - show placeholders only on first load
+  if (isLoading && wallpapers.length === 0) {
     return (
       <div className="masonry">
         {Array.from({ length: 12 }, (_, i) => (
           <div key={i}>
             <div 
-              className="skeleton rounded-xl" 
-              style={{ height: `${200 + Math.random() * 150}px` }} 
+              className="rounded-xl bg-white/5" 
+              style={{ 
+                height: `${200 + Math.random() * 150}px`,
+                marginBottom: '12px'
+              }} 
             />
           </div>
         ))}
@@ -28,7 +31,7 @@ export const WallpaperGrid = ({
     );
   }
 
-  if (wallpapers.length === 0) {
+  if (wallpapers.length === 0 && !isLoading) {
     return (
       <div className="text-center py-20">
         <div className="text-6xl mb-4">🔍</div>
@@ -48,6 +51,17 @@ export const WallpaperGrid = ({
           />
         </div>
       ))}
+      
+      {/* Show loading indicator at bottom when loading more */}
+      {isLoading && wallpapers.length > 0 && (
+        <div className="col-span-full text-center py-8">
+          <div className="inline-flex items-center gap-2 text-white/60">
+            <div className="w-2 h-2 bg-white/60 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+            <div className="w-2 h-2 bg-white/60 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+            <div className="w-2 h-2 bg-white/60 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+          </div>
+        </div>
+      )}
     </div>
   );
 };
