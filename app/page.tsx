@@ -18,7 +18,6 @@ import type { Wallpaper, ActiveTab, Filter } from './types';
 export default function WallpaperGallery() {
   const { session } = useAuth();
   const [showSplash, setShowSplash] = useState(true);
-  const [appReady, setAppReady] = useState(false);
   const [wallpapers, setWallpapers] = useState<Wallpaper[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [total, setTotal] = useState(0);
@@ -33,49 +32,35 @@ export default function WallpaperGallery() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>('home');
 
-  // Preload app data while splash is showing
+  // Hide splash after 6 seconds (independent of data loading)
   useEffect(() => {
-    const preloadApp = async () => {
+    const splashTimer = setTimeout(() => {
+      setShowSplash(false);
+    }, 6000);
+
+    return () => clearTimeout(splashTimer);
+  }, []);
+
+  // Load app data in background (independent of splash)
+  useEffect(() => {
+    const loadData = async () => {
       try {
         const data = await fetchWallpapers(0, 50);
         setWallpapers(data.wallpapers);
         setHasMore(data.hasMore);
         setTotal(data.total);
-        setIsLoading(false);
-        setAppReady(true);
       } catch (error) {
-        console.error('Failed to preload:', error);
+        console.error('Failed to load wallpapers:', error);
+      } finally {
         setIsLoading(false);
-        setAppReady(true);
       }
-
-      const savedSearches = localStorage.getItem('recentSearches');
-      if (savedSearches) setRecentSearches(JSON.parse(savedSearches));
     };
 
-    preloadApp();
+    loadData();
+
+    const savedSearches = localStorage.getItem('recentSearches');
+    if (savedSearches) setRecentSearches(JSON.parse(savedSearches));
   }, []);
-
-  // Hide splash after 6 seconds, but only if app is ready
-  useEffect(() => {
-    const splashTimer = setTimeout(() => {
-      if (appReady) {
-        setShowSplash(false);
-      }
-    }, 6000);
-
-    return () => clearTimeout(splashTimer);
-  }, [appReady]);
-
-  // If app becomes ready after 6 seconds, hide splash immediately
-  useEffect(() => {
-    if (appReady) {
-      const elapsed = 6000;
-      if (elapsed >= 6000) {
-        setShowSplash(false);
-      }
-    }
-  }, [appReady]);
 
   // Refresh wallpapers
   const handleRefresh = async () => {
@@ -111,98 +96,100 @@ export default function WallpaperGallery() {
 
   return (
     <>
-      <div className={`splash-screen ${!showSplash ? 'splash-hidden' : ''}`}>
-        <div className="splash-content">
-          <img src="/favicon.ico" alt="Logo" className="splash-logo" />
-          <div className="splash-loader">
-            <div className="splash-loader-bar"></div>
+      {/* Splash Screen - Shows for 6 seconds then fades out */}
+      {showSplash && (
+        <div className="splash-screen">
+          <div className="splash-content">
+            <img src="/favicon.ico" alt="Logo" className="splash-logo" />
+            <div className="splash-loader">
+              <div className="splash-loader-bar"></div>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
-      <div className={`main-app ${showSplash ? 'app-hidden' : 'app-visible'}`}>
-        <div className="min-h-screen bg-black text-white pb-16">
-          <GlobalStyles />
+      {/* Main App - Always rendered, loads data in background */}
+      <div className="min-h-screen bg-black text-white pb-16">
+        <GlobalStyles />
 
-          {!isFullScreenViewOpen && (
-            <Header 
-              filter={filter} 
-              setFilter={setFilter} 
-              onRefresh={handleRefresh}
-              isRefreshing={isRefreshing}
-            />
-          )}
-
-          <main className="max-w-7xl mx-auto px-4 py-8">
-            <WallpaperGrid 
-              wallpapers={filteredWallpapers} 
-              isLoading={isLoading || isRefreshing} 
-              onWallpaperClick={setSelectedWallpaper} 
-            />
-          </main>
-
-          <Navigation
-            activeTab={activeTab}
-            setActiveTab={setActiveTab}
-            onSearchOpen={() => setIsSearchOpen(true)}
-            onUploadOpen={() => setIsUploadOpen(true)}
+        {!isFullScreenViewOpen && (
+          <Header 
+            filter={filter} 
+            setFilter={setFilter} 
+            onRefresh={handleRefresh}
+            isRefreshing={isRefreshing}
           />
+        )}
 
-          <SearchModal
-            isOpen={isSearchOpen}
-            onClose={() => { setIsSearchOpen(false); setSearchQuery(''); }}
-            searchQuery={searchQuery}
-            setSearchQuery={handleSearchQuery}
-            recentSearches={recentSearches}
-            onClearRecentSearch={(term) => {
-              const updated = recentSearches.filter(s => s !== term);
-              setRecentSearches(updated);
-              localStorage.setItem('recentSearches', JSON.stringify(updated));
-            }}
-            onClearAllRecentSearches={() => {
-              setRecentSearches([]);
-              localStorage.removeItem('recentSearches');
-            }}
-            filteredWallpapers={filteredWallpapers}
-            onWallpaperClick={(wp) => { setIsSearchOpen(false); setSelectedWallpaper(wp); }}
-            onUserClick={(userId) => { setIsSearchOpen(false); setSelectedUserId(userId); }}
+        <main className="max-w-7xl mx-auto px-4 py-8">
+          <WallpaperGrid 
+            wallpapers={filteredWallpapers} 
+            isLoading={isLoading || isRefreshing} 
+            onWallpaperClick={setSelectedWallpaper} 
           />
+        </main>
 
-          <UploadModal 
-            isOpen={isUploadOpen} 
-            onClose={() => setIsUploadOpen(false)}
-            onSuccess={handleRefresh}
+        <Navigation
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          onSearchOpen={() => setIsSearchOpen(true)}
+          onUploadOpen={() => setIsUploadOpen(true)}
+        />
+
+        <SearchModal
+          isOpen={isSearchOpen}
+          onClose={() => { setIsSearchOpen(false); setSearchQuery(''); }}
+          searchQuery={searchQuery}
+          setSearchQuery={handleSearchQuery}
+          recentSearches={recentSearches}
+          onClearRecentSearch={(term) => {
+            const updated = recentSearches.filter(s => s !== term);
+            setRecentSearches(updated);
+            localStorage.setItem('recentSearches', JSON.stringify(updated));
+          }}
+          onClearAllRecentSearches={() => {
+            setRecentSearches([]);
+            localStorage.removeItem('recentSearches');
+          }}
+          filteredWallpapers={filteredWallpapers}
+          onWallpaperClick={(wp) => { setIsSearchOpen(false); setSelectedWallpaper(wp); }}
+          onUserClick={(userId) => { setIsSearchOpen(false); setSelectedUserId(userId); }}
+        />
+
+        <UploadModal 
+          isOpen={isUploadOpen} 
+          onClose={() => setIsUploadOpen(false)}
+          onSuccess={handleRefresh}
+        />
+
+        {activeTab === 'profile' && (
+          <ProfileNav
+            onClose={() => setActiveTab('home')}
+            wallpapers={wallpapers}
+            onWallpaperClick={(wp) => { setActiveTab('home'); setSelectedWallpaper(wp); }}
           />
+        )}
 
-          {activeTab === 'profile' && (
-            <ProfileNav
-              onClose={() => setActiveTab('home')}
-              wallpapers={wallpapers}
-              onWallpaperClick={(wp) => { setActiveTab('home'); setSelectedWallpaper(wp); }}
-            />
-          )}
+        {activeTab === 'notifications' && <NotificationNav onClose={() => setActiveTab('home')} />}
 
-          {activeTab === 'notifications' && <NotificationNav onClose={() => setActiveTab('home')} />}
+        {selectedUserId && (
+          <UserProfile
+            userId={selectedUserId}
+            wallpapers={wallpapers}
+            onClose={() => setSelectedUserId(null)}
+            onWallpaperClick={(wp) => { setSelectedUserId(null); setSelectedWallpaper(wp); }}
+          />
+        )}
 
-          {selectedUserId && (
-            <UserProfile
-              userId={selectedUserId}
-              wallpapers={wallpapers}
-              onClose={() => setSelectedUserId(null)}
-              onWallpaperClick={(wp) => { setSelectedUserId(null); setSelectedWallpaper(wp); }}
-            />
-          )}
-
-          {selectedWallpaper && (
-            <WallpaperDetail
-              wallpaper={selectedWallpaper}
-              relatedWallpapers={filteredWallpapers.filter(wp => wp.id !== selectedWallpaper.id).slice(0, 4)}
-              onClose={() => setSelectedWallpaper(null)}
-              onUserClick={() => setSelectedUserId(selectedWallpaper.userId)}
-              onRelatedClick={setSelectedWallpaper}
-            />
-          )}
-        </div>
+        {selectedWallpaper && (
+          <WallpaperDetail
+            wallpaper={selectedWallpaper}
+            relatedWallpapers={filteredWallpapers.filter(wp => wp.id !== selectedWallpaper.id).slice(0, 4)}
+            onClose={() => setSelectedWallpaper(null)}
+            onUserClick={() => setSelectedUserId(selectedWallpaper.userId)}
+            onRelatedClick={setSelectedWallpaper}
+          />
+        )}
       </div>
     </>
   );
