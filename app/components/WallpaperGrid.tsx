@@ -6,15 +6,23 @@ type WallpaperGridProps = {
   wallpapers: Wallpaper[];
   isLoading: boolean;
   onWallpaperClick: (wallpaper: Wallpaper) => void;
+  onLikeToggle?: (wallpaperId: string) => void;
+  likedWallpapers?: Set<string>;
 };
 
-export const WallpaperGrid = ({ wallpapers, isLoading, onWallpaperClick }: WallpaperGridProps) => {
+export const WallpaperGrid = ({ 
+  wallpapers, 
+  isLoading, 
+  onWallpaperClick,
+  onLikeToggle,
+  likedWallpapers = new Set()
+}: WallpaperGridProps) => {
   if (isLoading) {
     return (
       <div className="masonry">
         {Array.from({ length: 12 }, (_, i) => (
           <div key={i}>
-            <div className="skeleton rounded-xl" style={{ height: '250px' }} />
+            <div className="skeleton rounded-xl" style={{ height: `${200 + Math.random() * 150}px` }} />
           </div>
         ))}
       </div>
@@ -35,7 +43,12 @@ export const WallpaperGrid = ({ wallpapers, isLoading, onWallpaperClick }: Wallp
     <div className="masonry">
       {wallpapers.map((wp) => (
         <div key={wp.id}>
-          <WallpaperCard wp={wp} onClick={() => onWallpaperClick(wp)} />
+          <WallpaperCard 
+            wp={wp} 
+            onClick={() => onWallpaperClick(wp)}
+            onLikeToggle={onLikeToggle}
+            isLiked={likedWallpapers.has(wp.id)}
+          />
         </div>
       ))}
     </div>
