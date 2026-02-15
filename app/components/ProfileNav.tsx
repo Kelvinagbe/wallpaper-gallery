@@ -29,7 +29,7 @@ const cache = {
 const CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
 
 export const ProfileNav = ({ onClose, wallpapers, onWallpaperClick }: ProfileNavProps) => {
-  const { profile, isLoading: authLoading, refreshProfile } = useAuth(); // Use cached profile
+  const { profile, isLoading: authLoading, refreshProfile } = useAuth();
   const [modals, setModals] = useState({ logout: false, settings: false, settingsClosing: false, privacy: false, privacyClosing: false, allPosts: false, content: null as 'liked' | 'saved' | 'recent' | null });
   const [isClosing, setIsClosing] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -38,7 +38,7 @@ export const ProfileNav = ({ onClose, wallpapers, onWallpaperClick }: ProfileNav
 
   useEffect(() => {
     if (authLoading) return;
-    
+
     (async () => {
       if (!profile) {
         setLoading(false);
@@ -49,7 +49,6 @@ export const ProfileNav = ({ onClose, wallpapers, onWallpaperClick }: ProfileNav
       const isCacheValid = cache.timestamp && (now - cache.timestamp) < CACHE_DURATION;
 
       if (isCacheValid && cache.counts && cache.stats) {
-        // Use cached data
         setCounts(cache.counts);
         setStats(cache.stats);
         setLoading(false);
@@ -59,15 +58,19 @@ export const ProfileNav = ({ onClose, wallpapers, onWallpaperClick }: ProfileNav
       try {
         setLoading(true);
 
-        // Fetch fresh data
-        const [userStats, liked, saved, recent] = await Promise.all([
+        // Fetch fresh data - note the destructuring
+        const [userStats, likedData, savedData, recentData] = await Promise.all([
           getUserCounts(profile.id),
           getLiked(),
           getSaved(),
           getRecent(),
         ]);
 
-        const newCounts = { liked: liked.length, saved: saved.length, recent: recent.length };
+        const newCounts = { 
+          liked: likedData.total, 
+          saved: savedData.total, 
+          recent: recentData.total 
+        };
         const newStats = userStats;
 
         // Update cache
@@ -87,10 +90,19 @@ export const ProfileNav = ({ onClose, wallpapers, onWallpaperClick }: ProfileNav
 
   const refreshCounts = async () => {
     if (!profile) return;
+
+    const [likedData, savedData, recentData] = await Promise.all([
+      getLiked(), 
+      getSaved(), 
+      getRecent()
+    ]);
     
-    const [liked, saved, recent] = await Promise.all([getLiked(), getSaved(), getRecent()]);
-    const newCounts = { liked: liked.length, saved: saved.length, recent: recent.length };
-    
+    const newCounts = { 
+      liked: likedData.total, 
+      saved: savedData.total, 
+      recent: recentData.total 
+    };
+
     cache.counts = newCounts;
     cache.timestamp = Date.now();
     setCounts(newCounts);
@@ -98,7 +110,14 @@ export const ProfileNav = ({ onClose, wallpapers, onWallpaperClick }: ProfileNav
 
   const handleClose = () => { setIsClosing(true); setTimeout(onClose, 300); };
   const closeModal = (key: string) => { setModals(m => ({ ...m, [`${key}Closing`]: true })); setTimeout(() => setModals(m => ({ ...m, [key]: false, [`${key}Closing`]: false })), 300); };
-  const handleLogout = async () => { if (await signOut()) { cache.counts = null; cache.stats = null; cache.timestamp = 0; setModals(m => ({ ...m, logout: false })); window.location.href = '/'; } else alert('Failed to log out. Please try again.'); };
+  const handleLogout = async () => { 
+    await signOut();
+    cache.counts = null; 
+    cache.stats = null; 
+    cache.timestamp = 0; 
+    setModals(m => ({ ...m, logout: false })); 
+    window.location.href = '/';
+  };
   const formatCount = (n: number) => n >= 1000000 ? `${(n / 1000000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n;
 
   const menuSections = [
@@ -188,7 +207,6 @@ export const ProfileNav = ({ onClose, wallpapers, onWallpaperClick }: ProfileNav
             </>
           ) : profile ? (
             <>
-              {/* EXACT SAME CONTENT AS BEFORE - Just using cached profile */}
               <div className="text-center mb-8 pt-4">
                 <div className="relative inline-block mb-4">
                   <img src={profile.avatar} alt={profile.name} className="w-28 h-28 rounded-full border-4 border-white/20 object-cover"/>
