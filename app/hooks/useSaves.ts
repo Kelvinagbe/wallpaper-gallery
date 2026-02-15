@@ -1,38 +1,47 @@
+// app/hooks/useSaves.ts
 import { useState, useEffect } from 'react';
-import { getSaved, saveWallpaper, unsaveWallpaper } from '@/lib/stores/userStore';
-import type { SavedWallpaper } from '@/lib/stores/userStore';
+import { getSaved, toggleSave as toggleSaveAction, isWallpaperSaved } from '@/lib/stores/userStore';
+import type { Wallpaper } from '@/app/types';
 
 /**
- * Hook to manage wallpaper saves
+ * Hook to manage saved/bookmarked wallpapers with optimistic updates and caching
  */
 export const useSaves = () => {
-  const [savedWallpapers, setSavedWallpapers] = useState<SavedWallpaper[]>([]);
+  const [savedWallpapers, setSavedWallpapers] = useState<Wallpaper[]>([]);
   const [loading, setLoading] = useState(true);
 
   const loadSaves = async () => {
-    setLoading(true);
-    const saves = await getSaved();
-    setSavedWallpapers(saves);
-    setLoading(false);
+    try {
+      setLoading(true);
+      const data = await getSaved();
+      setSavedWallpapers(data.wallpapers);
+    } catch (error) {
+      console.error('Error loading saves:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
     loadSaves();
   }, []);
 
-  const toggleSave = async (wallpaperId: string) => {
+  const toggleSave = async (wallpaperId: string, wallpaper?: Wallpaper) => {
     const saved = savedWallpapers.some(w => w.id === wallpaperId);
-    
+
+    // Optimistic update
     if (saved) {
-      const success = await unsaveWallpaper(wallpaperId);
-      if (success) {
-        setSavedWallpapers(prev => prev.filter(w => w.id !== wallpaperId));
-      }
-    } else {
-      const success = await saveWallpaper(wallpaperId);
-      if (success) {
-        loadSaves(); // Reload to get full wallpaper data
-      }
+      setSavedWallpapers(prev => prev.filter(w => w.id !== wallpaperId));
+    } else if (wallpaper) {
+      setSavedWallpapers(prev => [wallpaper, ...prev]);
+    }
+
+    // Perform actual update
+    const success = await toggleSaveAction(wallpaperId);
+    
+    // Revert on failure
+    if (!success) {
+      await loadSaves(); // Reload fresh data
     }
   };
 
@@ -46,5 +55,6 @@ export const useSaves = () => {
     toggleSave,
     isSaved: checkIsSaved,
     refetch: loadSaves,
+    count: savedWallpapers.length,
   };
 };
