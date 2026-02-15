@@ -13,11 +13,7 @@ interface Log {
 interface UploadCache {
   imageUrl?: string;
   thumbnailUrl?: string;
-  file: {
-    name: string;
-    size: number;
-    type: string;
-  };
+  file: { name: string; size: number; type: string };
   title: string;
   description: string;
   userId: string;
@@ -51,17 +47,14 @@ export const useUpload = (userId: string | null) => {
   // Progressive counting animation
   const countProgress = useCallback((targetProgress: number, speed: 'slow' | 'normal' | 'fast' = 'normal') => {
     if (countIntervalRef.current) clearInterval(countIntervalRef.current);
-    
     const speeds = { slow: 50, normal: 30, fast: 15 };
     const interval = speeds[speed];
-    
     countIntervalRef.current = setInterval(() => {
       setDisplayProgress(current => {
         if (current >= targetProgress) {
           if (countIntervalRef.current) clearInterval(countIntervalRef.current);
           return targetProgress;
         }
-        
         const diff = targetProgress - current;
         const increment = Math.max(0.5, diff / 10);
         return Math.min(current + increment, targetProgress);
@@ -69,73 +62,36 @@ export const useUpload = (userId: string | null) => {
     }, interval);
   }, []);
 
-  // Update counting speed when progress changes
   useEffect(() => {
-    if (progress <= 15) {
-      countProgress(progress, 'slow');
-    } else if (progress <= 70) {
-      countProgress(progress, 'normal');
-    } else {
-      countProgress(progress, 'fast');
-    }
+    if (progress <= 15) countProgress(progress, 'slow');
+    else if (progress <= 70) countProgress(progress, 'normal');
+    else countProgress(progress, 'fast');
   }, [progress, countProgress]);
 
-  // Save to cache
   const saveToCache = useCallback((data: Partial<UploadCache>) => {
     if (!userId) return;
-    
-    const cache: UploadCache = {
-      ...cacheRef.current,
-      ...data,
-      userId,
-      timestamp: Date.now(),
-    } as UploadCache;
-    
+    const cache: UploadCache = { ...cacheRef.current, ...data, userId, timestamp: Date.now() } as UploadCache;
     cacheRef.current = cache;
-    
     try {
-      // Don't save File object to localStorage, just metadata
       const { file, ...cacheData } = cache;
-      localStorage.setItem(CACHE_KEY, JSON.stringify({
-        ...cacheData,
-        file: file ? {
-          name: file.name,
-          size: file.size,
-          type: file.type,
-        } : undefined
-      }));
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ ...cacheData, file: file ? { name: file.name, size: file.size, type: file.type } : undefined }));
       log('💾 Progress cached', 'info');
-    } catch (e) {
-      log('Failed to cache progress', 'warning');
-    }
+    } catch { log('Failed to cache progress', 'warning'); }
   }, [userId, log]);
 
-  // Load from cache
   const loadFromCache = useCallback((): UploadCache | null => {
     try {
       const cached = localStorage.getItem(CACHE_KEY);
       if (!cached) return null;
-      
       const data = JSON.parse(cached) as UploadCache;
-      
-      // Check if cache is still valid (within 1 hour)
-      if (Date.now() - data.timestamp > 3600000) {
+      if (Date.now() - data.timestamp > 3600000 || data.userId !== userId) {
         localStorage.removeItem(CACHE_KEY);
         return null;
       }
-      
-      // Check if same user
-      if (data.userId !== userId) {
-        return null;
-      }
-      
       return data;
-    } catch {
-      return null;
-    }
+    } catch { return null; }
   }, [userId]);
 
-  // Clear cache
   const clearCache = useCallback(() => {
     localStorage.removeItem(CACHE_KEY);
     cacheRef.current = null;
@@ -143,23 +99,28 @@ export const useUpload = (userId: string | null) => {
     log('🗑️ Cache cleared', 'info');
   }, [log]);
 
-  const generateThumbnail = useCallback((file: File, maxWidth: number = 400): Promise<Blob> => {
+  const generateThumbnail = useCallback((file: File): Promise<Blob> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
       
       img.onload = () => {
+        // Target 250px width for very small file size
+        const maxWidth = 250;
         const scale = maxWidth / img.width;
         canvas.width = maxWidth;
         canvas.height = img.height * scale;
         
         ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
         
+        // Aggressive compression (50% quality) for ~10-20KB
         canvas.toBlob((blob) => {
-          if (blob) resolve(blob);
-          else reject(new Error('Failed to generate thumbnail'));
-        }, 'image/jpeg', 0.8);
+          if (blob) {
+            log(`Thumbnail: ${(blob.size / 1024).toFixed(2)} KB`, 'info');
+            resolve(blob);
+          } else reject(new Error('Failed to generate thumbnail'));
+        }, 'image/jpeg', 0.5);
         
         URL.revokeObjectURL(img.src);
       };
@@ -167,44 +128,22 @@ export const useUpload = (userId: string | null) => {
       img.onerror = () => reject(new Error('Failed to load image'));
       img.src = URL.createObjectURL(file);
     });
-  }, []);
+  }, [log]);
 
-  const uploadFile = useCallback(async (
-    file: File,
-    title: string,
-    description: string,
-    isRetry: boolean = false
-  ): Promise<{ success: boolean; error?: string }> => {
-    if (!userId) {
-      log('User not authenticated', 'error');
-      return { success: false, error: 'Must be logged in' };
-    }
-
-    if (!online || speed === 'offline') {
-      log('No internet connection', 'error');
-      return { success: false, error: 'No internet connection' };
-    }
+  const uploadFile = useCallback(async (file: File, title: string, description: string, isRetry: boolean = false): Promise<{ success: boolean; error?: string }> => {
+    if (!userId) { log('User not authenticated', 'error'); return { success: false, error: 'Must be logged in' }; }
+    if (!online || speed === 'offline') { log('No internet connection', 'error'); return { success: false, error: 'No internet connection' }; }
 
     setLogs(isRetry ? logs : []);
-    if (!isRetry) {
-      log('🚀 Upload process started', 'info');
-      setProgress(0);
-      setDisplayProgress(0);
-    } else {
-      log('🔄 Resuming upload...', 'info');
-    }
+    if (!isRetry) { log('🚀 Upload process started', 'info'); setProgress(0); setDisplayProgress(0); }
+    else log('🔄 Resuming upload...', 'info');
     
     setUploading(true);
     setError(null);
-
     log(`📦 File: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`, 'info');
     log(`📝 Title: ${title}`, 'info');
+    if (speed === 'slow') log('⚠️ Slow connection detected', 'warning');
 
-    if (speed === 'slow') {
-      log('⚠️ Slow connection detected', 'warning');
-    }
-
-    // Check for cached progress
     const cached = isRetry ? cacheRef.current || loadFromCache() : null;
     let imageUrl = cached?.imageUrl;
     let thumbnailUrl = cached?.thumbnailUrl;
@@ -213,28 +152,18 @@ export const useUpload = (userId: string | null) => {
     const timeout = setTimeout(() => abortRef.current?.abort(), 120000);
 
     try {
-      // Step 1: Upload full image (skip if cached)
       if (!imageUrl) {
         setStatus('Preparing...');
         setProgress(5);
 
         log('🖼️ Generating thumbnail...', 'info');
-        const thumbnailBlob = await generateThumbnail(file, 400);
+        const thumbnailBlob = await generateThumbnail(file);
         log(`✅ Thumbnail generated (${(thumbnailBlob.size / 1024).toFixed(2)} KB)`, 'success');
         setProgress(10);
 
-        // Save file metadata to cache
-        saveToCache({
-          file: {
-            name: file.name,
-            size: file.size,
-            type: file.type,
-          },
-          title,
-          description,
-        });
+        saveToCache({ file: { name: file.name, size: file.size, type: file.type }, title, description });
 
-        log('📤 STEP 1: Uploading full image to Vercel Blob...', 'info');
+        log('📤 STEP 1: Uploading full image...', 'info');
         setStatus('Uploading full image...');
         setProgress(15);
 
@@ -242,8 +171,6 @@ export const useUpload = (userId: string | null) => {
         fd.append('file', file);
         fd.append('userId', userId);
         fd.append('folder', 'wallpapers');
-
-        log('Sending to https://ovrica.name.ng/api/blob-upload', 'info');
 
         const blobRes = await fetch('https://ovrica.name.ng/api/blob-upload', {
           method: 'POST',
@@ -253,30 +180,26 @@ export const useUpload = (userId: string | null) => {
           credentials: 'omit'
         });
 
-        log(`Response status: ${blobRes.status}`, blobRes.ok ? 'success' : 'error');
+        log(`Response: ${blobRes.status}`, blobRes.ok ? 'success' : 'error');
 
         if (!blobRes.ok) {
           const err = await blobRes.json().catch(() => ({ error: blobRes.statusText }));
-          log(`Blob upload failed: ${err.error}`, 'error');
+          log(`Upload failed: ${err.error}`, 'error');
           throw new Error(err.error || 'Failed to upload to storage');
         }
 
         const blobData = await blobRes.json();
-
         if (!blobData.success || !blobData.url) {
-          log('No image URL returned from blob storage', 'error');
+          log('No image URL returned', 'error');
           throw new Error('Upload failed: No image URL');
         }
 
         imageUrl = blobData.url;
-        log('✅ Full image upload successful!', 'success');
-        log(`🔗 Image URL: ${imageUrl}`, 'info');
+        log('✅ Full image uploaded!', 'success');
+        log(`🔗 URL: ${imageUrl}`, 'info');
         setProgress(40);
-
-        // Cache the image URL
         saveToCache({ imageUrl });
 
-        // Step 2: Upload thumbnail (skip if cached)
         if (!thumbnailUrl) {
           log('📤 STEP 2: Uploading thumbnail...', 'info');
           setStatus('Uploading thumbnail...');
@@ -304,16 +227,13 @@ export const useUpload = (userId: string | null) => {
 
           log('✅ Thumbnail processed!', 'success');
           setProgress(70);
-
-          // Cache the thumbnail URL
           saveToCache({ imageUrl, thumbnailUrl });
         }
       } else {
-        log('✅ Using cached image URLs', 'success');
+        log('✅ Using cached URLs', 'success');
         setProgress(70);
       }
 
-      // Step 3: Save to database
       setStatus('Saving to database...');
       log('💾 STEP 3: Saving to database...', 'info');
 
@@ -330,16 +250,13 @@ export const useUpload = (userId: string | null) => {
       });
 
       clearTimeout(timeout);
-
-      log(`Database response: ${dbRes.status}`, dbRes.ok ? 'success' : 'error');
+      log(`Database: ${dbRes.status}`, dbRes.ok ? 'success' : 'error');
 
       if (!dbRes.ok) {
         const dbErr = await dbRes.json().catch(() => ({ error: dbRes.statusText }));
-        log(`Database save failed: ${dbErr.error}`, 'error');
-
-        // Don't cleanup files if we have them cached - user can retry
+        log(`Database failed: ${dbErr.error}`, 'error');
         if (!cached?.imageUrl) {
-          log('🗑️ Attempting cleanup of uploaded files...', 'warning');
+          log('🗑️ Cleanup...', 'warning');
           try {
             await fetch('https://ovrica.name.ng/api/blob-upload', {
               method: 'DELETE',
@@ -347,58 +264,47 @@ export const useUpload = (userId: string | null) => {
               body: JSON.stringify({ url: imageUrl }),
               mode: 'cors'
             });
-            log('Cleanup successful', 'warning');
-          } catch {
-            log('Cleanup failed', 'warning');
-          }
+            log('Cleanup done', 'warning');
+          } catch { log('Cleanup failed', 'warning'); }
         }
-
-        throw new Error(dbErr.error || 'Failed to save to database');
+        throw new Error(dbErr.error || 'Database save failed');
       }
 
       const dbData = await dbRes.json();
-
       if (!dbData.success) {
         log('Database save failed', 'error');
-        throw new Error(dbData.error || 'Failed to save to database');
+        throw new Error(dbData.error || 'Database save failed');
       }
 
-      log('✅ Database save successful!', 'success');
-      log(`📋 Record ID: ${dbData.data?.id}`, 'success');
-
+      log('✅ Database saved!', 'success');
+      log(`📋 ID: ${dbData.data?.id}`, 'success');
       setProgress(100);
       setStatus('Complete!');
-      log('🎉 Upload completed successfully!', 'success');
-
-      // Clear cache on success
+      log('🎉 Upload complete!', 'success');
       clearCache();
-
       return { success: true };
 
     } catch (e: any) {
       clearTimeout(timeout);
       if (countIntervalRef.current) clearInterval(countIntervalRef.current);
-      log(`💥 Upload failed: ${e.message}`, 'error');
+      log(`💥 Failed: ${e.message}`, 'error');
 
       let msg = e.message || 'Upload failed';
-      let shouldAllowRetry = false;
+      let shouldRetry = false;
 
       if (e.name === 'AbortError') {
         msg = 'Upload timed out (2 minutes)';
-        log('Timeout after 2 minutes', 'error');
-        shouldAllowRetry = true;
+        log('Timeout', 'error');
+        shouldRetry = true;
       } else if (e.message.includes('Failed to fetch') || e.message.includes('Network')) {
-        msg = 'Network error. Check your connection and retry.';
-        log('Network error: Failed to fetch', 'error');
-        shouldAllowRetry = true;
-      } else if (e.message.includes('database')) {
-        shouldAllowRetry = true;
-      }
+        msg = 'Network error. Check connection and retry.';
+        log('Network error', 'error');
+        shouldRetry = true;
+      } else if (e.message.includes('database')) shouldRetry = true;
 
-      // Enable resume if we have cached URLs
-      if (shouldAllowRetry && (cacheRef.current?.imageUrl || cacheRef.current?.thumbnailUrl)) {
+      if (shouldRetry && (cacheRef.current?.imageUrl || cacheRef.current?.thumbnailUrl)) {
         setCanResume(true);
-        log('📌 Upload can be resumed from cache', 'info');
+        log('📌 Can resume from cache', 'info');
       }
 
       setError(msg);
@@ -416,14 +322,8 @@ export const useUpload = (userId: string | null) => {
     setUploading(false);
     setLogs([]);
     setCanResume(false);
-    if (abortRef.current) {
-      abortRef.current.abort();
-      abortRef.current = null;
-    }
-    if (countIntervalRef.current) {
-      clearInterval(countIntervalRef.current);
-      countIntervalRef.current = null;
-    }
+    if (abortRef.current) { abortRef.current.abort(); abortRef.current = null; }
+    if (countIntervalRef.current) { clearInterval(countIntervalRef.current); countIntervalRef.current = null; }
     clearCache();
   }, [clearCache]);
 
@@ -437,39 +337,18 @@ export const useUpload = (userId: string | null) => {
     setLogs([]);
   }, []);
 
-  // Network monitoring
   useEffect(() => {
     const checkSpeed = async () => {
-      if (!navigator.onLine) {
-        setSpeed('offline');
-        setOnline(false);
-        return;
-      }
+      if (!navigator.onLine) { setSpeed('offline'); setOnline(false); return; }
       try {
         const t = Date.now();
-        const r = await fetch('https://www.google.com/favicon.ico', {
-          method: 'HEAD',
-          cache: 'no-cache',
-          signal: AbortSignal.timeout(5000)
-        });
-        if (r.ok) {
-          setOnline(true);
-          setSpeed(Date.now() - t > 2000 ? 'slow' : 'fast');
-        }
-      } catch {
-        setSpeed('slow');
-      }
+        const r = await fetch('https://www.google.com/favicon.ico', { method: 'HEAD', cache: 'no-cache', signal: AbortSignal.timeout(5000) });
+        if (r.ok) { setOnline(true); setSpeed(Date.now() - t > 2000 ? 'slow' : 'fast'); }
+      } catch { setSpeed('slow'); }
     };
 
-    const onOnline = () => {
-      setOnline(true);
-      setSpeed('fast');
-    };
-
-    const onOffline = () => {
-      setOnline(false);
-      setSpeed('offline');
-    };
+    const onOnline = () => { setOnline(true); setSpeed('fast'); };
+    const onOffline = () => { setOnline(false); setSpeed('offline'); };
 
     window.addEventListener('online', onOnline);
     window.addEventListener('offline', onOffline);
@@ -484,14 +363,13 @@ export const useUpload = (userId: string | null) => {
     };
   }, []);
 
-  // Check for cached data on mount
   useEffect(() => {
     if (userId) {
       const cached = loadFromCache();
       if (cached && (cached.imageUrl || cached.thumbnailUrl)) {
         cacheRef.current = cached;
         setCanResume(true);
-        log('📦 Found cached upload data', 'info');
+        log('📦 Found cached data', 'info');
       }
     }
   }, [userId, loadFromCache, log]);
