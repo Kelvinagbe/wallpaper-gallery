@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { X, Upload, Image as ImageIcon, Check, AlertCircle, User, Wifi, WifiOff, Terminal } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/app/components/AuthProvider';
-import { useUpload } from '@/hooks/useUpload';
+import { useUpload } from '@/app/hooks/useUpload';
 
 const Toast = ({ message, type, onClose }: any) => (
   <div style={{position:'fixed',top:16,right:16,zIndex:60,animation:'slideIn 0.3s'}}>
