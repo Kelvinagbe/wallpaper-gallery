@@ -3,11 +3,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { 
-  fetchWallpapers, 
-  fetchTrendingWallpapers, 
-  fetchWallpapersByCategory 
-} from '@/lib/stores/wallpaperStore';
+import { fetchWallpapers, fetchTrendingWallpapers, fetchWallpapersByCategory } from '@/lib/stores/wallpaperStore';
 import type { Wallpaper } from '@/app/types';
 import type { 
   RealtimeChannel, 
