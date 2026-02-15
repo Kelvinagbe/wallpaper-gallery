@@ -8,47 +8,31 @@ type WallpaperGridProps = {
   onWallpaperClick: (wallpaper: Wallpaper) => void;
 };
 
-export const WallpaperGrid = ({ 
-  wallpapers, 
-  isLoading, 
-  onWallpaperClick
-}: WallpaperGridProps) => {
-  const [showRefreshSuccess, setShowRefreshSuccess] = useState(false);
+export const WallpaperGrid = ({ wallpapers, isLoading, onWallpaperClick }: WallpaperGridProps) => {
+  const [showRefresh, setShowRefresh] = useState(false);
   const wasLoadingRef = useRef(false);
 
-  // Detect when refresh completes
   useEffect(() => {
-    // If was loading and now not loading, and we have wallpapers
     if (wasLoadingRef.current && !isLoading && wallpapers.length > 0) {
-      setShowRefreshSuccess(true);
-      const timer = setTimeout(() => setShowRefreshSuccess(false), 2000);
+      setShowRefresh(true);
+      const timer = setTimeout(() => setShowRefresh(false), 2000);
       return () => clearTimeout(timer);
     }
-    
-    // Update the ref
     wasLoadingRef.current = isLoading;
   }, [isLoading, wallpapers.length]);
 
-  // Show skeleton loaders on initial load
   if (isLoading && wallpapers.length === 0) {
     return (
       <div className="masonry">
         {Array.from({ length: 15 }, (_, i) => (
           <div key={i} style={{ marginBottom: '40px' }}>
-            <div 
-              className="skeleton-shimmer rounded-xl" 
-              style={{ 
-                height: `${Math.floor(Math.random() * (350 - 200 + 1)) + 200}px`,
-                width: '100%'
-              }} 
-            />
+            <div className="skeleton-shimmer rounded-xl" style={{ height: `${Math.floor(Math.random() * 150) + 200}px`, width: '100%' }} />
           </div>
         ))}
       </div>
     );
   }
 
-  // Empty state
   if (wallpapers.length === 0 && !isLoading) {
     return (
       <div className="text-center py-20">
@@ -59,36 +43,25 @@ export const WallpaperGrid = ({
     );
   }
 
-  // Main grid with wallpapers
   return (
     <>
-      {/* Refresh success notification */}
-      {showRefreshSuccess && (
-        <div 
-          className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 bg-emerald-500/90 backdrop-blur-sm px-4 py-2 rounded-full shadow-lg flex items-center gap-2"
-          style={{ animation: 'slideDown 0.3s ease-out' }}
-        >
+      {showRefresh && (
+        <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 bg-emerald-500/90 backdrop-blur-sm px-4 py-2 rounded-full shadow-lg flex items-center gap-2" style={{ animation: 'slideDown 0.3s ease-out' }}>
           <span className="text-white text-sm font-medium">✓ Refreshed</span>
         </div>
       )}
-
       <div className="masonry">
         {wallpapers.map((wp) => (
           <div key={wp.id} style={{ marginBottom: '40px' }}>
-            <WallpaperCard 
-              wp={wp} 
-              onClick={() => onWallpaperClick(wp)}
-            />
+            <WallpaperCard wp={wp} onClick={() => onWallpaperClick(wp)} />
           </div>
         ))}
       </div>
-
-      {/* Loading more indicator at bottom */}
       {isLoading && wallpapers.length > 0 && (
         <div className="flex items-center justify-center py-8 gap-2">
-          <div className="w-2 h-2 bg-white/60 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-          <div className="w-2 h-2 bg-white/60 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-          <div className="w-2 h-2 bg-white/60 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+          {[0, 150, 300].map((delay, i) => (
+            <div key={i} className="w-2 h-2 bg-white/60 rounded-full animate-bounce" style={{ animationDelay: `${delay}ms` }} />
+          ))}
         </div>
       )}
     </>
