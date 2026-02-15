@@ -1,108 +1,39 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Heart, Download, Eye, MoreHorizontal, Share2, Bookmark, Flag, X } from 'lucide-react';
+import { Heart, Download, Eye, MoreHorizontal, Share2, Bookmark, Flag } from 'lucide-react';
 import { VerifiedBadge } from './VerifiedBadge';
-import { toggleLike as toggleLikeAction, isWallpaperLiked, toggleSave, isWallpaperSaved } from '@/lib/stores/userStore';
+import { toggleLike, isWallpaperLiked, toggleSave, isWallpaperSaved } from '@/lib/stores/userStore';
 import { useAuth } from '@/app/components/AuthProvider';
 import type { Wallpaper } from '../types';
 
-type WallpaperCardProps = {
-  wp: Wallpaper;
-  onClick: () => void;
-};
+type WallpaperCardProps = { wp: Wallpaper; onClick: () => void };
 
-// Bottom Sheet Modal Component
-const BottomSheetModal = ({ 
-  isOpen, 
-  onClose, 
-  wp,
-  saved,
-  onSave,
-  onDownload,
-  onShare
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-  wp: Wallpaper;
-  saved: boolean;
-  onSave: () => void;
-  onDownload: () => void;
-  onShare: () => void;
-}) => {
+const BottomSheet = ({ isOpen, onClose, wp, saved, onSave, onDownload, onShare }: any) => {
   if (!isOpen) return null;
-
   return createPortal(
     <>
-      {/* Backdrop */}
-      <div 
-        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] animate-fade-in"
-        onClick={onClose}
-      />
-      
-      {/* Bottom Sheet */}
-      <div className="fixed bottom-0 left-0 right-0 z-[101] animate-slide-up">
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100]" onClick={onClose} style={{ animation: 'fadeIn 0.2s' }} />
+      <div className="fixed bottom-0 left-0 right-0 z-[101]" style={{ animation: 'slideUp 0.3s cubic-bezier(0.34,1.56,0.64,1)' }}>
         <div className="bg-zinc-900 rounded-t-3xl border-t border-white/10 shadow-2xl max-w-2xl mx-auto">
-          {/* Handle bar */}
-          <div className="flex justify-center pt-3 pb-2">
-            <div className="w-12 h-1.5 bg-white/20 rounded-full" />
-          </div>
-
-          {/* Content */}
+          <div className="flex justify-center pt-3 pb-2"><div className="w-12 h-1.5 bg-white/20 rounded-full" /></div>
           <div className="px-4 pb-6">
             <h3 className="text-lg font-semibold mb-4">{wp.title}</h3>
-            
             <div className="space-y-1">
-              <button
-                onClick={onSave}
-                className="w-full flex items-center gap-4 px-4 py-4 hover:bg-white/5 rounded-xl transition-colors active:scale-[0.98]"
-              >
-                <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
-                  <Bookmark className={`w-5 h-5 ${saved ? 'fill-blue-400 text-blue-400' : 'text-white/80'}`} />
-                </div>
-                <span className="text-base font-medium">{saved ? 'Remove from Saved' : 'Save to Collection'}</span>
-              </button>
-
-              <button
-                onClick={onDownload}
-                className="w-full flex items-center gap-4 px-4 py-4 hover:bg-white/5 rounded-xl transition-colors active:scale-[0.98]"
-              >
-                <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
-                  <Download className="w-5 h-5 text-white/80" />
-                </div>
-                <span className="text-base font-medium">Download Wallpaper</span>
-              </button>
-
-              <button
-                onClick={onShare}
-                className="w-full flex items-center gap-4 px-4 py-4 hover:bg-white/5 rounded-xl transition-colors active:scale-[0.98]"
-              >
-                <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
-                  <Share2 className="w-5 h-5 text-white/80" />
-                </div>
-                <span className="text-base font-medium">Share Wallpaper</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  alert('Report functionality coming soon');
-                  onClose();
-                }}
-                className="w-full flex items-center gap-4 px-4 py-4 hover:bg-white/5 rounded-xl transition-colors active:scale-[0.98] border-t border-white/5 mt-2"
-              >
-                <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center">
-                  <Flag className="w-5 h-5 text-red-400" />
-                </div>
-                <span className="text-base font-medium text-red-400">Report Content</span>
-              </button>
+              {[
+                { icon: Bookmark, label: saved ? 'Remove from Saved' : 'Save to Collection', onClick: onSave, color: saved ? 'blue' : 'white' },
+                { icon: Download, label: 'Download Wallpaper', onClick: onDownload },
+                { icon: Share2, label: 'Share Wallpaper', onClick: onShare },
+                { icon: Flag, label: 'Report Content', onClick: () => { alert('Report coming soon'); onClose(); }, color: 'red', border: true }
+              ].map((btn, i) => (
+                <button key={i} onClick={btn.onClick} className={`w-full flex items-center gap-4 px-4 py-4 hover:bg-white/5 rounded-xl transition-colors active:scale-[0.98] ${btn.border ? 'border-t border-white/5 mt-2' : ''}`}>
+                  <div className={`w-10 h-10 rounded-full ${btn.color === 'red' ? 'bg-red-500/10' : 'bg-white/10'} flex items-center justify-center`}>
+                    <btn.icon className={`w-5 h-5 ${btn.color === 'blue' ? 'fill-blue-400 text-blue-400' : btn.color === 'red' ? 'text-red-400' : 'text-white/80'}`} />
+                  </div>
+                  <span className={`text-base font-medium ${btn.color === 'red' ? 'text-red-400' : ''}`}>{btn.label}</span>
+                </button>
+              ))}
             </div>
-
-            {/* Cancel button */}
-            <button
-              onClick={onClose}
-              className="w-full mt-4 py-3 bg-white/5 hover:bg-white/10 rounded-xl font-medium transition-colors"
-            >
-              Cancel
-            </button>
+            <button onClick={onClose} className="w-full mt-4 py-3 bg-white/5 hover:bg-white/10 rounded-xl font-medium transition-colors">Cancel</button>
           </div>
         </div>
       </div>
@@ -114,98 +45,55 @@ const BottomSheetModal = ({
 export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
   const { user } = useAuth();
   const cardRef = useRef<HTMLDivElement>(null);
-  const [inView, setInView] = useState(false);
-  const [imageLoaded, setImageLoaded] = useState(false);
-  const [liked, setLiked] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [showMenu, setShowMenu] = useState(false);
-  const [likeCount, setLikeCount] = useState(wp.likes || 0);
-  const [viewCount] = useState(wp.views || 0);
+  const [state, setState] = useState({ inView: false, thumbLoaded: false, fullLoaded: false, liked: false, saved: false, showMenu: false });
+  const [counts, setCounts] = useState({ likes: wp.likes || 0, views: wp.views || 0 });
 
-  // Lazy loading
   useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            setInView(true);
-            observer.disconnect();
-          }
-        });
-      },
-      { rootMargin: '300px', threshold: 0.01 }
-    );
-
-    if (cardRef.current) {
-      observer.observe(cardRef.current);
-    }
-
+    const observer = new IntersectionObserver(([entry]) => { if (entry.isIntersecting) { setState(s => ({ ...s, inView: true })); observer.disconnect(); } }, { rootMargin: '300px', threshold: 0.01 });
+    if (cardRef.current) observer.observe(cardRef.current);
     return () => observer.disconnect();
   }, []);
 
-  // Load like and save status
   useEffect(() => {
-    if (!inView || !user) return;
+    if (!state.inView || !user) return;
     (async () => {
-      const [isLiked, isSaved] = await Promise.all([
-        isWallpaperLiked(wp.id, user.id),
-        isWallpaperSaved(wp.id, user.id)
-      ]);
-      setLiked(isLiked);
-      setSaved(isSaved);
+      const [liked, saved] = await Promise.all([isWallpaperLiked(wp.id, user.id), isWallpaperSaved(wp.id, user.id)]);
+      setState(s => ({ ...s, liked, saved }));
     })();
-  }, [inView, wp.id, user]);
+  }, [state.inView, wp.id, user]);
 
   const handleLike = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!user) return alert('Please login to like wallpapers');
-
-    const newLikedState = !liked;
-    setLiked(newLikedState);
-    setLikeCount(prev => newLikedState ? prev + 1 : Math.max(0, prev - 1));
-    if (navigator.vibrate) navigator.vibrate(50);
-
-    try {
-      await toggleLikeAction(wp.id);
-    } catch (error) {
-      setLiked(!newLikedState);
-      setLikeCount(prev => newLikedState ? Math.max(0, prev - 1) : prev + 1);
-    }
+    const newLiked = !state.liked;
+    setState(s => ({ ...s, liked: newLiked }));
+    setCounts(c => ({ ...c, likes: newLiked ? c.likes + 1 : Math.max(0, c.likes - 1) }));
+    navigator.vibrate?.(50);
+    try { await toggleLike(wp.id); } catch { setState(s => ({ ...s, liked: !newLiked })); setCounts(c => ({ ...c, likes: newLiked ? Math.max(0, c.likes - 1) : c.likes + 1 })); }
   };
 
   const handleSave = async () => {
-    if (!user) {
-      alert('Please login to save wallpapers');
-      return;
-    }
-
-    const newSavedState = !saved;
-    setSaved(newSavedState);
-    if (navigator.vibrate) navigator.vibrate(50);
-
-    try {
-      await toggleSave(wp.id);
-    } catch (error) {
-      setSaved(!newSavedState);
-    }
-    setShowMenu(false);
+    if (!user) return alert('Please login to save wallpapers');
+    const newSaved = !state.saved;
+    setState(s => ({ ...s, saved: newSaved, showMenu: false }));
+    navigator.vibrate?.(50);
+    try { await toggleSave(wp.id); } catch { setState(s => ({ ...s, saved: !newSaved })); }
   };
 
   const handleDownload = async () => {
-    if (navigator.vibrate) navigator.vibrate(50);
-
+    navigator.vibrate?.(50);
     try {
-      const response = await fetch(wp.url, { mode: 'cors' });
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
+      const res = await fetch(wp.url, { mode: 'cors' });
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
       link.download = `${wp.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.jpg`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-    } catch (error) {
+      URL.revokeObjectURL(url);
+    } catch {
       const link = document.createElement('a');
       link.href = wp.url;
       link.download = `${wp.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.jpg`;
@@ -214,155 +102,90 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
       link.click();
       document.body.removeChild(link);
     }
-    setShowMenu(false);
+    setState(s => ({ ...s, showMenu: false }));
   };
 
   const handleShare = async () => {
     if (navigator.share) {
-      try {
-        await navigator.share({
-          title: wp.title,
-          text: `Check out "${wp.title}" on Gallery`,
-          url: window.location.href,
-        });
-      } catch (error) {
-        // User cancelled
-      }
-    } else {
-      navigator.clipboard.writeText(window.location.href);
-      alert('Link copied to clipboard!');
-    }
-    setShowMenu(false);
+      try { await navigator.share({ title: wp.title, text: `Check out "${wp.title}" on Gallery`, url: window.location.href }); } catch { }
+    } else { navigator.clipboard.writeText(window.location.href); alert('Link copied!'); }
+    setState(s => ({ ...s, showMenu: false }));
   };
 
-  const formatCount = (count: number) => {
-    if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
-    if (count >= 1000) return `${(count / 1000).toFixed(1)}k`;
-    return count.toString();
-  };
+  const fmt = (n: number) => n >= 1000000 ? `${(n / 1000000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n.toString();
 
-  if (!inView) {
-    return (
-      <div 
-        ref={cardRef}
-        className="skeleton-shimmer rounded-xl"
-        style={{ minHeight: '250px' }}
-      />
-    );
-  }
+  if (!state.inView) return <div ref={cardRef} className="skeleton-shimmer rounded-xl" style={{ minHeight: '250px' }} />;
 
   return (
     <>
       <div ref={cardRef} className="relative">
-        <div 
-          className="card group relative rounded-xl overflow-hidden cursor-pointer transition-opacity hover:opacity-95"
-          onClick={onClick}
-        >
-          {/* Skeleton while loading */}
-          {!imageLoaded && (
-            <div className="skeleton-shimmer w-full rounded-xl" style={{ minHeight: '250px' }} />
+        <div className="card group relative rounded-xl overflow-hidden cursor-pointer transition-opacity hover:opacity-95" onClick={onClick}>
+          {/* Blur placeholder */}
+          {!state.thumbLoaded && <div className="absolute inset-0 bg-zinc-900 animate-pulse" />}
+
+          {/* Thumbnail (blurred) */}
+          {wp.thumbnail && (
+            <img
+              src={wp.thumbnail}
+              alt={wp.title}
+              loading="lazy"
+              decoding="async"
+              onLoad={() => setState(s => ({ ...s, thumbLoaded: true }))}
+              className={`w-full h-auto block transition-all duration-300 ${state.thumbLoaded ? 'opacity-100' : 'opacity-0'} ${state.fullLoaded ? 'opacity-0 absolute' : ''}`}
+              style={{ filter: 'blur(8px)', transform: 'scale(1.1)', contentVisibility: 'auto', backgroundColor: '#1a1a1a' }}
+            />
           )}
 
-          {/* Image */}
+          {/* Full image */}
           <img
-            src={wp.thumbnail || wp.url}
+            src={wp.url}
             alt={wp.title}
             loading="lazy"
             decoding="async"
-            onLoad={() => setImageLoaded(true)}
-            className={`w-full h-auto block transition-opacity duration-300 ${
-              imageLoaded ? 'opacity-100' : 'opacity-0 absolute inset-0'
-            }`}
+            onLoad={() => setState(s => ({ ...s, fullLoaded: true }))}
+            className={`w-full h-auto block transition-opacity duration-500 ${state.fullLoaded ? 'opacity-100' : 'opacity-0 absolute inset-0'}`}
             style={{ contentVisibility: 'auto', backgroundColor: '#1a1a1a' }}
           />
 
           {/* Hover overlay */}
-          {imageLoaded && (
+          {state.fullLoaded && (
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200">
               <div className="absolute top-3 right-3 flex items-center gap-2">
-                <button
-                  onClick={handleLike}
-                  className={`p-2.5 rounded-full backdrop-blur-md transition-all hover:scale-110 active:scale-95 ${
-                    liked ? 'bg-rose-500 hover:bg-rose-600' : 'bg-black/50 hover:bg-black/70'
-                  }`}
-                >
-                  <Heart className={`w-4 h-4 ${liked ? 'text-white fill-white' : 'text-white'}`} />
+                <button onClick={handleLike} className={`p-2.5 rounded-full backdrop-blur-md transition-all hover:scale-110 active:scale-95 ${state.liked ? 'bg-rose-500 hover:bg-rose-600' : 'bg-black/50 hover:bg-black/70'}`}>
+                  <Heart className={`w-4 h-4 ${state.liked ? 'text-white fill-white' : 'text-white'}`} />
                 </button>
-                <button
-                  onClick={handleDownload}
-                  className="p-2.5 rounded-full bg-black/50 hover:bg-black/70 backdrop-blur-md transition-all hover:scale-110 active:scale-95"
-                >
+                <button onClick={handleDownload} className="p-2.5 rounded-full bg-black/50 hover:bg-black/70 backdrop-blur-md transition-all hover:scale-110 active:scale-95">
                   <Download className="w-4 h-4 text-white" />
                 </button>
               </div>
             </div>
           )}
 
-          {/* Bottom info bar */}
-          {imageLoaded && (
+          {/* Bottom info */}
+          {state.fullLoaded && (
             <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/95 via-black/80 to-transparent p-2.5">
               <div className="flex items-center justify-between gap-2 mb-1.5">
                 <h3 className="font-medium line-clamp-1 text-xs flex-1">{wp.title}</h3>
-                
-                {/* Three dots button - positioned inside card */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowMenu(true);
-                  }}
-                  className="p-1.5 rounded-full hover:bg-white/10 transition-colors flex-shrink-0"
-                >
+                <button onClick={(e) => { e.stopPropagation(); setState(s => ({ ...s, showMenu: true })); }} className="p-1.5 rounded-full hover:bg-white/10 transition-colors flex-shrink-0">
                   <MoreHorizontal className="w-4 h-4 text-white/80" />
                 </button>
               </div>
-
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                  <img 
-                    src={wp.userAvatar} 
-                    alt={wp.uploadedBy} 
-                    className="w-5 h-5 rounded-full flex-shrink-0 border border-white/20" 
-                  />
-                  <span className="text-[10px] text-white/80 truncate font-medium">
-                    {wp.uploadedBy}
-                  </span>
+                  <img src={wp.userAvatar} alt={wp.uploadedBy} className="w-5 h-5 rounded-full flex-shrink-0 border border-white/20" />
+                  <span className="text-[10px] text-white/80 truncate font-medium">{wp.uploadedBy}</span>
                   {wp.verified && <VerifiedBadge size="sm" />}
                 </div>
-                
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  {likeCount > 0 && (
-                    <div className="flex items-center gap-0.5">
-                      <Heart className="w-3 h-3 text-rose-400 fill-rose-400" />
-                      <span className="text-[10px] font-medium text-rose-400">
-                        {formatCount(likeCount)}
-                      </span>
-                    </div>
-                  )}
-                  {viewCount > 0 && (
-                    <div className="flex items-center gap-0.5">
-                      <Eye className="w-3 h-3 text-white/60" />
-                      <span className="text-[10px] font-medium text-white/60">
-                        {formatCount(viewCount)}
-                      </span>
-                    </div>
-                  )}
+                  {counts.likes > 0 && <div className="flex items-center gap-0.5"><Heart className="w-3 h-3 text-rose-400 fill-rose-400" /><span className="text-[10px] font-medium text-rose-400">{fmt(counts.likes)}</span></div>}
+                  {counts.views > 0 && <div className="flex items-center gap-0.5"><Eye className="w-3 h-3 text-white/60" /><span className="text-[10px] font-medium text-white/60">{fmt(counts.views)}</span></div>}
                 </div>
               </div>
             </div>
           )}
         </div>
       </div>
-
-      {/* Bottom Sheet Modal */}
-      <BottomSheetModal
-        isOpen={showMenu}
-        onClose={() => setShowMenu(false)}
-        wp={wp}
-        saved={saved}
-        onSave={handleSave}
-        onDownload={handleDownload}
-        onShare={handleShare}
-      />
+      <BottomSheet isOpen={state.showMenu} onClose={() => setState(s => ({ ...s, showMenu: false }))} wp={wp} saved={state.saved} onSave={handleSave} onDownload={handleDownload} onShare={handleShare} />
     </>
   );
 };
