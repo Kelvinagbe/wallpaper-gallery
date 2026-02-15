@@ -94,42 +94,62 @@ body {
   align-items: center;
   justify-content: center;
   z-index: 9999;
-  animation: fadeOut 0.5s ease-out 3.5s forwards;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.8s ease-out, visibility 0.8s ease-out;
+}
+
+.splash-screen.splash-hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .splash-content {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2rem;
+  gap: 2.5rem;
 }
 
 .splash-logo {
-  width: 80px;
-  height: 80px;
+  width: 120px;
+  height: 120px;
   animation: pulse 2s ease-in-out infinite;
 }
 
 .splash-loader {
-  width: 200px;
-  height: 3px;
+  width: 240px;
+  height: 4px;
   background: rgba(255, 255, 255, 0.1);
   border-radius: 2px;
   overflow: hidden;
+  position: relative;
 }
 
 .splash-loader-bar {
   height: 100%;
-  background: linear-gradient(90deg, #3b82f6, #8b5cf6, #ec4899);
-  animation: loading 3.5s ease-in-out forwards;
+  background: white;
+  animation: loading 5.5s ease-in-out forwards;
   border-radius: 2px;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
 }
 
-@keyframes fadeOut {
-  to {
-    opacity: 0;
-    visibility: hidden;
-  }
+/* Main App */
+.main-app {
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.5s ease-in, visibility 0.5s ease-in;
+}
+
+.main-app.app-hidden {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.main-app.app-visible {
+  opacity: 1;
+  visibility: visible;
 }
 
 @keyframes pulse {
@@ -138,12 +158,16 @@ body {
     opacity: 1;
   }
   50% {
-    transform: scale(1.05);
-    opacity: 0.8;
+    transform: scale(1.08);
+    opacity: 0.85;
   }
 }
 
 @keyframes loading {
-  0% { width: 0%; }
-  100% { width: 100%; }
+  0% { 
+    width: 0%; 
+  }
+  100% { 
+    width: 100%; 
+  }
 }
