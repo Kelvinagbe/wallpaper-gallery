@@ -13,14 +13,16 @@ type WallpaperCardProps = {
 export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
   const { user } = useAuth();
   const cardRef = useRef<HTMLDivElement>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
   const [inView, setInView] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(false);
   const [liked, setLiked] = useState(false);
   const [saved, setSaved] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [likeCount, setLikeCount] = useState(wp.likes || 0);
   const [viewCount] = useState(wp.views || 0);
 
-  // Aggressive lazy loading like Pinterest
+  // Pinterest-style aggressive lazy loading
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
@@ -31,7 +33,10 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
           }
         });
       },
-      { rootMargin: '200px' } // Load earlier
+      { 
+        rootMargin: '300px', // Load 300px before visible (Pinterest uses 200-400px)
+        threshold: 0.01 
+      }
     );
 
     if (cardRef.current) {
@@ -134,12 +139,16 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
     return count.toString();
   };
 
+  // Don't render anything until in view
   if (!inView) {
     return (
       <div 
         ref={cardRef}
-        className="rounded-xl bg-white/5"
-        style={{ height: '250px' }}
+        className="rounded-xl"
+        style={{ 
+          backgroundColor: '#1a1a1a', // Solid color placeholder
+          minHeight: '250px'
+        }}
       />
     );
   }
@@ -147,16 +156,20 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
   return (
     <div 
       ref={cardRef}
-      className="card group relative rounded-xl overflow-hidden cursor-pointer hover:opacity-90 transition-opacity"
+      className="card group relative rounded-xl overflow-hidden cursor-pointer transition-opacity hover:opacity-95"
       onClick={onClick}
     >
-      {/* Image - loads instantly like Pinterest */}
+      {/* Pinterest-style progressive image loading */}
       <img
+        ref={imgRef}
         src={wp.thumbnail || wp.url}
         alt={wp.title}
         loading="lazy"
         decoding="async"
-        className="w-full h-auto block"
+        onLoad={() => setImageLoaded(true)}
+        className={`w-full h-auto block transition-opacity duration-300 ${
+          imageLoaded ? 'opacity-100' : 'opacity-0'
+        }`}
         style={{ 
           contentVisibility: 'auto',
           backgroundColor: '#1a1a1a'
@@ -164,77 +177,81 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
       />
 
       {/* Hover overlay */}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-        <div className="absolute top-3 right-3 flex items-center gap-2">
-          <button
-            onClick={handleLike}
-            className={`p-2 rounded-full backdrop-blur-md transition-all hover:scale-110 active:scale-95 ${
-              liked 
-                ? 'bg-rose-500 hover:bg-rose-600' 
-                : 'bg-black/40 hover:bg-black/60'
-            }`}
-          >
-            <Heart 
-              className={`w-4 h-4 ${liked ? 'text-white fill-white' : 'text-white'}`} 
-            />
-          </button>
-          <button
-            onClick={handleDownload}
-            className="p-2 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-md transition-all hover:scale-110 active:scale-95"
-          >
-            <Download className="w-4 h-4 text-white" />
-          </button>
-        </div>
-      </div>
-
-      {/* Bottom info bar - always visible */}
-      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/95 via-black/80 to-transparent p-2.5">
-        <div className="flex items-center justify-between gap-2 mb-1.5">
-          <h3 className="font-medium line-clamp-1 text-xs flex-1">{wp.title}</h3>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowMenu(!showMenu);
-            }}
-            className="p-1 rounded-full hover:bg-white/10 transition-colors flex-shrink-0"
-          >
-            <MoreVertical className="w-4 h-4 text-white/80" />
-          </button>
-        </div>
-
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 min-w-0 flex-1">
-            <img 
-              src={wp.userAvatar} 
-              alt={wp.uploadedBy} 
-              className="w-5 h-5 rounded-full flex-shrink-0 border border-white/20" 
-            />
-            <span className="text-[10px] text-white/80 truncate font-medium">
-              {wp.uploadedBy}
-            </span>
-            {wp.verified && <VerifiedBadge size="sm" />}
-          </div>
-          
-          <div className="flex items-center gap-2 flex-shrink-0">
-            {likeCount > 0 && (
-              <div className="flex items-center gap-0.5">
-                <Heart className="w-3 h-3 text-rose-400 fill-rose-400" />
-                <span className="text-[10px] font-medium text-rose-400">
-                  {formatCount(likeCount)}
-                </span>
-              </div>
-            )}
-            {viewCount > 0 && (
-              <div className="flex items-center gap-0.5">
-                <Eye className="w-3 h-3 text-white/60" />
-                <span className="text-[10px] font-medium text-white/60">
-                  {formatCount(viewCount)}
-                </span>
-              </div>
-            )}
+      {imageLoaded && (
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+          <div className="absolute top-3 right-3 flex items-center gap-2">
+            <button
+              onClick={handleLike}
+              className={`p-2.5 rounded-full backdrop-blur-md transition-all hover:scale-110 active:scale-95 ${
+                liked 
+                  ? 'bg-rose-500 hover:bg-rose-600' 
+                  : 'bg-black/50 hover:bg-black/70'
+              }`}
+            >
+              <Heart 
+                className={`w-4 h-4 ${liked ? 'text-white fill-white' : 'text-white'}`} 
+              />
+            </button>
+            <button
+              onClick={handleDownload}
+              className="p-2.5 rounded-full bg-black/50 hover:bg-black/70 backdrop-blur-md transition-all hover:scale-110 active:scale-95"
+            >
+              <Download className="w-4 h-4 text-white" />
+            </button>
           </div>
         </div>
-      </div>
+      )}
+
+      {/* Bottom info bar */}
+      {imageLoaded && (
+        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/95 via-black/80 to-transparent p-2.5">
+          <div className="flex items-center justify-between gap-2 mb-1.5">
+            <h3 className="font-medium line-clamp-1 text-xs flex-1">{wp.title}</h3>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowMenu(!showMenu);
+              }}
+              className="p-1.5 rounded-full hover:bg-white/10 transition-colors flex-shrink-0"
+            >
+              <MoreVertical className="w-4 h-4 text-white/80" />
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+              <img 
+                src={wp.userAvatar} 
+                alt={wp.uploadedBy} 
+                className="w-5 h-5 rounded-full flex-shrink-0 border border-white/20" 
+              />
+              <span className="text-[10px] text-white/80 truncate font-medium">
+                {wp.uploadedBy}
+              </span>
+              {wp.verified && <VerifiedBadge size="sm" />}
+            </div>
+            
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {likeCount > 0 && (
+                <div className="flex items-center gap-0.5">
+                  <Heart className="w-3 h-3 text-rose-400 fill-rose-400" />
+                  <span className="text-[10px] font-medium text-rose-400">
+                    {formatCount(likeCount)}
+                  </span>
+                </div>
+              )}
+              {viewCount > 0 && (
+                <div className="flex items-center gap-0.5">
+                  <Eye className="w-3 h-3 text-white/60" />
+                  <span className="text-[10px] font-medium text-white/60">
+                    {formatCount(viewCount)}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Dropdown Menu */}
       {showMenu && (
@@ -246,7 +263,7 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
               setShowMenu(false);
             }}
           />
-          <div className="absolute bottom-14 right-2 z-50 bg-zinc-900 border border-white/10 rounded-xl overflow-hidden shadow-2xl min-w-[180px]">
+          <div className="absolute bottom-14 right-2 z-50 bg-zinc-900/95 backdrop-blur-xl border border-white/10 rounded-xl overflow-hidden shadow-2xl min-w-[180px]">
             <button
               onClick={handleSave}
               className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 transition-colors text-left"
