@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { Heart, Download, Loader2 } from 'lucide-react';
+import { Heart, Download, Eye } from 'lucide-react';
 import { VerifiedBadge } from './VerifiedBadge';
-import { createClient } from '@/lib/supabase/client';
+import { toggleLike as toggleLikeAction, isWallpaperLiked } from '@/lib/stores/userStore';
 import { useAuth } from '@/app/components/AuthProvider';
 import type { Wallpaper } from '../types';
 
@@ -10,27 +10,16 @@ type WallpaperCardProps = {
   onClick: () => void;
 };
 
-// ✅ Cache ONLY for wallpapers that user has viewed
-const cardDataCache = new Map<string, {
-  liked: boolean;
-  likeCount: number;
-  timestamp: number;
-}>();
-
-const CACHE_DURATION = 60000; // 1 minute
-
 export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
-  const { session } = useAuth();
-  const supabase = createClient();
+  const { user } = useAuth();
   const cardRef = useRef<HTMLDivElement>(null);
   const [loaded, setLoaded] = useState(false);
   const [inView, setInView] = useState(false);
-  const [hideOverlay, setHideOverlay] = useState(false);
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(wp.likes || 0);
-  const [dataFetched, setDataFetched] = useState(false);
+  const [viewCount, setViewCount] = useState(wp.views || 0);
 
-  // ✅ Lazy loading - only load image when in viewport
+  // Lazy loading - only load image when in viewport
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
@@ -41,7 +30,7 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
           }
         });
       },
-      { rootMargin: '50px' } // Load 50px before entering viewport
+      { rootMargin: '100px' }
     );
 
     if (cardRef.current) {
@@ -51,100 +40,20 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
     return () => observer.disconnect();
   }, []);
 
-  // ✅ Fetch data ONLY when card is in view
+  // Load like status when in view
   useEffect(() => {
-    if (!inView || !session || !wp.id) return;
+    if (!inView || !user) return;
 
-    const cacheKey = `card-${wp.id}-${session.user.id}`;
-    const cached = cardDataCache.get(cacheKey);
-
-    // Check if cache is valid
-    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-      setLiked(cached.liked);
-      setLikeCount(cached.likeCount);
-      setDataFetched(true);
-      return;
-    }
-
-    // Fetch from database only for viewed cards
     (async () => {
-      const [likeResult, likeCountResult] = await Promise.all([
-        supabase
-          .from('likes')
-          .select('id')
-          .eq('user_id', session.user.id)
-          .eq('wallpaper_id', wp.id)
-          .maybeSingle(),
-        supabase
-          .from('likes')
-          .select('id', { count: 'exact' })
-          .eq('wallpaper_id', wp.id),
-      ]);
-
-      const isLiked = !!likeResult.data;
-      const count = likeCountResult.count || 0;
-
+      const isLiked = await isWallpaperLiked(wp.id, user.id);
       setLiked(isLiked);
-      setLikeCount(count);
-      setDataFetched(true);
-
-      // Cache the results
-      cardDataCache.set(cacheKey, {
-        liked: isLiked,
-        likeCount: count,
-        timestamp: Date.now(),
-      });
     })();
-  }, [inView, wp.id, session]);
-
-  // ✅ Real-time subscription ONLY for viewed cards
-  useEffect(() => {
-    if (!inView || !wp.id) return;
-
-    const channel = supabase
-      .channel(`card-${wp.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'likes',
-          filter: `wallpaper_id=eq.${wp.id}`,
-        },
-        async () => {
-          const { count } = await supabase
-            .from('likes')
-            .select('id', { count: 'exact' })
-            .eq('wallpaper_id', wp.id);
-
-          const newCount = count || 0;
-          setLikeCount(newCount);
-
-          // Update cache
-          if (session) {
-            const cacheKey = `card-${wp.id}-${session.user.id}`;
-            const cached = cardDataCache.get(cacheKey);
-            if (cached) {
-              cardDataCache.set(cacheKey, {
-                ...cached,
-                likeCount: newCount,
-                timestamp: Date.now(),
-              });
-            }
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [inView, wp.id, session]);
+  }, [inView, wp.id, user]);
 
   const handleLike = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    
-    if (!session) {
+    e.stopPropagation(); // Prevent card click
+
+    if (!user) {
       alert('Please login to like wallpapers');
       return;
     }
@@ -152,96 +61,92 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
     // Optimistic update
     const newLikedState = !liked;
     setLiked(newLikedState);
-    setLikeCount(c => newLikedState ? c + 1 : c - 1);
-    setHideOverlay(true);
-    navigator.vibrate?.(50);
-
-    // Update cache immediately
-    const cacheKey = `card-${wp.id}-${session.user.id}`;
-    const cached = cardDataCache.get(cacheKey);
-    if (cached) {
-      cardDataCache.set(cacheKey, {
-        ...cached,
-        liked: newLikedState,
-        likeCount: newLikedState ? cached.likeCount + 1 : cached.likeCount - 1,
-        timestamp: Date.now(),
-      });
-    }
+    setLikeCount(prev => newLikedState ? prev + 1 : Math.max(0, prev - 1));
+    
+    // Haptic feedback
+    if (navigator.vibrate) navigator.vibrate(50);
 
     // Background sync
     try {
-      if (newLikedState) {
-        await supabase.from('likes').insert({
-          user_id: session.user.id,
-          wallpaper_id: wp.id,
-        });
-      } else {
-        await supabase
-          .from('likes')
-          .delete()
-          .eq('user_id', session.user.id)
-          .eq('wallpaper_id', wp.id);
-      }
+      await toggleLikeAction(wp.id);
     } catch (error) {
-      console.error('Error updating like:', error);
+      console.error('Error toggling like:', error);
+      // Revert on error
       setLiked(!newLikedState);
-      setLikeCount(c => newLikedState ? c - 1 : c + 1);
+      setLikeCount(prev => newLikedState ? Math.max(0, prev - 1) : prev + 1);
     }
   };
 
-  const handleDownload = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    
-    const link = document.createElement('a');
-    link.href = wp.url;
-    link.download = wp.title || 'wallpaper';
-    link.click();
-    
-    setHideOverlay(true);
-    navigator.vibrate?.(50);
+  const handleDownload = async (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent card click
+
+    if (navigator.vibrate) navigator.vibrate(50);
+
+    try {
+      const response = await fetch(wp.url);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${wp.title || 'wallpaper'}.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Download error:', error);
+      // Fallback to direct link
+      const link = document.createElement('a');
+      link.href = wp.url;
+      link.download = wp.title || 'wallpaper';
+      link.target = '_blank';
+      link.click();
+    }
   };
 
   const formatCount = (count: number) => {
-    if (count > 1000) return `${(count / 1000).toFixed(1)}k`;
-    return count;
+    if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
+    if (count >= 1000) return `${(count / 1000).toFixed(1)}k`;
+    return count.toString();
   };
 
   return (
     <div 
       ref={cardRef}
-      className="card group relative rounded-xl overflow-hidden cursor-pointer transition-all duration-300" 
+      className="card group relative rounded-xl overflow-hidden cursor-pointer"
       onClick={onClick}
     >
       {!inView ? (
         <div className="skeleton rounded-xl" style={{ height: '250px' }} />
       ) : (
         <>
-          {!loaded && (
-            <div className="skeleton rounded-xl flex items-center justify-center" style={{ height: '250px' }}>
-              <Loader2 className="w-8 h-8 text-white/40 animate-spin" />
-            </div>
-          )}
           <img
-            src={wp.thumbnail}
+            src={wp.thumbnail || wp.url}
             alt={wp.title}
             loading="lazy"
-            className={`w-full h-auto transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0 absolute'}`}
+            className={`w-full h-auto transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`}
             onLoad={() => setLoaded(true)}
           />
+          
+          {!loaded && (
+            <div className="absolute inset-0 skeleton rounded-xl" style={{ height: '250px' }} />
+          )}
+
           {loaded && (
             <>
-              {!hideOverlay && (
-                <div className="card-overlay absolute inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center gap-3">
+              {/* Hover overlay with actions */}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-3">
                   <button
                     onClick={handleLike}
-                    className={`p-2.5 rounded-full transition-all hover:scale-110 ${
+                    className={`p-3 rounded-full transition-all hover:scale-110 active:scale-95 ${
                       liked 
                         ? 'bg-rose-500 hover:bg-rose-600' 
-                        : 'bg-white hover:bg-gray-200'
+                        : 'bg-white/90 hover:bg-white'
                     }`}
                   >
                     <Heart 
-                      className={`w-4 h-4 transition-all ${
+                      className={`w-5 h-5 transition-all ${
                         liked 
                           ? 'text-white fill-white' 
                           : 'text-black'
@@ -250,36 +155,49 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
                   </button>
                   <button
                     onClick={handleDownload}
-                    className="p-2.5 rounded-full bg-white hover:bg-gray-200 transition-all hover:scale-110"
+                    className="p-3 rounded-full bg-white/90 hover:bg-white transition-all hover:scale-110 active:scale-95"
                   >
-                    <Download className="w-4 h-4 text-black" />
+                    <Download className="w-5 h-5 text-black" />
                   </button>
                 </div>
-              )}
-              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-2.5">
-                <h3 className="font-medium mb-1.5 line-clamp-1 text-xs">{wp.title}</h3>
+              </div>
+
+              {/* Bottom info - always visible */}
+              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent p-3">
+                <h3 className="font-semibold mb-2 line-clamp-1 text-sm">{wp.title}</h3>
+                
                 <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                  {/* User info */}
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
                     <img 
                       src={wp.userAvatar} 
                       alt={wp.uploadedBy} 
-                      className="w-5 h-5 rounded-full flex-shrink-0" 
+                      className="w-6 h-6 rounded-full flex-shrink-0 border border-white/20" 
                     />
-                    <span className="text-[11px] text-white/80 truncate">
+                    <span className="text-xs text-white/90 truncate font-medium">
                       {wp.uploadedBy}
                     </span>
                     {wp.verified && <VerifiedBadge size="sm" />}
                   </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {dataFetched && likeCount > 0 && (
-                      <span className="text-[11px] text-rose-400 flex items-center gap-0.5">
-                        <Heart className="w-3 h-3 fill-rose-400" />
-                        {formatCount(likeCount)}
-                      </span>
+                  
+                  {/* Stats */}
+                  <div className="flex items-center gap-3 flex-shrink-0">
+                    {likeCount > 0 && (
+                      <div className="flex items-center gap-1">
+                        <Heart className="w-3.5 h-3.5 text-rose-400 fill-rose-400" />
+                        <span className="text-xs font-medium text-rose-400">
+                          {formatCount(likeCount)}
+                        </span>
+                      </div>
                     )}
-                    <span className="text-[11px] text-white/70">
-                      {formatCount(wp.views)}
-                    </span>
+                    {viewCount > 0 && (
+                      <div className="flex items-center gap-1">
+                        <Eye className="w-3.5 h-3.5 text-white/70" />
+                        <span className="text-xs font-medium text-white/70">
+                          {formatCount(viewCount)}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
