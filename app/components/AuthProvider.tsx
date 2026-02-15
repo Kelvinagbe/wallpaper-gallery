@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { getProfile, type UserProfile } from '@/lib/stores/userStore';
-import type { Session, User } from '@supabase/supabase-js';
+import type { Session, User, AuthChangeEvent } from '@supabase/supabase-js';
 
 type AuthContextType = {
   user: User | null;
@@ -78,7 +78,7 @@ export function AuthProvider({
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, newSession) => {
+      async (event: AuthChangeEvent, newSession: Session | null) => {
         const newUser = newSession?.user ?? null;
         
         setSession(newSession);
