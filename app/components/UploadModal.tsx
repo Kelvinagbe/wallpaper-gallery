@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { X, Upload, Image as ImageIcon, Check, AlertCircle, User, Wifi, WifiOff, Terminal } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/app/components/AuthProvider';
-import { useUpload } from '@/app/hooks/useUpload';
+import { useUpload } from '@/hooks/useUpload';
 
 const Toast = ({ message, type, onClose }: any) => (
   <div style={{position:'fixed',top:16,right:16,zIndex:60,animation:'slideIn 0.3s'}}>
@@ -14,17 +14,20 @@ const Toast = ({ message, type, onClose }: any) => (
   </div>
 );
 
-const Progress = ({ progress, status, error, onRetry, onCancel, logs }: any) => (
+const Progress = ({ progress, status, error, onRetry, onCancel, logs, canResume }: any) => (
   <div style={{position:'fixed',inset:0,zIndex:60,animation:'fadeIn 0.2s'}} className="bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
     <div className="bg-zinc-900 rounded-2xl p-6 max-w-2xl w-full mx-4 border border-white/10 max-h-[90vh] flex flex-col">
       {error ? (
         <div className="text-center flex-shrink-0">
           <div className="w-16 h-16 mx-auto mb-4 bg-red-500/10 rounded-full flex items-center justify-center"><AlertCircle className="w-8 h-8 text-red-500"/></div>
           <h3 className="text-lg font-semibold text-white mb-2">Upload Failed</h3>
-          <p className="text-sm text-white/60 mb-6 whitespace-pre-wrap max-h-40 overflow-y-auto text-left">{error}</p>
+          <p className="text-sm text-white/60 mb-2 whitespace-pre-wrap max-h-40 overflow-y-auto text-left">{error}</p>
+          {canResume && <p className="text-xs text-emerald-400 mb-4">✅ Progress saved - you can resume from where it stopped</p>}
           <div className="flex gap-3 mb-4">
             <button onClick={onCancel} className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-white/70 hover:bg-white/5 border border-white/10">Cancel</button>
-            <button onClick={onRetry} className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium bg-white text-black hover:bg-white/90">Retry</button>
+            <button onClick={onRetry} className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium bg-white text-black hover:bg-white/90">
+              {canResume ? 'Resume' : 'Retry'}
+            </button>
           </div>
         </div>
       ) : (
@@ -32,7 +35,7 @@ const Progress = ({ progress, status, error, onRetry, onCancel, logs }: any) => 
           <div className="w-16 h-16 mx-auto mb-4 relative">
             <svg className="w-16 h-16" style={{transform:'rotate(-90deg)'}}>
               <circle cx="32" cy="32" r="28" stroke="currentColor" strokeWidth="4" fill="none" className="text-white/10"/>
-              <circle cx="32" cy="32" r="28" stroke="currentColor" strokeWidth="4" fill="none" className="text-blue-500" strokeLinecap="round" strokeDasharray={175.93} strokeDashoffset={175.93*(1-progress/100)} style={{transition:'stroke-dashoffset 0.3s ease'}}/>
+              <circle cx="32" cy="32" r="28" stroke="currentColor" strokeWidth="4" fill="none" className="text-blue-500" strokeLinecap="round" strokeDasharray={175.93} strokeDashoffset={175.93*(1-progress/100)} style={{transition:'stroke-dashoffset 0.1s linear'}}/>
             </svg>
             <div style={{position:'absolute',inset:0}} className="flex items-center justify-center"><span className="text-lg font-bold text-white">{Math.round(progress)}%</span></div>
           </div>
@@ -81,10 +84,18 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: any) => {
   const fileRef = useRef<HTMLInputElement>(null);
   const supabase = createClient();
 
-  const { uploading, progress, status, error, logs, online, speed, uploadFile, reset, cancel } = useUpload(user?.id);
+  const { uploading, progress, status, error, logs, online, speed, canResume, uploadFile, reset, cancel, getCachedData } = useUpload(user?.id);
 
   useEffect(() => {
-    if (isOpen) checkUser();
+    if (isOpen) {
+      checkUser();
+      // Check for cached data and populate form
+      const cached = getCachedData();
+      if (cached) {
+        setTitle(cached.title || '');
+        setDesc(cached.description || '');
+      }
+    }
   }, [isOpen]);
 
   const checkUser = async () => {
@@ -111,7 +122,7 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: any) => {
     setTimeout(() => {
       onClose();
       setClosing(false);
-      resetAll();
+      if (!canResume) resetAll();
     }, 300);
   };
 
@@ -125,7 +136,7 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: any) => {
   const handleUpload = async () => {
     if (!file || !title) return show('Fill required fields', 'error');
 
-    const result = await uploadFile(file, title, desc);
+    const result = await uploadFile(file, title, desc, false);
 
     if (result.success) {
       show('Upload successful!', 'success');
@@ -138,9 +149,24 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: any) => {
     }
   };
 
-  const handleRetry = () => {
-    cancel();
-    handleUpload();
+  const handleRetry = async () => {
+    if (!file || !title) {
+      // Try to get from cache
+      const cached = getCachedData();
+      if (!cached) return show('Fill required fields', 'error');
+    }
+
+    const result = await uploadFile(file!, title, desc, true);
+
+    if (result.success) {
+      show('Upload successful!', 'success');
+      setTimeout(() => {
+        close();
+        onSuccess?.();
+      }, 1000);
+    } else if (result.error) {
+      show(result.error, 'error');
+    }
   };
 
   if (!isOpen) return null;
@@ -148,7 +174,7 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: any) => {
   const inp = "w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-white/30 focus:bg-white/[0.07] disabled:opacity-50";
 
   return (<>
-    {uploading && <Progress progress={progress} status={status} error={error} logs={logs} onRetry={handleRetry} onCancel={cancel} />}
+    {uploading && <Progress progress={progress} status={status} error={error} logs={logs} canResume={canResume} onRetry={handleRetry} onCancel={cancel} />}
     {toast && <Toast {...toast} onClose={() => setToast(null)} />}
 
     <div style={{position:'fixed',inset:0,zIndex:50,animation:closing?'fadeOut 0.2s':'fadeIn 0.2s'}} className="bg-black/60 backdrop-blur-sm" onClick={close}>
@@ -173,6 +199,13 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: any) => {
 
         <div className="flex-1 overflow-y-auto p-4 md:p-6">
           <div className="space-y-4">
+            {canResume && !uploading && (
+              <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
+                <p className="text-xs font-medium text-emerald-400 mb-1">🔄 Resume Available</p>
+                <p className="text-xs text-white/60">Your previous upload was interrupted. Click Upload to resume from where it stopped.</p>
+              </div>
+            )}
+
             <div onClick={() => !preview && !uploading && fileRef.current?.click()}
                  onDragOver={e => { e.preventDefault(); setDragging(true); }} 
                  onDragLeave={e => { e.preventDefault(); setDragging(false); }}
@@ -227,7 +260,7 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: any) => {
         <div className="flex gap-2 px-4 md:px-6 py-3 md:py-4 border-t border-white/10">
           <button onClick={close} disabled={uploading && !error} className="flex-1 md:flex-none md:px-6 py-2.5 rounded-lg text-sm font-medium text-white/70 hover:bg-white/5 disabled:opacity-50">Cancel</button>
           <button onClick={handleUpload} disabled={!file || !title || uploading || !user || !online} className="flex-1 md:flex-none md:px-6 py-2.5 rounded-lg text-sm font-medium bg-white text-black hover:bg-white/90 disabled:opacity-40 flex items-center justify-center gap-2">
-            <Upload className="w-4 h-4"/><span>Upload</span>
+            <Upload className="w-4 h-4"/><span>{canResume ? 'Resume' : 'Upload'}</span>
           </button>
         </div>
       </div>
