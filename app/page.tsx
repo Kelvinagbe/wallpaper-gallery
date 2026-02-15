@@ -30,6 +30,7 @@ export default function WallpaperGallery() {
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [filter, setFilter] = useState<Filter>('all');
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>('home');
 
   // Preload app data while splash is showing
@@ -69,12 +70,27 @@ export default function WallpaperGallery() {
   // If app becomes ready after 6 seconds, hide splash immediately
   useEffect(() => {
     if (appReady) {
-      const elapsed = 6000; // Assume 6 seconds have passed
+      const elapsed = 6000;
       if (elapsed >= 6000) {
         setShowSplash(false);
       }
     }
   }, [appReady]);
+
+  // Refresh wallpapers
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      const data = await fetchWallpapers(0, 50);
+      setWallpapers(data.wallpapers);
+      setHasMore(data.hasMore);
+      setTotal(data.total);
+    } catch (error) {
+      console.error('Failed to refresh:', error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   const filteredWallpapers = wallpapers.filter(wp =>
     wp.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -95,7 +111,6 @@ export default function WallpaperGallery() {
 
   return (
     <>
-      {/* Splash Screen - Always rendered but hidden */}
       <div className={`splash-screen ${!showSplash ? 'splash-hidden' : ''}`}>
         <div className="splash-content">
           <img src="/favicon.ico" alt="Logo" className="splash-logo" />
@@ -105,15 +120,25 @@ export default function WallpaperGallery() {
         </div>
       </div>
 
-      {/* Main App - Always rendered but hidden until splash fades */}
       <div className={`main-app ${showSplash ? 'app-hidden' : 'app-visible'}`}>
         <div className="min-h-screen bg-black text-white pb-16">
           <GlobalStyles />
 
-          {!isFullScreenViewOpen && <Header filter={filter} setFilter={setFilter} />}
+          {!isFullScreenViewOpen && (
+            <Header 
+              filter={filter} 
+              setFilter={setFilter} 
+              onRefresh={handleRefresh}
+              isRefreshing={isRefreshing}
+            />
+          )}
 
           <main className="max-w-7xl mx-auto px-4 py-8">
-            <WallpaperGrid wallpapers={filteredWallpapers} isLoading={isLoading} onWallpaperClick={setSelectedWallpaper} />
+            <WallpaperGrid 
+              wallpapers={filteredWallpapers} 
+              isLoading={isLoading || isRefreshing} 
+              onWallpaperClick={setSelectedWallpaper} 
+            />
           </main>
 
           <Navigation
@@ -143,7 +168,11 @@ export default function WallpaperGallery() {
             onUserClick={(userId) => { setIsSearchOpen(false); setSelectedUserId(userId); }}
           />
 
-          <UploadModal isOpen={isUploadOpen} onClose={() => setIsUploadOpen(false)} />
+          <UploadModal 
+            isOpen={isUploadOpen} 
+            onClose={() => setIsUploadOpen(false)}
+            onSuccess={handleRefresh}
+          />
 
           {activeTab === 'profile' && (
             <ProfileNav
