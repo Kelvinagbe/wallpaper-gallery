@@ -13,7 +13,7 @@ export const LoginPromptModal = ({ isOpen, onClose, action }: LoginPromptModalPr
   if (!isOpen) return null;
 
   const handleLogin = () => {
-    router.push('/login');
+    router.push('/auth/login');
   };
 
   return (
