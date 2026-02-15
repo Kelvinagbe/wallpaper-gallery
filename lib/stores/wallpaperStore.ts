@@ -1,5 +1,6 @@
 // lib/stores/wallpaperStore.ts
 import { createClient } from '@/lib/supabase/client';
+import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import type { Wallpaper, UserProfile } from '@/app/types';
 
 // Create a singleton instance
@@ -23,12 +24,12 @@ const transformWallpaper = (wp: any): Wallpaper => ({
   description: wp.description || '',
   tags: wp.tags || [],
   downloads: wp.downloads || 0,
-  likes: wp.likes || 0, // Added fallback
+  likes: wp.likes || 0,
   views: wp.views || 0,
   uploadedBy: wp.profiles?.full_name || wp.profiles?.username || 'Unknown',
   userId: wp.user_id,
   userAvatar: wp.profiles?.avatar_url || 'https://avatar.iran.liara.run/public',
-  aspectRatio: wp.aspect_ratio || 1.5, // Use DB value if available
+  aspectRatio: wp.aspect_ratio || 1.5,
   verified: wp.profiles?.verified || false,
   createdAt: wp.created_at,
   category: wp.category || 'Other',
@@ -69,7 +70,7 @@ export const fetchWallpapers = async (page = 0, pageSize = DEFAULT_PAGE_SIZE) =>
 
   if (error) {
     console.error('❌ Error fetching wallpapers:', error);
-    throw new Error(error.message); // Throw instead of returning empty
+    throw new Error(error.message);
   }
 
   if (!data || data.length === 0) {
@@ -219,7 +220,6 @@ export const searchWallpapers = async (
   const start = page * pageSize;
   const end = start + pageSize - 1;
 
-  // Use text search for better performance (if available)
   const { data, error, count } = await supabase
     .from('wallpapers')
     .select(`
@@ -246,7 +246,7 @@ export const searchWallpapers = async (
 // Fetch single wallpaper by ID
 export const fetchWallpaperById = async (wallpaperId: string) => {
   const supabase = getSupabase();
-  
+
   const { data, error } = await supabase
     .from('wallpapers')
     .select(`
@@ -344,7 +344,7 @@ export const searchProfiles = async (
 // Get user stats (cached for 5 minutes recommended)
 export const getUserCounts = async (userId: string) => {
   const supabase = getSupabase();
-  
+
   const [followersResult, followingResult, postsResult] = await Promise.all([
     supabase
       .from('follows')
@@ -411,7 +411,7 @@ export const unfollowUser = async (currentUserId: string, targetUserId: string) 
 // Subscribe to new wallpapers (real-time)
 export const subscribeToWallpapers = (callback: (wallpaper: Wallpaper) => void) => {
   const supabase = getSupabase();
-  
+
   const channel = supabase
     .channel('wallpapers-changes')
     .on(
@@ -422,7 +422,7 @@ export const subscribeToWallpapers = (callback: (wallpaper: Wallpaper) => void) 
         table: 'wallpapers',
         filter: 'is_public=eq.true',
       },
-      async (payload) => {
+      async (payload: RealtimePostgresChangesPayload<any>) => {
         // Fetch full wallpaper with profile
         const { data } = await supabase
           .from('wallpapers')
@@ -451,7 +451,7 @@ export const subscribeToWallpaperUpdates = (
   callback: (wallpaper: Wallpaper) => void
 ) => {
   const supabase = getSupabase();
-  
+
   const channel = supabase
     .channel(`wallpaper-${wallpaperId}`)
     .on(
@@ -462,7 +462,7 @@ export const subscribeToWallpaperUpdates = (
         table: 'wallpapers',
         filter: `id=eq.${wallpaperId}`,
       },
-      async (payload) => {
+      async (payload: RealtimePostgresChangesPayload<any>) => {
         const { data } = await supabase
           .from('wallpapers')
           .select(`
