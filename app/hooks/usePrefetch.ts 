@@ -36,4 +36,4 @@ export const usePrefetch = (images: string[], priority: 'high' | 'low' = 'low') 
       });
     };
   }, [images, priority]);
-};
+}; 
