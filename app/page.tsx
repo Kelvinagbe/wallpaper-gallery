@@ -78,8 +78,8 @@ export default function WallpaperGallery() {
       
       // Append new wallpapers, avoiding duplicates
       setWallpapers(prev => {
-        const existingIds = new Set(prev.map(wp => wp.id));
-        const newWallpapers = data.wallpapers.filter(wp => !existingIds.has(wp.id));
+        const existingIds = new Set(prev.map((wp: Wallpaper) => wp.id));
+        const newWallpapers = data.wallpapers.filter((wp: Wallpaper) => !existingIds.has(wp.id));
         return [...prev, ...newWallpapers];
       });
       
