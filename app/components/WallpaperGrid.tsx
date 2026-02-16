@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
+import { useInView } from 'react-intersection-observer';
 import { WallpaperCard } from './WallpaperCard';
-import { usePrefetch } from '@/app/hooks/usePrefetch';
+import { usePrefetch } from '@/hooks/usePrefetch';
 import type { Wallpaper } from '../types';
 
 type WallpaperGridProps = {
@@ -15,19 +16,33 @@ export const WallpaperGrid = ({ wallpapers, isLoading, onWallpaperClick }: Wallp
   const wasLoadingRef = useRef(false);
   const gridRef = useRef<HTMLDivElement>(null);
 
-  // Prefetch next batch
-  const nextBatchUrls = wallpapers.slice(visibleRange.end, visibleRange.end + 10).map(wp => wp.url);
+  // Intersection observer for load more trigger
+  const { ref: loadMoreRef, inView } = useInView({
+    threshold: 0.5,
+  });
+
+  // Prefetch next batch of images
+  const nextBatchUrls = wallpapers
+    .slice(visibleRange.end, visibleRange.end + 10)
+    .map(wp => wp.url);
+  
   usePrefetch(nextBatchUrls);
 
+  // Track scroll position for prefetching
   useEffect(() => {
     const handleScroll = () => {
       if (!gridRef.current) return;
+      
       const scrollPosition = window.scrollY + window.innerHeight;
       const gridHeight = gridRef.current.offsetHeight;
       const scrollPercentage = (scrollPosition / gridHeight) * 100;
 
+      // When user scrolls past 60%, prefetch next batch
       if (scrollPercentage > 60) {
-        setVisibleRange(prev => ({ start: prev.start, end: Math.min(prev.end + 10, wallpapers.length) }));
+        setVisibleRange(prev => ({
+          start: prev.start,
+          end: Math.min(prev.end + 10, wallpapers.length)
+        }));
       }
     };
 
@@ -73,6 +88,7 @@ export const WallpaperGrid = ({ wallpapers, isLoading, onWallpaperClick }: Wallp
           <span className="text-white text-sm font-medium">✓ Refreshed</span>
         </div>
       )}
+      
       <div ref={gridRef} className="masonry">
         {wallpapers.map((wp) => (
           <div key={wp.id} style={{ marginBottom: '40px' }}>
@@ -80,13 +96,17 @@ export const WallpaperGrid = ({ wallpapers, isLoading, onWallpaperClick }: Wallp
           </div>
         ))}
       </div>
-      {isLoading && wallpapers.length > 0 && (
-        <div className="flex items-center justify-center py-8 gap-2">
-          {[0, 150, 300].map((delay, i) => (
-            <div key={i} className="w-2 h-2 bg-white/60 rounded-full animate-bounce" style={{ animationDelay: `${delay}ms` }} />
-          ))}
-        </div>
-      )}
+
+      {/* Load more trigger */}
+      <div ref={loadMoreRef} className="flex items-center justify-center py-8 gap-2">
+        {isLoading && wallpapers.length > 0 && (
+          <>
+            {[0, 150, 300].map((delay, i) => (
+              <div key={i} className="w-2 h-2 bg-white/60 rounded-full animate-bounce" style={{ animationDelay: `${delay}ms` }} />
+            ))}
+          </>
+        )}
+      </div>
     </>
   );
 };
