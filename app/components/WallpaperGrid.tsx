@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useInView } from 'react-intersection-observer';
 import { WallpaperCard } from './WallpaperCard';
-import { usePrefetch } from '@/hooks/usePrefetch';
+import { usePrefetch } from '@/app/hooks/usePrefetch';
 import type { Wallpaper } from '../types';
 
 type WallpaperGridProps = {
