@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { useInView } from 'react-intersection-observer';
 import { Heart, Download, Eye, MoreHorizontal, Share2, Bookmark, Flag } from 'lucide-react';
 import { VerifiedBadge } from './VerifiedBadge';
 import { toggleLike, isWallpaperLiked, toggleSave, isWallpaperSaved } from '@/lib/stores/userStore';
@@ -42,91 +41,127 @@ const BottomSheet = ({ isOpen, onClose, wp, saved, onSave, onDownload, onShare }
 
 export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
   const { user } = useAuth();
-  const prefetchedRef = useRef(false);
-  const [state, setState] = useState({thumbLoaded:false,fullLoaded:false,liked:false,saved:false,showMenu:false});
+  const [state, setState] = useState({loaded:false,liked:false,saved:false,showMenu:false,imgHeight:0});
   const [counts, setCounts] = useState({likes:wp.likes||0,views:wp.views||0});
-  const {ref:cardRef,inView} = useInView({triggerOnce:true,rootMargin:'300px',threshold:0.01});
+  const imgRef = useRef<HTMLImageElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  useEffect(()=>{
-    if(!inView||!user)return;
-    (async()=>{
-      const[liked,saved]=await Promise.all([isWallpaperLiked(wp.id,user.id),isWallpaperSaved(wp.id,user.id)]);
-      setState(s=>({...s,liked,saved}));
+  // Calculate aspect ratio and set container height to prevent layout shift
+  useEffect(() => {
+    if (wp.thumbnail && containerRef.current) {
+      const img = new Image();
+      img.src = wp.thumbnail;
+      img.onload = () => {
+        const aspectRatio = img.height / img.width;
+        const containerWidth = containerRef.current?.offsetWidth || 300;
+        const calculatedHeight = containerWidth * aspectRatio;
+        setState(s => ({ ...s, imgHeight: calculatedHeight }));
+      };
+    }
+  }, [wp.thumbnail]);
+
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      const [liked, saved] = await Promise.all([
+        isWallpaperLiked(wp.id, user.id),
+        isWallpaperSaved(wp.id, user.id)
+      ]);
+      setState(s => ({ ...s, liked, saved }));
     })();
-  },[inView,wp.id,user]);
+  }, [wp.id, user]);
 
-  const handleMouseEnter=()=>{
-    if(!prefetchedRef.current&&wp.url&&!state.fullLoaded){
-      prefetchedRef.current=true;
-      const link=document.createElement('link');
-      link.rel='prefetch';link.as='image';link.href=wp.url;
-      link.setAttribute('fetchpriority','high');
-      document.head.appendChild(link);
-    }
-  };
-
-  const handleLike=async(e:React.MouseEvent)=>{
+  const handleLike = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if(!user)return alert('Please login to like wallpapers');
-    const newLiked=!state.liked;
-    setState(s=>({...s,liked:newLiked}));
-    setCounts(c=>({...c,likes:newLiked?c.likes+1:Math.max(0,c.likes-1)}));
+    if (!user) return alert('Please login to like wallpapers');
+    const newLiked = !state.liked;
+    setState(s => ({ ...s, liked: newLiked }));
+    setCounts(c => ({ ...c, likes: newLiked ? c.likes + 1 : Math.max(0, c.likes - 1) }));
     navigator.vibrate?.(50);
-    try{await toggleLike(wp.id);}catch{setState(s=>({...s,liked:!newLiked}));setCounts(c=>({...c,likes:newLiked?Math.max(0,c.likes-1):c.likes+1}));}
-  };
-
-  const handleSave=async()=>{
-    if(!user)return alert('Please login to save wallpapers');
-    const newSaved=!state.saved;
-    setState(s=>({...s,saved:newSaved,showMenu:false}));
-    navigator.vibrate?.(50);
-    try{await toggleSave(wp.id);}catch{setState(s=>({...s,saved:!newSaved}));}
-  };
-
-  const handleDownload=async()=>{
-    navigator.vibrate?.(50);
-    try{
-      const res=await fetch(wp.url,{mode:'cors'});
-      const blob=await res.blob();
-      const url=URL.createObjectURL(blob);
-      const link=document.createElement('a');
-      link.href=url;link.download=`${wp.title.replace(/[^a-z0-9]/gi,'_').toLowerCase()}.jpg`;
-      document.body.appendChild(link);link.click();document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    }catch{
-      const link=document.createElement('a');
-      link.href=wp.url;link.download=`${wp.title.replace(/[^a-z0-9]/gi,'_').toLowerCase()}.jpg`;
-      link.target='_blank';document.body.appendChild(link);link.click();document.body.removeChild(link);
+    try { await toggleLike(wp.id); } catch { 
+      setState(s => ({ ...s, liked: !newLiked })); 
+      setCounts(c => ({ ...c, likes: newLiked ? Math.max(0, c.likes - 1) : c.likes + 1 })); 
     }
-    setState(s=>({...s,showMenu:false}));
   };
 
-  const handleShare=async()=>{
-    if(navigator.share){try{await navigator.share({title:wp.title,text:`Check out "${wp.title}" on Gallery`,url:window.location.href});}catch{}}
-    else{navigator.clipboard.writeText(window.location.href);alert('Link copied!');}
-    setState(s=>({...s,showMenu:false}));
+  const handleSave = async () => {
+    if (!user) return alert('Please login to save wallpapers');
+    const newSaved = !state.saved;
+    setState(s => ({ ...s, saved: newSaved, showMenu: false }));
+    navigator.vibrate?.(50);
+    try { await toggleSave(wp.id); } catch { setState(s => ({ ...s, saved: !newSaved })); }
   };
 
-  const fmt=(n:number)=>n>=1000000?`${(n/1000000).toFixed(1)}M`:n>=1000?`${(n/1000).toFixed(1)}k`:n.toString();
+  const handleDownload = async () => {
+    navigator.vibrate?.(50);
+    try {
+      const res = await fetch(wp.url, { mode: 'cors' });
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${wp.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch {
+      const link = document.createElement('a');
+      link.href = wp.url;
+      link.download = `${wp.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.jpg`;
+      link.target = '_blank';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+    setState(s => ({ ...s, showMenu: false }));
+  };
 
-  if(!inView)return<div ref={cardRef} className="skeleton-shimmer rounded-xl" style={{minHeight:'250px'}}/>;
+  const handleShare = async () => {
+    if (navigator.share) {
+      try { await navigator.share({ title: wp.title, text: `Check out "${wp.title}" on Gallery`, url: window.location.href }); } catch { }
+    } else { 
+      navigator.clipboard.writeText(window.location.href); 
+      alert('Link copied!'); 
+    }
+    setState(s => ({ ...s, showMenu: false }));
+  };
 
-  return(<>
-    <div ref={cardRef} className="relative" onMouseEnter={handleMouseEnter}>
+  const fmt = (n: number) => n >= 1000000 ? `${(n / 1000000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n.toString();
+
+  return (<>
+    <div 
+      ref={containerRef}
+      className="relative" 
+      style={{ 
+        minHeight: state.imgHeight > 0 ? `${state.imgHeight}px` : '250px',
+        height: state.imgHeight > 0 ? `${state.imgHeight}px` : 'auto'
+      }}
+    >
       <div className="card group relative rounded-xl overflow-hidden cursor-pointer transition-opacity hover:opacity-95" onClick={onClick}>
-        {!state.thumbLoaded&&<div style={{position:'absolute',inset:0,background:'#18181b',animation:'pulse 2s cubic-bezier(0.4,0,0.6,1) infinite'}}/>}
-        
-        {wp.thumbnail&&<img src={wp.thumbnail} alt={wp.title} loading="lazy" decoding="async" 
-          onLoad={()=>setState(s=>({...s,thumbLoaded:true}))}
-          className={`w-full h-auto block transition-all duration-300 ${state.thumbLoaded?'opacity-100':'opacity-0'} ${state.fullLoaded?'opacity-0 absolute':''}`}
-          style={{filter:'blur(10px)',transform:'scale(1.1)',contentVisibility:'auto',backgroundColor:'#1a1a1a'}}/>}
-        
-        <img src={wp.url} alt={wp.title} loading="lazy" decoding="async"
-          onLoad={()=>setState(s=>({...s,fullLoaded:true}))}
-          className={`w-full h-auto block transition-opacity duration-700 ${state.fullLoaded?'opacity-100':'opacity-0 absolute inset-0'}`}
-          style={{contentVisibility:'auto',backgroundColor:'#1a1a1a'}}/>
+        {/* Skeleton loader while calculating height */}
+        {state.imgHeight === 0 && (
+          <div style={{position:'absolute',inset:0,background:'#18181b',animation:'pulse 2s cubic-bezier(0.4,0,0.6,1) infinite'}} />
+        )}
 
-        {state.fullLoaded&&(<>
+        {/* Main image */}
+        <img 
+          ref={imgRef}
+          src={wp.url} 
+          alt={wp.title} 
+          loading="lazy" 
+          decoding="async"
+          onLoad={() => setState(s => ({ ...s, loaded: true }))}
+          className="w-full h-full object-cover block"
+          style={{
+            opacity: state.loaded ? 1 : 0,
+            transition: 'opacity 0.3s ease-in-out',
+            backgroundColor: '#1a1a1a'
+          }}
+        />
+
+        {/* Overlay on hover */}
+        {state.loaded && (<>
           <div style={{position:'absolute',inset:0,background:'linear-gradient(to top,rgba(0,0,0,0.8),transparent,transparent)',opacity:0,transition:'opacity 0.2s'}} className="group-hover:opacity-100">
             <div style={{position:'absolute',top:12,right:12}} className="flex items-center gap-2">
               <button onClick={handleLike} className={`p-2.5 rounded-full backdrop-blur-md transition-all hover:scale-110 active:scale-95 ${state.liked?'bg-rose-500 hover:bg-rose-600':'bg-black/50 hover:bg-black/70'}`}>
@@ -138,6 +173,7 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
             </div>
           </div>
 
+          {/* Bottom info bar */}
           <div style={{position:'absolute',bottom:0,left:0,right:0,background:'linear-gradient(to top,rgba(0,0,0,0.95),rgba(0,0,0,0.8),transparent)',padding:'10px'}}>
             <div className="flex items-center justify-between gap-2 mb-1.5">
               <h3 className="font-medium line-clamp-1 text-xs flex-1">{wp.title}</h3>
@@ -149,11 +185,11 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
               <div className="flex items-center gap-1.5 min-w-0 flex-1">
                 <img src={wp.userAvatar} alt={wp.uploadedBy} className="w-5 h-5 rounded-full flex-shrink-0 border border-white/20"/>
                 <span className="text-[10px] text-white/80 truncate font-medium">{wp.uploadedBy}</span>
-                {wp.verified&&<VerifiedBadge size="sm"/>}
+                {wp.verified && <VerifiedBadge size="sm"/>}
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
-                {counts.likes>0&&<div className="flex items-center gap-0.5"><Heart className="w-3 h-3 text-rose-400 fill-rose-400"/><span className="text-[10px] font-medium text-rose-400">{fmt(counts.likes)}</span></div>}
-                {counts.views>0&&<div className="flex items-center gap-0.5"><Eye className="w-3 h-3 text-white/60"/><span className="text-[10px] font-medium text-white/60">{fmt(counts.views)}</span></div>}
+                {counts.likes>0 && <div className="flex items-center gap-0.5"><Heart className="w-3 h-3 text-rose-400 fill-rose-400"/><span className="text-[10px] font-medium text-rose-400">{fmt(counts.likes)}</span></div>}
+                {counts.views>0 && <div className="flex items-center gap-0.5"><Eye className="w-3 h-3 text-white/60"/><span className="text-[10px] font-medium text-white/60">{fmt(counts.views)}</span></div>}
               </div>
             </div>
           </div>
