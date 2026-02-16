@@ -1,5 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
-import { useInView } from 'react-intersection-observer';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { WallpaperCard } from './WallpaperCard';
 import { usePrefetch } from '@/app/hooks/usePrefetch';
@@ -10,36 +9,108 @@ type WallpaperGridProps = {
   isLoading: boolean;
   onWallpaperClick: (wallpaper: Wallpaper) => void;
   onRefresh?: () => Promise<void>;
+  onLoadMore?: () => Promise<void>;
+  hasMore?: boolean;
 };
 
-export const WallpaperGrid = ({ wallpapers, isLoading, onWallpaperClick, onRefresh }: WallpaperGridProps) => {
+export const WallpaperGrid = ({ 
+  wallpapers, 
+  isLoading, 
+  onWallpaperClick, 
+  onRefresh,
+  onLoadMore,
+  hasMore = true
+}: WallpaperGridProps) => {
+  const [columns, setColumns] = useState<Wallpaper[][]>([[], [], []]);
   const [showRefresh, setShowRefresh] = useState(false);
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 20 });
-  const [pullState, setPullState] = useState({ 
-    pulling: false, 
-    distance: 0, 
-    refreshing: false, 
-    canRefresh: false 
-  });
+  const [pullState, setPullState] = useState({ pulling: false, distance: 0, refreshing: false, canRefresh: false });
+  const [loadingMore, setLoadingMore] = useState(false);
   
   const wasLoadingRef = useRef(false);
   const gridRef = useRef<HTMLDivElement>(null);
   const startY = useRef(0);
   const pullContainerRef = useRef<HTMLDivElement>(null);
+  const loadMoreTriggerRef = useRef<HTMLDivElement>(null);
 
-  // Intersection observer for load more trigger
-  const { ref: loadMoreRef, inView } = useInView({
-    threshold: 0.5,
-  });
-
-  // Prefetch next batch of images
-  const nextBatchUrls = wallpapers
-    .slice(visibleRange.end, visibleRange.end + 10)
-    .map(wp => wp.url);
-
+  // Prefetch next batch
+  const nextBatchUrls = useMemo(() => 
+    wallpapers.slice(visibleRange.end, visibleRange.end + 10).map(wp => wp.url),
+    [wallpapers, visibleRange.end]
+  );
   usePrefetch(nextBatchUrls);
 
-  // Pull to refresh touch handlers
+  // Get column count based on screen width
+  const getColumnCount = () => {
+    if (typeof window === 'undefined') return 3;
+    const width = window.innerWidth;
+    if (width < 640) return 2;
+    if (width < 1024) return 3;
+    if (width < 1536) return 4;
+    return 5;
+  };
+
+  // Distribute wallpapers evenly across columns
+  const distributeWallpapers = useCallback((wps: Wallpaper[]) => {
+    const colCount = getColumnCount();
+    const cols: Wallpaper[][] = Array.from({ length: colCount }, () => []);
+    const heights = Array(colCount).fill(0);
+
+    wps.forEach((wp) => {
+      const minIdx = heights.indexOf(Math.min(...heights));
+      cols[minIdx].push(wp);
+      heights[minIdx] += 300; // Estimated height
+    });
+
+    return cols;
+  }, []);
+
+  // Update columns when wallpapers change
+  useEffect(() => {
+    if (wallpapers.length > 0) {
+      setColumns(distributeWallpapers(wallpapers));
+    }
+  }, [wallpapers, distributeWallpapers]);
+
+  // Handle resize
+  useEffect(() => {
+    let timeout: NodeJS.Timeout;
+    const handleResize = () => {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => setColumns(distributeWallpapers(wallpapers)), 150);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      clearTimeout(timeout);
+    };
+  }, [wallpapers, distributeWallpapers]);
+
+  // Intersection Observer for load more
+  useEffect(() => {
+    if (!loadMoreTriggerRef.current || !onLoadMore || !hasMore) return;
+
+    const observer = new IntersectionObserver(
+      async ([entry]) => {
+        if (entry.isIntersecting && !loadingMore && !isLoading && hasMore) {
+          setLoadingMore(true);
+          try {
+            await onLoadMore();
+          } catch (err) {
+            console.error('Load more failed:', err);
+          } finally {
+            setLoadingMore(false);
+          }
+        }
+      },
+      { threshold: 0.1, rootMargin: '200px' }
+    );
+
+    observer.observe(loadMoreTriggerRef.current);
+    return () => observer.disconnect();
+  }, [onLoadMore, loadingMore, isLoading, hasMore]);
+
+  // Pull to refresh
   const handleTouchStart = (e: TouchEvent) => {
     if (window.scrollY === 0) {
       startY.current = e.touches[0].clientY;
@@ -49,58 +120,38 @@ export const WallpaperGrid = ({ wallpapers, isLoading, onWallpaperClick, onRefre
 
   const handleTouchMove = (e: TouchEvent) => {
     if (!pullState.pulling || window.scrollY > 0) return;
-    
     const currentY = e.touches[0].clientY;
     const distance = Math.max(0, currentY - startY.current);
-    
     if (distance > 0) {
       e.preventDefault();
-      const maxDistance = 120;
-      const dampened = Math.min(distance * 0.5, maxDistance);
-      setPullState(s => ({ 
-        ...s, 
-        distance: dampened, 
-        canRefresh: dampened >= 80 
-      }));
+      const dampened = Math.min(distance * 0.4, 100);
+      setPullState(s => ({ ...s, distance: dampened, canRefresh: dampened >= 60 }));
     }
   };
 
   const handleTouchEnd = async () => {
     if (pullState.canRefresh && !pullState.refreshing && onRefresh) {
-      setPullState(s => ({ ...s, refreshing: true, distance: 80 }));
+      setPullState(s => ({ ...s, refreshing: true, distance: 60 }));
       navigator.vibrate?.(50);
-      
       try {
         await onRefresh();
-      } catch (error) {
-        console.error('Refresh failed:', error);
+        setShowRefresh(true);
+        setTimeout(() => setShowRefresh(false), 2000);
+      } catch (err) {
+        console.error('Refresh failed:', err);
       }
-      
-      setPullState({ 
-        pulling: false, 
-        distance: 0, 
-        refreshing: false, 
-        canRefresh: false 
-      });
+      setPullState({ pulling: false, distance: 0, refreshing: false, canRefresh: false });
     } else {
-      setPullState({ 
-        pulling: false, 
-        distance: 0, 
-        refreshing: false, 
-        canRefresh: false 
-      });
+      setPullState({ pulling: false, distance: 0, refreshing: false, canRefresh: false });
     }
   };
 
-  // Setup pull to refresh listeners
   useEffect(() => {
     const container = pullContainerRef.current;
     if (!container) return;
-
     container.addEventListener('touchstart', handleTouchStart, { passive: false });
     container.addEventListener('touchmove', handleTouchMove, { passive: false });
     container.addEventListener('touchend', handleTouchEnd);
-
     return () => {
       container.removeEventListener('touchstart', handleTouchStart);
       container.removeEventListener('touchmove', handleTouchMove);
@@ -108,29 +159,25 @@ export const WallpaperGrid = ({ wallpapers, isLoading, onWallpaperClick, onRefre
     };
   }, [pullState.pulling, pullState.canRefresh, pullState.refreshing, onRefresh]);
 
-  // Track scroll position for prefetching
+  // Track scroll for prefetching
   useEffect(() => {
     const handleScroll = () => {
       if (!gridRef.current) return;
-
-      const scrollPosition = window.scrollY + window.innerHeight;
+      const scrollPos = window.scrollY + window.innerHeight;
       const gridHeight = gridRef.current.offsetHeight;
-      const scrollPercentage = (scrollPosition / gridHeight) * 100;
-
-      // When user scrolls past 60%, prefetch next batch
-      if (scrollPercentage > 60) {
+      const scrollPct = (scrollPos / gridHeight) * 100;
+      if (scrollPct > 60) {
         setVisibleRange(prev => ({
           start: prev.start,
           end: Math.min(prev.end + 10, wallpapers.length)
         }));
       }
     };
-
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, [wallpapers.length]);
 
-  // Show refresh notification after loading
+  // Show refresh notification
   useEffect(() => {
     if (wasLoadingRef.current && !isLoading && wallpapers.length > 0) {
       setShowRefresh(true);
@@ -142,17 +189,14 @@ export const WallpaperGrid = ({ wallpapers, isLoading, onWallpaperClick, onRefre
 
   // Loading skeleton
   if (isLoading && wallpapers.length === 0) {
+    const colCount = getColumnCount();
     return (
-      <div className="masonry">
-        {Array.from({ length: 15 }, (_, i) => (
-          <div key={i} style={{ marginBottom: '40px' }}>
-            <div 
-              className="skeleton-shimmer rounded-xl" 
-              style={{ 
-                height: `${Math.floor(Math.random() * 150) + 200}px`, 
-                width: '100%' 
-              }} 
-            />
+      <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${colCount}, 1fr)` }}>
+        {Array.from({ length: colCount }).map((_, colIdx) => (
+          <div key={colIdx} className="flex flex-col gap-4">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="skeleton-shimmer rounded-xl" style={{ height: `${200 + Math.random() * 200}px` }} />
+            ))}
           </div>
         ))}
       </div>
@@ -170,89 +214,45 @@ export const WallpaperGrid = ({ wallpapers, isLoading, onWallpaperClick, onRefre
     );
   }
 
-  return (
-    <>
-      {/* Pull to Refresh Indicator */}
-      <div 
-        ref={pullContainerRef} 
-        className="fixed top-0 left-0 right-0 z-50 pointer-events-none"
-      >
-        <div 
-          className="flex justify-center items-center transition-all duration-200"
-          style={{ 
-            transform: `translateY(${pullState.distance - 80}px)`,
-            opacity: pullState.distance / 80,
-          }}
-        >
-          <div 
-            className={`mt-4 p-3 rounded-full backdrop-blur-md shadow-lg transition-all duration-300 ${
-              pullState.refreshing ? 'bg-blue-500 scale-110' : 
-              pullState.canRefresh ? 'bg-emerald-500 scale-105' : 
-              'bg-white/20 scale-100'
-            }`}
-          >
-            <RefreshCw 
-              className={`w-6 h-6 text-white transition-transform duration-200 ${
-                pullState.refreshing ? 'animate-spin' : ''
-              }`}
-              style={{
-                transform: pullState.refreshing ? '' : `rotate(${pullState.distance * 3}deg)`
-              }}
-            />
-          </div>
+  return (<>
+    {/* Pull to refresh */}
+    <div ref={pullContainerRef} style={{position:'fixed',top:0,left:0,right:0,zIndex:50,pointerEvents:'none'}}>
+      <div style={{display:'flex',justifyContent:'center',alignItems:'center',transform:`translateY(${pullState.distance-60}px)`,opacity:pullState.distance/60,transition:'opacity 0.2s'}}>
+        <div style={{marginTop:'16px',padding:'12px',borderRadius:'9999px',backdropFilter:'blur(12px)',boxShadow:'0 10px 30px rgba(0,0,0,0.3)',background:pullState.refreshing?'#3b82f6':pullState.canRefresh?'#10b981':'rgba(255,255,255,0.2)',transform:pullState.refreshing?'scale(1.1)':pullState.canRefresh?'scale(1.05)':'scale(1)',transition:'all 0.3s'}}>
+          <RefreshCw style={{width:'24px',height:'24px',color:'white',transform:pullState.refreshing?'':'rotate('+pullState.distance*3+'deg)',transition:'transform 0.2s',animation:pullState.refreshing?'spin 1s linear infinite':'none'}}/>
         </div>
       </div>
+    </div>
 
-      {/* Success message after refresh */}
-      {showRefresh && (
-        <div 
-          className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 bg-emerald-500/90 backdrop-blur-sm px-4 py-2 rounded-full shadow-lg flex items-center gap-2" 
-          style={{ animation: 'slideDown 0.3s ease-out' }}
-        >
-          <span className="text-white text-sm font-medium">✓ Refreshed</span>
+    {/* Success message */}
+    {showRefresh&&<div style={{position:'fixed',top:'80px',left:'50%',transform:'translateX(-50%)',zIndex:50,background:'rgba(16,185,129,0.9)',backdropFilter:'blur(8px)',padding:'8px 16px',borderRadius:'9999px',boxShadow:'0 10px 30px rgba(0,0,0,0.3)',animation:'slideDown 0.3s ease-out'}}>
+      <span style={{color:'white',fontSize:'14px',fontWeight:500}}>✓ Refreshed</span>
+    </div>}
+
+    {/* Grid */}
+    <div ref={gridRef} className="grid gap-4" style={{gridTemplateColumns:`repeat(${getColumnCount()},1fr)`}}>
+      {columns.map((col, colIdx) => (
+        <div key={colIdx} className="flex flex-col gap-4">
+          {col.map((wp) => (
+            <div key={wp.id} style={{breakInside:'avoid'}}>
+              <WallpaperCard wp={wp} onClick={() => onWallpaperClick(wp)} />
+            </div>
+          ))}
         </div>
-      )}
+      ))}
+    </div>
 
-      {/* Wallpaper Grid */}
-      <div ref={gridRef} className="masonry">
-        {wallpapers.map((wp) => (
-          <div key={wp.id} style={{ marginBottom: '40px' }}>
-            <WallpaperCard 
-              wp={wp} 
-              onClick={() => onWallpaperClick(wp)} 
-            />
-          </div>
+    {/* Load more trigger */}
+    {hasMore && <div ref={loadMoreTriggerRef} className="flex items-center justify-center py-8 gap-2">
+      {(loadingMore || isLoading) && <>
+        {[0, 150, 300].map((delay, i) => (
+          <div key={i} className="w-2 h-2 bg-white/60 rounded-full animate-bounce" style={{animationDelay:`${delay}ms`}} />
         ))}
-      </div>
+      </>}
+    </div>}
 
-      {/* Load more trigger */}
-      <div ref={loadMoreRef} className="flex items-center justify-center py-8 gap-2">
-        {isLoading && wallpapers.length > 0 && (
-          <>
-            {[0, 150, 300].map((delay, i) => (
-              <div 
-                key={i} 
-                className="w-2 h-2 bg-white/60 rounded-full animate-bounce" 
-                style={{ animationDelay: `${delay}ms` }} 
-              />
-            ))}
-          </>
-        )}
-      </div>
+    {!hasMore && wallpapers.length > 0 && <div className="text-center py-8 text-white/40 text-sm">You've reached the end</div>}
 
-      {/* Animations */}
-      <style jsx>{`
-        @keyframes slideDown {
-          from {
-            transform: translate(-50%, -100%);
-            opacity: 0;
-          }
-          to {
-            transform: translate(-50%, 0);
-            opacity: 1;
-          }
-        }
-      `}</style>
-    </>
-  );
+    <style>{`@keyframes slideDown{from{transform:translate(-50%,-100%);opacity:0}to{transform:translate(-50%,0);opacity:1}}@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
+  </>);
 };
