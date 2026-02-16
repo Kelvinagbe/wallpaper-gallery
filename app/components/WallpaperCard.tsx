@@ -50,7 +50,7 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
   // Calculate aspect ratio and set container height to prevent layout shift
   useEffect(() => {
     if (wp.thumbnail && containerRef.current) {
-      const img = new Image();
+      const img = new window.Image();
       img.src = wp.thumbnail;
       img.onload = () => {
         const aspectRatio = img.height / img.width;
