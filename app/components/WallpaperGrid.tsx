@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { WallpaperCard } from './WallpaperCard';
+import { usePrefetch } from '@/hooks/usePrefetch';
 import type { Wallpaper } from '../types';
 
 type WallpaperGridProps = {
@@ -10,7 +11,29 @@ type WallpaperGridProps = {
 
 export const WallpaperGrid = ({ wallpapers, isLoading, onWallpaperClick }: WallpaperGridProps) => {
   const [showRefresh, setShowRefresh] = useState(false);
+  const [visibleRange, setVisibleRange] = useState({ start: 0, end: 20 });
   const wasLoadingRef = useRef(false);
+  const gridRef = useRef<HTMLDivElement>(null);
+
+  // Prefetch next batch
+  const nextBatchUrls = wallpapers.slice(visibleRange.end, visibleRange.end + 10).map(wp => wp.url);
+  usePrefetch(nextBatchUrls);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      if (!gridRef.current) return;
+      const scrollPosition = window.scrollY + window.innerHeight;
+      const gridHeight = gridRef.current.offsetHeight;
+      const scrollPercentage = (scrollPosition / gridHeight) * 100;
+
+      if (scrollPercentage > 60) {
+        setVisibleRange(prev => ({ start: prev.start, end: Math.min(prev.end + 10, wallpapers.length) }));
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [wallpapers.length]);
 
   useEffect(() => {
     if (wasLoadingRef.current && !isLoading && wallpapers.length > 0) {
@@ -50,7 +73,7 @@ export const WallpaperGrid = ({ wallpapers, isLoading, onWallpaperClick }: Wallp
           <span className="text-white text-sm font-medium">✓ Refreshed</span>
         </div>
       )}
-      <div className="masonry">
+      <div ref={gridRef} className="masonry">
         {wallpapers.map((wp) => (
           <div key={wp.id} style={{ marginBottom: '40px' }}>
             <WallpaperCard wp={wp} onClick={() => onWallpaperClick(wp)} />
