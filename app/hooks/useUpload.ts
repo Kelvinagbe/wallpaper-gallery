@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 
 type LogType = 'log' | 'error' | 'success' | 'warning' | 'info';
 type SpeedType = 'fast' | 'slow' | 'offline';
@@ -99,32 +99,90 @@ export const useUpload = (userId: string | null) => {
     log('🗑️ Cache cleared', 'info');
   }, [log]);
 
+  // Compress main image to ~200KB
+  const compressMainImage = useCallback((file: File): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+
+      img.onload = () => {
+        // Target max width of 1920px for main image
+        const maxWidth = 1920;
+        const maxHeight = 1080;
+        
+        let width = img.width;
+        let height = img.height;
+
+        // Calculate scaling
+        if (width > maxWidth || height > maxHeight) {
+          const ratio = Math.min(maxWidth / width, maxHeight / height);
+          width = width * ratio;
+          height = height * ratio;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        ctx?.drawImage(img, 0, 0, width, height);
+
+        // Try different quality levels to hit ~200KB target
+        const tryCompress = (quality: number) => {
+          canvas.toBlob((blob) => {
+            if (blob) {
+              const sizeKB = blob.size / 1024;
+              log(`Main image: ${sizeKB.toFixed(2)} KB (quality: ${quality})`, 'info');
+              
+              // If still too large and quality can go lower, try again
+              if (sizeKB > 250 && quality > 0.5) {
+                tryCompress(quality - 0.1);
+              } else {
+                resolve(blob);
+              }
+            } else {
+              reject(new Error('Failed to compress main image'));
+            }
+          }, 'image/jpeg', quality);
+        };
+
+        // Start with 0.8 quality
+        tryCompress(0.8);
+
+        URL.revokeObjectURL(img.src);
+      };
+
+      img.onerror = () => reject(new Error('Failed to load image'));
+      img.src = URL.createObjectURL(file);
+    });
+  }, [log]);
+
+  // Generate tiny thumbnail (~1KB)
   const generateThumbnail = useCallback((file: File): Promise<Blob> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
-      
+
       img.onload = () => {
-        // Target 250px width for very small file size
-        const maxWidth = 250;
+        // Very small thumbnail - 100px width for ~1KB
+        const maxWidth = 100;
         const scale = maxWidth / img.width;
         canvas.width = maxWidth;
         canvas.height = img.height * scale;
-        
+
         ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
-        
-        // Aggressive compression (50% quality) for ~10-20KB
+
+        // Ultra compression (30% quality) for ~1KB
         canvas.toBlob((blob) => {
           if (blob) {
             log(`Thumbnail: ${(blob.size / 1024).toFixed(2)} KB`, 'info');
             resolve(blob);
           } else reject(new Error('Failed to generate thumbnail'));
-        }, 'image/jpeg', 0.5);
-        
+        }, 'image/jpeg', 0.3);
+
         URL.revokeObjectURL(img.src);
       };
-      
+
       img.onerror = () => reject(new Error('Failed to load image'));
       img.src = URL.createObjectURL(file);
     });
@@ -137,10 +195,10 @@ export const useUpload = (userId: string | null) => {
     setLogs(isRetry ? logs : []);
     if (!isRetry) { log('🚀 Upload process started', 'info'); setProgress(0); setDisplayProgress(0); }
     else log('🔄 Resuming upload...', 'info');
-    
+
     setUploading(true);
     setError(null);
-    log(`📦 File: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`, 'info');
+    log(`📦 Original file: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`, 'info');
     log(`📝 Title: ${title}`, 'info');
     if (speed === 'slow') log('⚠️ Slow connection detected', 'warning');
 
@@ -156,6 +214,11 @@ export const useUpload = (userId: string | null) => {
         setStatus('Preparing...');
         setProgress(5);
 
+        log('🖼️ Compressing main image...', 'info');
+        const compressedImage = await compressMainImage(file);
+        log(`✅ Main image compressed to ${(compressedImage.size / 1024).toFixed(2)} KB`, 'success');
+        setProgress(8);
+
         log('🖼️ Generating thumbnail...', 'info');
         const thumbnailBlob = await generateThumbnail(file);
         log(`✅ Thumbnail generated (${(thumbnailBlob.size / 1024).toFixed(2)} KB)`, 'success');
@@ -163,12 +226,12 @@ export const useUpload = (userId: string | null) => {
 
         saveToCache({ file: { name: file.name, size: file.size, type: file.type }, title, description });
 
-        log('📤 STEP 1: Uploading full image...', 'info');
-        setStatus('Uploading full image...');
+        log('📤 STEP 1: Uploading compressed image...', 'info');
+        setStatus('Uploading compressed image...');
         setProgress(15);
 
         const fd = new FormData();
-        fd.append('file', file);
+        fd.append('file', compressedImage, file.name);
         fd.append('userId', userId);
         fd.append('folder', 'wallpapers');
 
@@ -195,7 +258,7 @@ export const useUpload = (userId: string | null) => {
         }
 
         imageUrl = blobData.url;
-        log('✅ Full image uploaded!', 'success');
+        log('✅ Compressed image uploaded!', 'success');
         log(`🔗 URL: ${imageUrl}`, 'info');
         setProgress(40);
         saveToCache({ imageUrl });
@@ -218,7 +281,7 @@ export const useUpload = (userId: string | null) => {
           });
 
           if (!thumbRes.ok) {
-            log('⚠️ Thumbnail upload failed, using full image', 'warning');
+            log('⚠️ Thumbnail upload failed, using main image', 'warning');
             thumbnailUrl = imageUrl;
           } else {
             const thumbData = await thumbRes.json();
@@ -312,7 +375,7 @@ export const useUpload = (userId: string | null) => {
     } finally {
       setUploading(false);
     }
-  }, [userId, online, speed, log, generateThumbnail, saveToCache, loadFromCache, clearCache, logs]);
+  }, [userId, online, speed, log, compressMainImage, generateThumbnail, saveToCache, loadFromCache, clearCache, logs]);
 
   const reset = useCallback(() => {
     setProgress(0);
