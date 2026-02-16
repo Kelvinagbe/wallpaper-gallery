@@ -19,16 +19,18 @@ export default function WallpaperGallery() {
   const { session } = useAuth();
   const [showSplash, setShowSplash] = useState(true);
   const [wallpapers, setWallpapers] = useState<Wallpaper[]>([]);
-  const [hasMore, setHasMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(0);
   const [selectedWallpaper, setSelectedWallpaper] = useState<Wallpaper | null>(null);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [filter, setFilter] = useState<Filter>('all');
   const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>('home');
+
+  const ITEMS_PER_PAGE = 30;
 
   // Hide splash after 6 seconds
   useEffect(() => {
@@ -40,10 +42,11 @@ export default function WallpaperGallery() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const data = await fetchWallpapers(0, 50);
+        const data = await fetchWallpapers(0, ITEMS_PER_PAGE);
         setWallpapers(data.wallpapers);
         setHasMore(data.hasMore);
         setTotal(data.total);
+        setPage(1);
       } catch (error) {
         console.error('Failed to load wallpapers:', error);
       } finally {
@@ -55,16 +58,35 @@ export default function WallpaperGallery() {
 
   // Refresh wallpapers
   const handleRefresh = async () => {
-    setIsRefreshing(true);
     try {
-      const data = await fetchWallpapers(0, 50);
+      const data = await fetchWallpapers(0, ITEMS_PER_PAGE);
       setWallpapers(data.wallpapers);
       setHasMore(data.hasMore);
       setTotal(data.total);
+      setPage(1);
     } catch (error) {
       console.error('Failed to refresh:', error);
-    } finally {
-      setIsRefreshing(false);
+    }
+  };
+
+  // Load more wallpapers
+  const handleLoadMore = async () => {
+    if (!hasMore || isLoading) return;
+    
+    try {
+      const data = await fetchWallpapers(page * ITEMS_PER_PAGE, ITEMS_PER_PAGE);
+      
+      // Append new wallpapers, avoiding duplicates
+      setWallpapers(prev => {
+        const existingIds = new Set(prev.map(wp => wp.id));
+        const newWallpapers = data.wallpapers.filter(wp => !existingIds.has(wp.id));
+        return [...prev, ...newWallpapers];
+      });
+      
+      setHasMore(data.hasMore);
+      setPage(prev => prev + 1);
+    } catch (error) {
+      console.error('Failed to load more:', error);
     }
   };
 
@@ -93,18 +115,18 @@ export default function WallpaperGallery() {
             filter={filter} 
             setFilter={setFilter} 
             onRefresh={handleRefresh}
-            isRefreshing={isRefreshing}
+            isRefreshing={false}
           />
         )}
 
         <main className="max-w-7xl mx-auto px-4 py-8">
           <WallpaperGrid 
             wallpapers={wallpapers} 
-            isLoading={isLoading || isRefreshing} 
-            onWallpaperClick={setSelectedWallpaper} 
-onRefresh={handleRefresh}        // Add this
-  onLoadMore={handleLoadMore}      // Add this
-  hasMore={hasMore}       
+            isLoading={isLoading} 
+            onWallpaperClick={setSelectedWallpaper}
+            onRefresh={handleRefresh}
+            onLoadMore={handleLoadMore}
+            hasMore={hasMore}
           />
         </main>
 
