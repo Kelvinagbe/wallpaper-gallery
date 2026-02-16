@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Search, X, ChevronLeft, Clock } from 'lucide-react';
 import { WallpaperCard } from './WallpaperCard';
-import { useSearch } from '@/hooks/useSearch';
+import { useSearch } from '@/app/hooks/useSearch';
 import type { Wallpaper } from '../types';
 
 type SearchModalProps = {
