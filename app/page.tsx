@@ -25,23 +25,18 @@ export default function WallpaperGallery() {
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [filter, setFilter] = useState<Filter>('all');
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>('home');
 
-  // Hide splash after 6 seconds (independent of data loading)
+  // Hide splash after 6 seconds
   useEffect(() => {
-    const splashTimer = setTimeout(() => {
-      setShowSplash(false);
-    }, 6000);
-
+    const splashTimer = setTimeout(() => setShowSplash(false), 6000);
     return () => clearTimeout(splashTimer);
   }, []);
 
-  // Load app data in background (independent of splash)
+  // Load app data in background
   useEffect(() => {
     const loadData = async () => {
       try {
@@ -55,11 +50,7 @@ export default function WallpaperGallery() {
         setIsLoading(false);
       }
     };
-
     loadData();
-
-    const savedSearches = localStorage.getItem('recentSearches');
-    if (savedSearches) setRecentSearches(JSON.parse(savedSearches));
   }, []);
 
   // Refresh wallpapers
@@ -77,26 +68,11 @@ export default function WallpaperGallery() {
     }
   };
 
-  const filteredWallpapers = wallpapers.filter(wp =>
-    wp.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    wp.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase())) ||
-    wp.uploadedBy.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const handleSearchQuery = (query: string) => {
-    setSearchQuery(query);
-    if (query.trim() && filteredWallpapers.length > 0) {
-      const updated = [query.trim(), ...recentSearches.filter(s => s.toLowerCase() !== query.trim().toLowerCase())].slice(0, 5);
-      setRecentSearches(updated);
-      localStorage.setItem('recentSearches', JSON.stringify(updated));
-    }
-  };
-
   const isFullScreenViewOpen = selectedWallpaper || selectedUserId || activeTab === 'profile' || activeTab === 'notifications';
 
   return (
     <>
-      {/* Splash Screen - Shows for 6 seconds then fades out */}
+      {/* Splash Screen */}
       {showSplash && (
         <div className="splash-screen">
           <div className="splash-content">
@@ -108,7 +84,7 @@ export default function WallpaperGallery() {
         </div>
       )}
 
-      {/* Main App - Always rendered, loads data in background */}
+      {/* Main App */}
       <div className="min-h-screen bg-black text-white pb-16">
         <GlobalStyles />
 
@@ -123,7 +99,7 @@ export default function WallpaperGallery() {
 
         <main className="max-w-7xl mx-auto px-4 py-8">
           <WallpaperGrid 
-            wallpapers={filteredWallpapers} 
+            wallpapers={wallpapers} 
             isLoading={isLoading || isRefreshing} 
             onWallpaperClick={setSelectedWallpaper} 
           />
@@ -136,22 +112,10 @@ export default function WallpaperGallery() {
           onUploadOpen={() => setIsUploadOpen(true)}
         />
 
+        {/* SearchModal now manages its own state */}
         <SearchModal
           isOpen={isSearchOpen}
-          onClose={() => { setIsSearchOpen(false); setSearchQuery(''); }}
-          searchQuery={searchQuery}
-          setSearchQuery={handleSearchQuery}
-          recentSearches={recentSearches}
-          onClearRecentSearch={(term) => {
-            const updated = recentSearches.filter(s => s !== term);
-            setRecentSearches(updated);
-            localStorage.setItem('recentSearches', JSON.stringify(updated));
-          }}
-          onClearAllRecentSearches={() => {
-            setRecentSearches([]);
-            localStorage.removeItem('recentSearches');
-          }}
-          filteredWallpapers={filteredWallpapers}
+          onClose={() => setIsSearchOpen(false)}
           onWallpaperClick={(wp) => { setIsSearchOpen(false); setSelectedWallpaper(wp); }}
           onUserClick={(userId) => { setIsSearchOpen(false); setSelectedUserId(userId); }}
         />
@@ -184,7 +148,7 @@ export default function WallpaperGallery() {
         {selectedWallpaper && (
           <WallpaperDetail
             wallpaper={selectedWallpaper}
-            relatedWallpapers={filteredWallpapers.filter(wp => wp.id !== selectedWallpaper.id).slice(0, 4)}
+            relatedWallpapers={wallpapers.filter(wp => wp.id !== selectedWallpaper.id).slice(0, 4)}
             onClose={() => setSelectedWallpaper(null)}
             onUserClick={() => setSelectedUserId(selectedWallpaper.userId)}
             onRelatedClick={setSelectedWallpaper}
