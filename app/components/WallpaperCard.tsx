@@ -45,15 +45,23 @@ const BottomSheet = ({ isOpen, onClose, wp, saved, onSave, onDownload, onShare }
 export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
   const { user } = useAuth();
   const cardRef = useRef<HTMLDivElement>(null);
+  const prefetchedRef = useRef(false);
   const [state, setState] = useState({ inView: false, thumbLoaded: false, fullLoaded: false, liked: false, saved: false, showMenu: false });
   const [counts, setCounts] = useState({ likes: wp.likes || 0, views: wp.views || 0 });
 
+  // Lazy loading observer
   useEffect(() => {
-    const observer = new IntersectionObserver(([entry]) => { if (entry.isIntersecting) { setState(s => ({ ...s, inView: true })); observer.disconnect(); } }, { rootMargin: '300px', threshold: 0.01 });
+    const observer = new IntersectionObserver(([entry]) => { 
+      if (entry.isIntersecting) { 
+        setState(s => ({ ...s, inView: true })); 
+        observer.disconnect(); 
+      } 
+    }, { rootMargin: '300px', threshold: 0.01 });
     if (cardRef.current) observer.observe(cardRef.current);
     return () => observer.disconnect();
   }, []);
 
+  // Load user interaction data
   useEffect(() => {
     if (!state.inView || !user) return;
     (async () => {
@@ -61,6 +69,19 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
       setState(s => ({ ...s, liked, saved }));
     })();
   }, [state.inView, wp.id, user]);
+
+  // Prefetch full image on hover
+  const handleMouseEnter = () => {
+    if (!prefetchedRef.current && wp.url && !state.fullLoaded) {
+      prefetchedRef.current = true;
+      const link = document.createElement('link');
+      link.rel = 'prefetch';
+      link.as = 'image';
+      link.href = wp.url;
+      link.setAttribute('fetchpriority', 'high');
+      document.head.appendChild(link);
+    }
+  };
 
   const handleLike = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -118,12 +139,12 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
 
   return (
     <>
-      <div ref={cardRef} className="relative">
+      <div ref={cardRef} className="relative" onMouseEnter={handleMouseEnter}>
         <div className="card group relative rounded-xl overflow-hidden cursor-pointer transition-opacity hover:opacity-95" onClick={onClick}>
           {/* Blur placeholder */}
           {!state.thumbLoaded && <div className="absolute inset-0 bg-zinc-900 animate-pulse" />}
 
-          {/* Thumbnail (blurred) */}
+          {/* Thumbnail (blurred) - Pinterest style */}
           {wp.thumbnail && (
             <img
               src={wp.thumbnail}
@@ -132,18 +153,19 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
               decoding="async"
               onLoad={() => setState(s => ({ ...s, thumbLoaded: true }))}
               className={`w-full h-auto block transition-all duration-300 ${state.thumbLoaded ? 'opacity-100' : 'opacity-0'} ${state.fullLoaded ? 'opacity-0 absolute' : ''}`}
-              style={{ filter: 'blur(8px)', transform: 'scale(1.1)', contentVisibility: 'auto', backgroundColor: '#1a1a1a' }}
+              style={{ filter: 'blur(10px)', transform: 'scale(1.1)', contentVisibility: 'auto', backgroundColor: '#1a1a1a' }}
             />
           )}
 
-          {/* Full image */}
+          {/* Full image - loads after thumbnail */}
           <img
             src={wp.url}
             alt={wp.title}
             loading="lazy"
             decoding="async"
+            fetchPriority="low"
             onLoad={() => setState(s => ({ ...s, fullLoaded: true }))}
-            className={`w-full h-auto block transition-opacity duration-500 ${state.fullLoaded ? 'opacity-100' : 'opacity-0 absolute inset-0'}`}
+            className={`w-full h-auto block transition-opacity duration-700 ${state.fullLoaded ? 'opacity-100' : 'opacity-0 absolute inset-0'}`}
             style={{ contentVisibility: 'auto', backgroundColor: '#1a1a1a' }}
           />
 
