@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { WallpaperCard } from './WallpaperCard';
 import { usePrefetch } from '@/app/hooks/usePrefetch';
@@ -21,7 +21,6 @@ export const WallpaperGrid = ({
   onLoadMore,
   hasMore = true
 }: WallpaperGridProps) => {
-  const [columns, setColumns] = useState<Wallpaper[][]>([[], [], []]);
   const [showRefresh, setShowRefresh] = useState(false);
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 20 });
   const [pullState, setPullState] = useState({ pulling: false, distance: 0, refreshing: false, canRefresh: false });
@@ -39,52 +38,6 @@ export const WallpaperGrid = ({
     [wallpapers, visibleRange.end]
   );
   usePrefetch(nextBatchUrls);
-
-  // Get column count based on screen width
-  const getColumnCount = () => {
-    if (typeof window === 'undefined') return 3;
-    const width = window.innerWidth;
-    if (width < 640) return 2;
-    if (width < 1024) return 3;
-    if (width < 1536) return 4;
-    return 5;
-  };
-
-  // Distribute wallpapers evenly across columns
-  const distributeWallpapers = useCallback((wps: Wallpaper[]) => {
-    const colCount = getColumnCount();
-    const cols: Wallpaper[][] = Array.from({ length: colCount }, () => []);
-    const heights = Array(colCount).fill(0);
-
-    wps.forEach((wp) => {
-      const minIdx = heights.indexOf(Math.min(...heights));
-      cols[minIdx].push(wp);
-      heights[minIdx] += 300; // Estimated height
-    });
-
-    return cols;
-  }, []);
-
-  // Update columns when wallpapers change
-  useEffect(() => {
-    if (wallpapers.length > 0) {
-      setColumns(distributeWallpapers(wallpapers));
-    }
-  }, [wallpapers, distributeWallpapers]);
-
-  // Handle resize
-  useEffect(() => {
-    let timeout: NodeJS.Timeout;
-    const handleResize = () => {
-      clearTimeout(timeout);
-      timeout = setTimeout(() => setColumns(distributeWallpapers(wallpapers)), 150);
-    };
-    window.addEventListener('resize', handleResize);
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      clearTimeout(timeout);
-    };
-  }, [wallpapers, distributeWallpapers]);
 
   // Intersection Observer for load more
   useEffect(() => {
@@ -189,14 +142,11 @@ export const WallpaperGrid = ({
 
   // Loading skeleton
   if (isLoading && wallpapers.length === 0) {
-    const colCount = getColumnCount();
     return (
-      <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${colCount}, 1fr)` }}>
-        {Array.from({ length: colCount }).map((_, colIdx) => (
-          <div key={colIdx} className="flex flex-col gap-4">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="skeleton-shimmer rounded-xl" style={{ height: `${200 + Math.random() * 200}px` }} />
-            ))}
+      <div className="masonry">
+        {Array.from({ length: 15 }).map((_, i) => (
+          <div key={i} style={{ marginBottom: '40px' }}>
+            <div className="skeleton-shimmer rounded-xl" style={{ height: `${200 + Math.random() * 200}px` }} />
           </div>
         ))}
       </div>
@@ -229,15 +179,11 @@ export const WallpaperGrid = ({
       <span style={{color:'white',fontSize:'14px',fontWeight:500}}>✓ Refreshed</span>
     </div>}
 
-    {/* Grid */}
-    <div ref={gridRef} className="grid gap-4" style={{gridTemplateColumns:`repeat(${getColumnCount()},1fr)`}}>
-      {columns.map((col, colIdx) => (
-        <div key={colIdx} className="flex flex-col gap-4">
-          {col.map((wp) => (
-            <div key={wp.id} style={{breakInside:'avoid'}}>
-              <WallpaperCard wp={wp} onClick={() => onWallpaperClick(wp)} />
-            </div>
-          ))}
+    {/* Simple Masonry Grid - just use your existing CSS masonry class */}
+    <div ref={gridRef} className="masonry">
+      {wallpapers.map((wp) => (
+        <div key={wp.id} style={{ marginBottom: '40px' }}>
+          <WallpaperCard wp={wp} onClick={() => onWallpaperClick(wp)} />
         </div>
       ))}
     </div>
