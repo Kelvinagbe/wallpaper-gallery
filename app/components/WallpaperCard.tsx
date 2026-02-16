@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useInView } from 'react-intersection-observer';
-import { Heart, Download, Eye, MoreHorizontal, Share2, Bookmark, Flag } from 'lucide-react';
+import { Heart, Download, Eye, MoreHorizontal, Share2, Bookmark, Flag, RefreshCw } from 'lucide-react';
 import { VerifiedBadge } from './VerifiedBadge';
 import { toggleLike, isWallpaperLiked, toggleSave, isWallpaperSaved } from '@/lib/stores/userStore';
 import { useAuth } from '@/app/components/AuthProvider';
@@ -40,6 +40,87 @@ const BottomSheet = ({ isOpen, onClose, wp, saved, onSave, onDownload, onShare }
       </div>
     </>,
     document.body
+  );
+};
+
+// Pull to Refresh Component
+const PullToRefresh = ({ onRefresh }: { onRefresh: () => Promise<void> }) => {
+  const [pullState, setPullState] = useState({ pulling: false, distance: 0, refreshing: false, canRefresh: false });
+  const startY = useRef(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const handleTouchStart = (e: TouchEvent) => {
+    if (window.scrollY === 0) {
+      startY.current = e.touches[0].clientY;
+      setPullState(s => ({ ...s, pulling: true }));
+    }
+  };
+
+  const handleTouchMove = (e: TouchEvent) => {
+    if (!pullState.pulling || window.scrollY > 0) return;
+    
+    const currentY = e.touches[0].clientY;
+    const distance = Math.max(0, currentY - startY.current);
+    
+    if (distance > 0) {
+      e.preventDefault();
+      const maxDistance = 120;
+      const dampened = Math.min(distance * 0.5, maxDistance);
+      setPullState(s => ({ ...s, distance: dampened, canRefresh: dampened >= 80 }));
+    }
+  };
+
+  const handleTouchEnd = async () => {
+    if (pullState.canRefresh && !pullState.refreshing) {
+      setPullState(s => ({ ...s, refreshing: true, distance: 80 }));
+      navigator.vibrate?.(50);
+      await onRefresh();
+      setPullState({ pulling: false, distance: 0, refreshing: false, canRefresh: false });
+    } else {
+      setPullState({ pulling: false, distance: 0, refreshing: false, canRefresh: false });
+    }
+  };
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    container.addEventListener('touchstart', handleTouchStart, { passive: false });
+    container.addEventListener('touchmove', handleTouchMove, { passive: false });
+    container.addEventListener('touchend', handleTouchEnd);
+
+    return () => {
+      container.removeEventListener('touchstart', handleTouchStart);
+      container.removeEventListener('touchmove', handleTouchMove);
+      container.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [pullState.pulling, pullState.canRefresh, pullState.refreshing]);
+
+  return (
+    <div ref={containerRef} className="fixed top-0 left-0 right-0 z-50 pointer-events-none">
+      <div 
+        className="flex justify-center items-center transition-transform"
+        style={{ 
+          transform: `translateY(${pullState.distance - 80}px)`,
+          opacity: pullState.distance / 80,
+        }}
+      >
+        <div className={`mt-4 p-3 rounded-full backdrop-blur-md transition-all ${
+          pullState.refreshing ? 'bg-blue-500' : 
+          pullState.canRefresh ? 'bg-emerald-500' : 
+          'bg-white/10'
+        }`}>
+          <RefreshCw 
+            className={`w-6 h-6 text-white transition-transform ${
+              pullState.refreshing ? 'animate-spin' : ''
+            }`}
+            style={{
+              transform: pullState.refreshing ? '' : `rotate(${pullState.distance * 3}deg)`
+            }}
+          />
+        </div>
+      </div>
+    </div>
   );
 };
 
@@ -135,7 +216,7 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
       <div ref={cardRef} className="relative" onMouseEnter={handleMouseEnter}>
         <div className="card group relative rounded-xl overflow-hidden cursor-pointer transition-opacity hover:opacity-95" onClick={onClick}>
           {!state.thumbLoaded && <div className="absolute inset-0 bg-zinc-900 animate-pulse" />}
-          
+
           {wp.thumbnail && (
             <img
               src={wp.thumbnail}
@@ -147,7 +228,7 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
               style={{ filter: 'blur(10px)', transform: 'scale(1.1)', contentVisibility: 'auto', backgroundColor: '#1a1a1a' }}
             />
           )}
-          
+
           <img
             src={wp.url}
             alt={wp.title}
@@ -157,7 +238,7 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
             className={`w-full h-auto block transition-opacity duration-700 ${state.fullLoaded ? 'opacity-100' : 'opacity-0 absolute inset-0'}`}
             style={{ contentVisibility: 'auto', backgroundColor: '#1a1a1a' }}
           />
-          
+
           {state.fullLoaded && (
             <>
               <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200">
@@ -170,7 +251,7 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
                   </button>
                 </div>
               </div>
-              
+
               <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/95 via-black/80 to-transparent p-2.5">
                 <div className="flex items-center justify-between gap-2 mb-1.5">
                   <h3 className="font-medium line-clamp-1 text-xs flex-1">{wp.title}</h3>
