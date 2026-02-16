@@ -89,7 +89,6 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: any) => {
   useEffect(() => {
     if (isOpen) {
       checkUser();
-      // Check for cached data and populate form
       const cached = getCachedData();
       if (cached) {
         setTitle(cached.title || '');
@@ -151,7 +150,6 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: any) => {
 
   const handleRetry = async () => {
     if (!file || !title) {
-      // Try to get from cache
       const cached = getCachedData();
       if (!cached) return show('Fill required fields', 'error');
     }
@@ -252,6 +250,7 @@ export const UploadModal = ({ isOpen, onClose, onSuccess }: any) => {
                 <li className="flex gap-2"><span className="text-white/30">•</span><span>High-quality images recommended</span></li>
                 <li className="flex gap-2"><span className="text-white/30">•</span><span>Ensure you have rights to share</span></li>
                 <li className="flex gap-2"><span className="text-white/30">•</span><span>Max: 10MB, Timeout: 2min</span></li>
+                <li className="flex gap-2"><span className="text-white/30">•</span><span>Images compressed to ~200KB, thumbnails ~1KB</span></li>
               </ul>
             </div>
           </div>
