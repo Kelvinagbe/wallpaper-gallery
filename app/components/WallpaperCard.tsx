@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { useInView } from 'react-intersection-observer';
 import { Heart, Download, Eye, MoreHorizontal, Share2, Bookmark, Flag } from 'lucide-react';
 import { VerifiedBadge } from './VerifiedBadge';
 import { toggleLike, isWallpaperLiked, toggleSave, isWallpaperSaved } from '@/lib/stores/userStore';
@@ -44,33 +45,25 @@ const BottomSheet = ({ isOpen, onClose, wp, saved, onSave, onDownload, onShare }
 
 export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
   const { user } = useAuth();
-  const cardRef = useRef<HTMLDivElement>(null);
   const prefetchedRef = useRef(false);
-  const [state, setState] = useState({ inView: false, thumbLoaded: false, fullLoaded: false, liked: false, saved: false, showMenu: false });
+  const [state, setState] = useState({ thumbLoaded: false, fullLoaded: false, liked: false, saved: false, showMenu: false });
   const [counts, setCounts] = useState({ likes: wp.likes || 0, views: wp.views || 0 });
 
-  // Lazy loading observer
-  useEffect(() => {
-    const observer = new IntersectionObserver(([entry]) => { 
-      if (entry.isIntersecting) { 
-        setState(s => ({ ...s, inView: true })); 
-        observer.disconnect(); 
-      } 
-    }, { rootMargin: '300px', threshold: 0.01 });
-    if (cardRef.current) observer.observe(cardRef.current);
-    return () => observer.disconnect();
-  }, []);
+  // Use intersection observer for lazy loading
+  const { ref: cardRef, inView } = useInView({
+    triggerOnce: true,
+    rootMargin: '300px',
+    threshold: 0.01,
+  });
 
-  // Load user interaction data
   useEffect(() => {
-    if (!state.inView || !user) return;
+    if (!inView || !user) return;
     (async () => {
       const [liked, saved] = await Promise.all([isWallpaperLiked(wp.id, user.id), isWallpaperSaved(wp.id, user.id)]);
       setState(s => ({ ...s, liked, saved }));
     })();
-  }, [state.inView, wp.id, user]);
+  }, [inView, wp.id, user]);
 
-  // Prefetch full image on hover
   const handleMouseEnter = () => {
     if (!prefetchedRef.current && wp.url && !state.fullLoaded) {
       prefetchedRef.current = true;
@@ -135,16 +128,14 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
 
   const fmt = (n: number) => n >= 1000000 ? `${(n / 1000000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n.toString();
 
-  if (!state.inView) return <div ref={cardRef} className="skeleton-shimmer rounded-xl" style={{ minHeight: '250px' }} />;
+  if (!inView) return <div ref={cardRef} className="skeleton-shimmer rounded-xl" style={{ minHeight: '250px' }} />;
 
   return (
     <>
       <div ref={cardRef} className="relative" onMouseEnter={handleMouseEnter}>
         <div className="card group relative rounded-xl overflow-hidden cursor-pointer transition-opacity hover:opacity-95" onClick={onClick}>
-          {/* Blur placeholder */}
           {!state.thumbLoaded && <div className="absolute inset-0 bg-zinc-900 animate-pulse" />}
-
-          {/* Thumbnail (blurred) - Pinterest style */}
+          
           {wp.thumbnail && (
             <img
               src={wp.thumbnail}
@@ -156,54 +147,50 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
               style={{ filter: 'blur(10px)', transform: 'scale(1.1)', contentVisibility: 'auto', backgroundColor: '#1a1a1a' }}
             />
           )}
-
-          {/* Full image - loads after thumbnail */}
+          
           <img
             src={wp.url}
             alt={wp.title}
             loading="lazy"
             decoding="async"
-            fetchPriority="low"
             onLoad={() => setState(s => ({ ...s, fullLoaded: true }))}
             className={`w-full h-auto block transition-opacity duration-700 ${state.fullLoaded ? 'opacity-100' : 'opacity-0 absolute inset-0'}`}
             style={{ contentVisibility: 'auto', backgroundColor: '#1a1a1a' }}
           />
-
-          {/* Hover overlay */}
+          
           {state.fullLoaded && (
-            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-              <div className="absolute top-3 right-3 flex items-center gap-2">
-                <button onClick={handleLike} className={`p-2.5 rounded-full backdrop-blur-md transition-all hover:scale-110 active:scale-95 ${state.liked ? 'bg-rose-500 hover:bg-rose-600' : 'bg-black/50 hover:bg-black/70'}`}>
-                  <Heart className={`w-4 h-4 ${state.liked ? 'text-white fill-white' : 'text-white'}`} />
-                </button>
-                <button onClick={handleDownload} className="p-2.5 rounded-full bg-black/50 hover:bg-black/70 backdrop-blur-md transition-all hover:scale-110 active:scale-95">
-                  <Download className="w-4 h-4 text-white" />
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Bottom info */}
-          {state.fullLoaded && (
-            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/95 via-black/80 to-transparent p-2.5">
-              <div className="flex items-center justify-between gap-2 mb-1.5">
-                <h3 className="font-medium line-clamp-1 text-xs flex-1">{wp.title}</h3>
-                <button onClick={(e) => { e.stopPropagation(); setState(s => ({ ...s, showMenu: true })); }} className="p-1.5 rounded-full hover:bg-white/10 transition-colors flex-shrink-0">
-                  <MoreHorizontal className="w-4 h-4 text-white/80" />
-                </button>
-              </div>
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                  <img src={wp.userAvatar} alt={wp.uploadedBy} className="w-5 h-5 rounded-full flex-shrink-0 border border-white/20" />
-                  <span className="text-[10px] text-white/80 truncate font-medium">{wp.uploadedBy}</span>
-                  {wp.verified && <VerifiedBadge size="sm" />}
-                </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  {counts.likes > 0 && <div className="flex items-center gap-0.5"><Heart className="w-3 h-3 text-rose-400 fill-rose-400" /><span className="text-[10px] font-medium text-rose-400">{fmt(counts.likes)}</span></div>}
-                  {counts.views > 0 && <div className="flex items-center gap-0.5"><Eye className="w-3 h-3 text-white/60" /><span className="text-[10px] font-medium text-white/60">{fmt(counts.views)}</span></div>}
+            <>
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                <div className="absolute top-3 right-3 flex items-center gap-2">
+                  <button onClick={handleLike} className={`p-2.5 rounded-full backdrop-blur-md transition-all hover:scale-110 active:scale-95 ${state.liked ? 'bg-rose-500 hover:bg-rose-600' : 'bg-black/50 hover:bg-black/70'}`}>
+                    <Heart className={`w-4 h-4 ${state.liked ? 'text-white fill-white' : 'text-white'}`} />
+                  </button>
+                  <button onClick={handleDownload} className="p-2.5 rounded-full bg-black/50 hover:bg-black/70 backdrop-blur-md transition-all hover:scale-110 active:scale-95">
+                    <Download className="w-4 h-4 text-white" />
+                  </button>
                 </div>
               </div>
-            </div>
+              
+              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/95 via-black/80 to-transparent p-2.5">
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <h3 className="font-medium line-clamp-1 text-xs flex-1">{wp.title}</h3>
+                  <button onClick={(e) => { e.stopPropagation(); setState(s => ({ ...s, showMenu: true })); }} className="p-1.5 rounded-full hover:bg-white/10 transition-colors flex-shrink-0">
+                    <MoreHorizontal className="w-4 h-4 text-white/80" />
+                  </button>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                    <img src={wp.userAvatar} alt={wp.uploadedBy} className="w-5 h-5 rounded-full flex-shrink-0 border border-white/20" />
+                    <span className="text-[10px] text-white/80 truncate font-medium">{wp.uploadedBy}</span>
+                    {wp.verified && <VerifiedBadge size="sm" />}
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {counts.likes > 0 && <div className="flex items-center gap-0.5"><Heart className="w-3 h-3 text-rose-400 fill-rose-400" /><span className="text-[10px] font-medium text-rose-400">{fmt(counts.likes)}</span></div>}
+                    {counts.views > 0 && <div className="flex items-center gap-0.5"><Eye className="w-3 h-3 text-white/60" /><span className="text-[10px] font-medium text-white/60">{fmt(counts.views)}</span></div>}
+                  </div>
+                </div>
+              </div>
+            </>
           )}
         </div>
       </div>
