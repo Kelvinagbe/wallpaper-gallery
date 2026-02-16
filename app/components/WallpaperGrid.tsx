@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { WallpaperCard } from './WallpaperCard';
-import { usePrefetch } from '@/hooks/usePrefetch';
+import { usePrefetch } from '@/app/hooks/usePrefetch';
 import type { Wallpaper } from '../types';
 
 type WallpaperGridProps = {
