@@ -102,7 +102,9 @@ export default function WallpaperGallery() {
             wallpapers={wallpapers} 
             isLoading={isLoading || isRefreshing} 
             onWallpaperClick={setSelectedWallpaper} 
-onRefresh={handleRefresh}
+onRefresh={handleRefresh}        // Add this
+  onLoadMore={handleLoadMore}      // Add this
+  hasMore={hasMore}       
           />
         </main>
 
