@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useInView } from 'react-intersection-observer';
-import { Heart, Download, Eye, MoreHorizontal, Share2, Bookmark, Flag, RefreshCw } from 'lucide-react';
+import { Heart, Download, Eye, MoreHorizontal, Share2, Bookmark, Flag } from 'lucide-react';
 import { VerifiedBadge } from './VerifiedBadge';
 import { toggleLike, isWallpaperLiked, toggleSave, isWallpaperSaved } from '@/lib/stores/userStore';
 import { useAuth } from '@/app/components/AuthProvider';
@@ -11,271 +11,155 @@ type WallpaperCardProps = { wp: Wallpaper; onClick: () => void };
 
 const BottomSheet = ({ isOpen, onClose, wp, saved, onSave, onDownload, onShare }: any) => {
   if (!isOpen) return null;
-  return createPortal(
-    <>
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100]" onClick={onClose} style={{ animation: 'fadeIn 0.2s' }} />
-      <div className="fixed bottom-0 left-0 right-0 z-[101]" style={{ animation: 'slideUp 0.3s cubic-bezier(0.34,1.56,0.64,1)' }}>
-        <div className="bg-zinc-900 rounded-t-3xl border-t border-white/10 shadow-2xl max-w-2xl mx-auto">
-          <div className="flex justify-center pt-3 pb-2"><div className="w-12 h-1.5 bg-white/20 rounded-full" /></div>
-          <div className="px-4 pb-6">
-            <h3 className="text-lg font-semibold mb-4">{wp.title}</h3>
-            <div className="space-y-1">
-              {[
-                { icon: Bookmark, label: saved ? 'Remove from Saved' : 'Save to Collection', onClick: onSave, color: saved ? 'blue' : 'white' },
-                { icon: Download, label: 'Download Wallpaper', onClick: onDownload },
-                { icon: Share2, label: 'Share Wallpaper', onClick: onShare },
-                { icon: Flag, label: 'Report Content', onClick: () => { alert('Report coming soon'); onClose(); }, color: 'red', border: true }
-              ].map((btn, i) => (
-                <button key={i} onClick={btn.onClick} className={`w-full flex items-center gap-4 px-4 py-4 hover:bg-white/5 rounded-xl transition-colors active:scale-[0.98] ${btn.border ? 'border-t border-white/5 mt-2' : ''}`}>
-                  <div className={`w-10 h-10 rounded-full ${btn.color === 'red' ? 'bg-red-500/10' : 'bg-white/10'} flex items-center justify-center`}>
-                    <btn.icon className={`w-5 h-5 ${btn.color === 'blue' ? 'fill-blue-400 text-blue-400' : btn.color === 'red' ? 'text-red-400' : 'text-white/80'}`} />
-                  </div>
-                  <span className={`text-base font-medium ${btn.color === 'red' ? 'text-red-400' : ''}`}>{btn.label}</span>
-                </button>
-              ))}
-            </div>
-            <button onClick={onClose} className="w-full mt-4 py-3 bg-white/5 hover:bg-white/10 rounded-xl font-medium transition-colors">Cancel</button>
+  return createPortal(<>
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',backdropFilter:'blur(8px)',zIndex:100,animation:'fadeIn 0.2s'}} onClick={onClose}/>
+    <div style={{position:'fixed',bottom:0,left:0,right:0,zIndex:101,animation:'slideUp 0.3s cubic-bezier(0.34,1.56,0.64,1)'}}>
+      <div className="bg-zinc-900 rounded-t-3xl border-t border-white/10 shadow-2xl max-w-2xl mx-auto">
+        <div className="flex justify-center pt-3 pb-2"><div className="w-12 h-1.5 bg-white/20 rounded-full"/></div>
+        <div className="px-4 pb-6">
+          <h3 className="text-lg font-semibold mb-4">{wp.title}</h3>
+          <div className="space-y-1">
+            {[{icon:Bookmark,label:saved?'Remove from Saved':'Save to Collection',onClick:onSave,color:saved?'blue':'white'},
+              {icon:Download,label:'Download Wallpaper',onClick:onDownload},
+              {icon:Share2,label:'Share Wallpaper',onClick:onShare},
+              {icon:Flag,label:'Report Content',onClick:()=>{alert('Report coming soon');onClose();},color:'red',border:true}
+            ].map((b,i)=>(
+              <button key={i} onClick={b.onClick} className={`w-full flex items-center gap-4 px-4 py-4 hover:bg-white/5 rounded-xl transition-colors active:scale-[0.98] ${b.border?'border-t border-white/5 mt-2':''}`}>
+                <div className={`w-10 h-10 rounded-full ${b.color==='red'?'bg-red-500/10':'bg-white/10'} flex items-center justify-center`}>
+                  <b.icon className={`w-5 h-5 ${b.color==='blue'?'fill-blue-400 text-blue-400':b.color==='red'?'text-red-400':'text-white/80'}`}/>
+                </div>
+                <span className={`text-base font-medium ${b.color==='red'?'text-red-400':''}`}>{b.label}</span>
+              </button>
+            ))}
           </div>
-        </div>
-      </div>
-    </>,
-    document.body
-  );
-};
-
-// Pull to Refresh Component
-const PullToRefresh = ({ onRefresh }: { onRefresh: () => Promise<void> }) => {
-  const [pullState, setPullState] = useState({ pulling: false, distance: 0, refreshing: false, canRefresh: false });
-  const startY = useRef(0);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  const handleTouchStart = (e: TouchEvent) => {
-    if (window.scrollY === 0) {
-      startY.current = e.touches[0].clientY;
-      setPullState(s => ({ ...s, pulling: true }));
-    }
-  };
-
-  const handleTouchMove = (e: TouchEvent) => {
-    if (!pullState.pulling || window.scrollY > 0) return;
-    
-    const currentY = e.touches[0].clientY;
-    const distance = Math.max(0, currentY - startY.current);
-    
-    if (distance > 0) {
-      e.preventDefault();
-      const maxDistance = 120;
-      const dampened = Math.min(distance * 0.5, maxDistance);
-      setPullState(s => ({ ...s, distance: dampened, canRefresh: dampened >= 80 }));
-    }
-  };
-
-  const handleTouchEnd = async () => {
-    if (pullState.canRefresh && !pullState.refreshing) {
-      setPullState(s => ({ ...s, refreshing: true, distance: 80 }));
-      navigator.vibrate?.(50);
-      await onRefresh();
-      setPullState({ pulling: false, distance: 0, refreshing: false, canRefresh: false });
-    } else {
-      setPullState({ pulling: false, distance: 0, refreshing: false, canRefresh: false });
-    }
-  };
-
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    container.addEventListener('touchstart', handleTouchStart, { passive: false });
-    container.addEventListener('touchmove', handleTouchMove, { passive: false });
-    container.addEventListener('touchend', handleTouchEnd);
-
-    return () => {
-      container.removeEventListener('touchstart', handleTouchStart);
-      container.removeEventListener('touchmove', handleTouchMove);
-      container.removeEventListener('touchend', handleTouchEnd);
-    };
-  }, [pullState.pulling, pullState.canRefresh, pullState.refreshing]);
-
-  return (
-    <div ref={containerRef} className="fixed top-0 left-0 right-0 z-50 pointer-events-none">
-      <div 
-        className="flex justify-center items-center transition-transform"
-        style={{ 
-          transform: `translateY(${pullState.distance - 80}px)`,
-          opacity: pullState.distance / 80,
-        }}
-      >
-        <div className={`mt-4 p-3 rounded-full backdrop-blur-md transition-all ${
-          pullState.refreshing ? 'bg-blue-500' : 
-          pullState.canRefresh ? 'bg-emerald-500' : 
-          'bg-white/10'
-        }`}>
-          <RefreshCw 
-            className={`w-6 h-6 text-white transition-transform ${
-              pullState.refreshing ? 'animate-spin' : ''
-            }`}
-            style={{
-              transform: pullState.refreshing ? '' : `rotate(${pullState.distance * 3}deg)`
-            }}
-          />
+          <button onClick={onClose} className="w-full mt-4 py-3 bg-white/5 hover:bg-white/10 rounded-xl font-medium transition-colors">Cancel</button>
         </div>
       </div>
     </div>
-  );
+    <style>{`@keyframes fadeIn{from{opacity:0}to{opacity:1}}@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}`}</style>
+  </>,document.body);
 };
 
 export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
   const { user } = useAuth();
   const prefetchedRef = useRef(false);
-  const [state, setState] = useState({ thumbLoaded: false, fullLoaded: false, liked: false, saved: false, showMenu: false });
-  const [counts, setCounts] = useState({ likes: wp.likes || 0, views: wp.views || 0 });
+  const [state, setState] = useState({thumbLoaded:false,fullLoaded:false,liked:false,saved:false,showMenu:false});
+  const [counts, setCounts] = useState({likes:wp.likes||0,views:wp.views||0});
+  const {ref:cardRef,inView} = useInView({triggerOnce:true,rootMargin:'300px',threshold:0.01});
 
-  // Use intersection observer for lazy loading
-  const { ref: cardRef, inView } = useInView({
-    triggerOnce: true,
-    rootMargin: '300px',
-    threshold: 0.01,
-  });
-
-  useEffect(() => {
-    if (!inView || !user) return;
-    (async () => {
-      const [liked, saved] = await Promise.all([isWallpaperLiked(wp.id, user.id), isWallpaperSaved(wp.id, user.id)]);
-      setState(s => ({ ...s, liked, saved }));
+  useEffect(()=>{
+    if(!inView||!user)return;
+    (async()=>{
+      const[liked,saved]=await Promise.all([isWallpaperLiked(wp.id,user.id),isWallpaperSaved(wp.id,user.id)]);
+      setState(s=>({...s,liked,saved}));
     })();
-  }, [inView, wp.id, user]);
+  },[inView,wp.id,user]);
 
-  const handleMouseEnter = () => {
-    if (!prefetchedRef.current && wp.url && !state.fullLoaded) {
-      prefetchedRef.current = true;
-      const link = document.createElement('link');
-      link.rel = 'prefetch';
-      link.as = 'image';
-      link.href = wp.url;
-      link.setAttribute('fetchpriority', 'high');
+  const handleMouseEnter=()=>{
+    if(!prefetchedRef.current&&wp.url&&!state.fullLoaded){
+      prefetchedRef.current=true;
+      const link=document.createElement('link');
+      link.rel='prefetch';link.as='image';link.href=wp.url;
+      link.setAttribute('fetchpriority','high');
       document.head.appendChild(link);
     }
   };
 
-  const handleLike = async (e: React.MouseEvent) => {
+  const handleLike=async(e:React.MouseEvent)=>{
     e.stopPropagation();
-    if (!user) return alert('Please login to like wallpapers');
-    const newLiked = !state.liked;
-    setState(s => ({ ...s, liked: newLiked }));
-    setCounts(c => ({ ...c, likes: newLiked ? c.likes + 1 : Math.max(0, c.likes - 1) }));
+    if(!user)return alert('Please login to like wallpapers');
+    const newLiked=!state.liked;
+    setState(s=>({...s,liked:newLiked}));
+    setCounts(c=>({...c,likes:newLiked?c.likes+1:Math.max(0,c.likes-1)}));
     navigator.vibrate?.(50);
-    try { await toggleLike(wp.id); } catch { setState(s => ({ ...s, liked: !newLiked })); setCounts(c => ({ ...c, likes: newLiked ? Math.max(0, c.likes - 1) : c.likes + 1 })); }
+    try{await toggleLike(wp.id);}catch{setState(s=>({...s,liked:!newLiked}));setCounts(c=>({...c,likes:newLiked?Math.max(0,c.likes-1):c.likes+1}));}
   };
 
-  const handleSave = async () => {
-    if (!user) return alert('Please login to save wallpapers');
-    const newSaved = !state.saved;
-    setState(s => ({ ...s, saved: newSaved, showMenu: false }));
+  const handleSave=async()=>{
+    if(!user)return alert('Please login to save wallpapers');
+    const newSaved=!state.saved;
+    setState(s=>({...s,saved:newSaved,showMenu:false}));
     navigator.vibrate?.(50);
-    try { await toggleSave(wp.id); } catch { setState(s => ({ ...s, saved: !newSaved })); }
+    try{await toggleSave(wp.id);}catch{setState(s=>({...s,saved:!newSaved}));}
   };
 
-  const handleDownload = async () => {
+  const handleDownload=async()=>{
     navigator.vibrate?.(50);
-    try {
-      const res = await fetch(wp.url, { mode: 'cors' });
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${wp.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.jpg`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+    try{
+      const res=await fetch(wp.url,{mode:'cors'});
+      const blob=await res.blob();
+      const url=URL.createObjectURL(blob);
+      const link=document.createElement('a');
+      link.href=url;link.download=`${wp.title.replace(/[^a-z0-9]/gi,'_').toLowerCase()}.jpg`;
+      document.body.appendChild(link);link.click();document.body.removeChild(link);
       URL.revokeObjectURL(url);
-    } catch {
-      const link = document.createElement('a');
-      link.href = wp.url;
-      link.download = `${wp.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.jpg`;
-      link.target = '_blank';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+    }catch{
+      const link=document.createElement('a');
+      link.href=wp.url;link.download=`${wp.title.replace(/[^a-z0-9]/gi,'_').toLowerCase()}.jpg`;
+      link.target='_blank';document.body.appendChild(link);link.click();document.body.removeChild(link);
     }
-    setState(s => ({ ...s, showMenu: false }));
+    setState(s=>({...s,showMenu:false}));
   };
 
-  const handleShare = async () => {
-    if (navigator.share) {
-      try { await navigator.share({ title: wp.title, text: `Check out "${wp.title}" on Gallery`, url: window.location.href }); } catch { }
-    } else { navigator.clipboard.writeText(window.location.href); alert('Link copied!'); }
-    setState(s => ({ ...s, showMenu: false }));
+  const handleShare=async()=>{
+    if(navigator.share){try{await navigator.share({title:wp.title,text:`Check out "${wp.title}" on Gallery`,url:window.location.href});}catch{}}
+    else{navigator.clipboard.writeText(window.location.href);alert('Link copied!');}
+    setState(s=>({...s,showMenu:false}));
   };
 
-  const fmt = (n: number) => n >= 1000000 ? `${(n / 1000000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n.toString();
+  const fmt=(n:number)=>n>=1000000?`${(n/1000000).toFixed(1)}M`:n>=1000?`${(n/1000).toFixed(1)}k`:n.toString();
 
-  if (!inView) return <div ref={cardRef} className="skeleton-shimmer rounded-xl" style={{ minHeight: '250px' }} />;
+  if(!inView)return<div ref={cardRef} className="skeleton-shimmer rounded-xl" style={{minHeight:'250px'}}/>;
 
-  return (
-    <>
-      <div ref={cardRef} className="relative" onMouseEnter={handleMouseEnter}>
-        <div className="card group relative rounded-xl overflow-hidden cursor-pointer transition-opacity hover:opacity-95" onClick={onClick}>
-          {!state.thumbLoaded && <div className="absolute inset-0 bg-zinc-900 animate-pulse" />}
+  return(<>
+    <div ref={cardRef} className="relative" onMouseEnter={handleMouseEnter}>
+      <div className="card group relative rounded-xl overflow-hidden cursor-pointer transition-opacity hover:opacity-95" onClick={onClick}>
+        {!state.thumbLoaded&&<div style={{position:'absolute',inset:0,background:'#18181b',animation:'pulse 2s cubic-bezier(0.4,0,0.6,1) infinite'}}/>}
+        
+        {wp.thumbnail&&<img src={wp.thumbnail} alt={wp.title} loading="lazy" decoding="async" 
+          onLoad={()=>setState(s=>({...s,thumbLoaded:true}))}
+          className={`w-full h-auto block transition-all duration-300 ${state.thumbLoaded?'opacity-100':'opacity-0'} ${state.fullLoaded?'opacity-0 absolute':''}`}
+          style={{filter:'blur(10px)',transform:'scale(1.1)',contentVisibility:'auto',backgroundColor:'#1a1a1a'}}/>}
+        
+        <img src={wp.url} alt={wp.title} loading="lazy" decoding="async"
+          onLoad={()=>setState(s=>({...s,fullLoaded:true}))}
+          className={`w-full h-auto block transition-opacity duration-700 ${state.fullLoaded?'opacity-100':'opacity-0 absolute inset-0'}`}
+          style={{contentVisibility:'auto',backgroundColor:'#1a1a1a'}}/>
 
-          {wp.thumbnail && (
-            <img
-              src={wp.thumbnail}
-              alt={wp.title}
-              loading="lazy"
-              decoding="async"
-              onLoad={() => setState(s => ({ ...s, thumbLoaded: true }))}
-              className={`w-full h-auto block transition-all duration-300 ${state.thumbLoaded ? 'opacity-100' : 'opacity-0'} ${state.fullLoaded ? 'opacity-0 absolute' : ''}`}
-              style={{ filter: 'blur(10px)', transform: 'scale(1.1)', contentVisibility: 'auto', backgroundColor: '#1a1a1a' }}
-            />
-          )}
+        {state.fullLoaded&&(<>
+          <div style={{position:'absolute',inset:0,background:'linear-gradient(to top,rgba(0,0,0,0.8),transparent,transparent)',opacity:0,transition:'opacity 0.2s'}} className="group-hover:opacity-100">
+            <div style={{position:'absolute',top:12,right:12}} className="flex items-center gap-2">
+              <button onClick={handleLike} className={`p-2.5 rounded-full backdrop-blur-md transition-all hover:scale-110 active:scale-95 ${state.liked?'bg-rose-500 hover:bg-rose-600':'bg-black/50 hover:bg-black/70'}`}>
+                <Heart className={`w-4 h-4 ${state.liked?'text-white fill-white':'text-white'}`}/>
+              </button>
+              <button onClick={handleDownload} className="p-2.5 rounded-full bg-black/50 hover:bg-black/70 backdrop-blur-md transition-all hover:scale-110 active:scale-95">
+                <Download className="w-4 h-4 text-white"/>
+              </button>
+            </div>
+          </div>
 
-          <img
-            src={wp.url}
-            alt={wp.title}
-            loading="lazy"
-            decoding="async"
-            onLoad={() => setState(s => ({ ...s, fullLoaded: true }))}
-            className={`w-full h-auto block transition-opacity duration-700 ${state.fullLoaded ? 'opacity-100' : 'opacity-0 absolute inset-0'}`}
-            style={{ contentVisibility: 'auto', backgroundColor: '#1a1a1a' }}
-          />
-
-          {state.fullLoaded && (
-            <>
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                <div className="absolute top-3 right-3 flex items-center gap-2">
-                  <button onClick={handleLike} className={`p-2.5 rounded-full backdrop-blur-md transition-all hover:scale-110 active:scale-95 ${state.liked ? 'bg-rose-500 hover:bg-rose-600' : 'bg-black/50 hover:bg-black/70'}`}>
-                    <Heart className={`w-4 h-4 ${state.liked ? 'text-white fill-white' : 'text-white'}`} />
-                  </button>
-                  <button onClick={handleDownload} className="p-2.5 rounded-full bg-black/50 hover:bg-black/70 backdrop-blur-md transition-all hover:scale-110 active:scale-95">
-                    <Download className="w-4 h-4 text-white" />
-                  </button>
-                </div>
+          <div style={{position:'absolute',bottom:0,left:0,right:0,background:'linear-gradient(to top,rgba(0,0,0,0.95),rgba(0,0,0,0.8),transparent)',padding:'10px'}}>
+            <div className="flex items-center justify-between gap-2 mb-1.5">
+              <h3 className="font-medium line-clamp-1 text-xs flex-1">{wp.title}</h3>
+              <button onClick={(e)=>{e.stopPropagation();setState(s=>({...s,showMenu:true}));}} className="p-1.5 rounded-full hover:bg-white/10 transition-colors flex-shrink-0">
+                <MoreHorizontal className="w-4 h-4 text-white/80"/>
+              </button>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                <img src={wp.userAvatar} alt={wp.uploadedBy} className="w-5 h-5 rounded-full flex-shrink-0 border border-white/20"/>
+                <span className="text-[10px] text-white/80 truncate font-medium">{wp.uploadedBy}</span>
+                {wp.verified&&<VerifiedBadge size="sm"/>}
               </div>
-
-              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/95 via-black/80 to-transparent p-2.5">
-                <div className="flex items-center justify-between gap-2 mb-1.5">
-                  <h3 className="font-medium line-clamp-1 text-xs flex-1">{wp.title}</h3>
-                  <button onClick={(e) => { e.stopPropagation(); setState(s => ({ ...s, showMenu: true })); }} className="p-1.5 rounded-full hover:bg-white/10 transition-colors flex-shrink-0">
-                    <MoreHorizontal className="w-4 h-4 text-white/80" />
-                  </button>
-                </div>
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                    <img src={wp.userAvatar} alt={wp.uploadedBy} className="w-5 h-5 rounded-full flex-shrink-0 border border-white/20" />
-                    <span className="text-[10px] text-white/80 truncate font-medium">{wp.uploadedBy}</span>
-                    {wp.verified && <VerifiedBadge size="sm" />}
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {counts.likes > 0 && <div className="flex items-center gap-0.5"><Heart className="w-3 h-3 text-rose-400 fill-rose-400" /><span className="text-[10px] font-medium text-rose-400">{fmt(counts.likes)}</span></div>}
-                    {counts.views > 0 && <div className="flex items-center gap-0.5"><Eye className="w-3 h-3 text-white/60" /><span className="text-[10px] font-medium text-white/60">{fmt(counts.views)}</span></div>}
-                  </div>
-                </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {counts.likes>0&&<div className="flex items-center gap-0.5"><Heart className="w-3 h-3 text-rose-400 fill-rose-400"/><span className="text-[10px] font-medium text-rose-400">{fmt(counts.likes)}</span></div>}
+                {counts.views>0&&<div className="flex items-center gap-0.5"><Eye className="w-3 h-3 text-white/60"/><span className="text-[10px] font-medium text-white/60">{fmt(counts.views)}</span></div>}
               </div>
-            </>
-          )}
-        </div>
+            </div>
+          </div>
+        </>)}
       </div>
-      <BottomSheet isOpen={state.showMenu} onClose={() => setState(s => ({ ...s, showMenu: false }))} wp={wp} saved={state.saved} onSave={handleSave} onDownload={handleDownload} onShare={handleShare} />
-    </>
-  );
+    </div>
+    <BottomSheet isOpen={state.showMenu} onClose={()=>setState(s=>({...s,showMenu:false}))} wp={wp} saved={state.saved} onSave={handleSave} onDownload={handleDownload} onShare={handleShare}/>
+  </>);
 };
