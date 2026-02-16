@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import Image from 'next/image';
 import { Heart, Download, Eye, MoreHorizontal, Share2, Bookmark, Flag } from 'lucide-react';
 import { VerifiedBadge } from './VerifiedBadge';
 import { toggleLike, isWallpaperLiked, toggleSave, isWallpaperSaved } from '@/lib/stores/userStore';
@@ -135,29 +136,29 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
       className="relative" 
       style={{ 
         minHeight: state.imgHeight > 0 ? `${state.imgHeight}px` : '250px',
-        height: state.imgHeight > 0 ? `${state.imgHeight}px` : 'auto'
+        height: state.imgHeight > 0 ? `${state.imgHeight}px` : 'auto',
+        width: '100%'
       }}
     >
       <div className="card group relative rounded-xl overflow-hidden cursor-pointer transition-opacity hover:opacity-95" onClick={onClick}>
         {/* Skeleton loader while calculating height */}
-        {state.imgHeight === 0 && (
+        {!state.loaded && (
           <div style={{position:'absolute',inset:0,background:'#18181b',animation:'pulse 2s cubic-bezier(0.4,0,0.6,1) infinite'}} />
         )}
 
         {/* Main image */}
-        <img 
-          ref={imgRef}
+        <Image
           src={wp.url} 
           alt={wp.title} 
-          loading="lazy" 
-          decoding="async"
+          fill
+          sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, (max-width: 1536px) 25vw, 20vw"
           onLoad={() => setState(s => ({ ...s, loaded: true }))}
-          className="w-full h-full object-cover block"
+          className="object-cover"
           style={{
             opacity: state.loaded ? 1 : 0,
-            transition: 'opacity 0.3s ease-in-out',
-            backgroundColor: '#1a1a1a'
+            transition: 'opacity 0.3s ease-in-out'
           }}
+          priority={false}
         />
 
         {/* Overlay on hover */}
@@ -183,7 +184,9 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
             </div>
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                <img src={wp.userAvatar} alt={wp.uploadedBy} className="w-5 h-5 rounded-full flex-shrink-0 border border-white/20"/>
+                <div className="relative w-5 h-5 rounded-full flex-shrink-0 border border-white/20 overflow-hidden">
+                  <Image src={wp.userAvatar} alt={wp.uploadedBy} fill className="object-cover" sizes="20px" />
+                </div>
                 <span className="text-[10px] text-white/80 truncate font-medium">{wp.uploadedBy}</span>
                 {wp.verified && <VerifiedBadge size="sm"/>}
               </div>
