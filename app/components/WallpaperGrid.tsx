@@ -7,7 +7,7 @@ import type { Wallpaper } from '../types';
 type WallpaperGridProps = {
   wallpapers: Wallpaper[];
   isLoading: boolean;
-  onWallpaperClick: (wallpaper: Wallpaper) => void;
+  onWallpaperClick?: (wallpaper: Wallpaper) => void; // now optional
   onRefresh?: () => Promise<void>;
   onLoadMore?: () => Promise<void>;
   hasMore?: boolean;
@@ -16,7 +16,7 @@ type WallpaperGridProps = {
 export const WallpaperGrid = ({ 
   wallpapers, 
   isLoading, 
-  onWallpaperClick, 
+  onWallpaperClick,   // kept for backwards compat but no longer passed to card
   onRefresh,
   onLoadMore,
   hasMore = true
@@ -25,7 +25,7 @@ export const WallpaperGrid = ({
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 20 });
   const [pullState, setPullState] = useState({ pulling: false, distance: 0, refreshing: false, canRefresh: false });
   const [loadingMore, setLoadingMore] = useState(false);
-  
+
   const wasLoadingRef = useRef(false);
   const gridRef = useRef<HTMLDivElement>(null);
   const startY = useRef(0);
@@ -164,41 +164,54 @@ export const WallpaperGrid = ({
     );
   }
 
-  return (<>
-    {/* Pull to refresh */}
-    <div ref={pullContainerRef} style={{position:'fixed',top:0,left:0,right:0,zIndex:50,pointerEvents:'none'}}>
-      <div style={{display:'flex',justifyContent:'center',alignItems:'center',transform:`translateY(${pullState.distance-60}px)`,opacity:pullState.distance/60,transition:'opacity 0.2s'}}>
-        <div style={{marginTop:'16px',padding:'12px',borderRadius:'9999px',backdropFilter:'blur(12px)',boxShadow:'0 10px 30px rgba(0,0,0,0.3)',background:pullState.refreshing?'#3b82f6':pullState.canRefresh?'#10b981':'rgba(255,255,255,0.2)',transform:pullState.refreshing?'scale(1.1)':pullState.canRefresh?'scale(1.05)':'scale(1)',transition:'all 0.3s'}}>
-          <RefreshCw style={{width:'24px',height:'24px',color:'white',transform:pullState.refreshing?'':'rotate('+pullState.distance*3+'deg)',transition:'transform 0.2s',animation:pullState.refreshing?'spin 1s linear infinite':'none'}}/>
+  return (
+    <>
+      {/* Pull to refresh */}
+      <div ref={pullContainerRef} style={{ position:'fixed', top:0, left:0, right:0, zIndex:50, pointerEvents:'none' }}>
+        <div style={{ display:'flex', justifyContent:'center', alignItems:'center', transform:`translateY(${pullState.distance - 60}px)`, opacity: pullState.distance / 60, transition:'opacity 0.2s' }}>
+          <div style={{ marginTop:'16px', padding:'12px', borderRadius:'9999px', backdropFilter:'blur(12px)', boxShadow:'0 10px 30px rgba(0,0,0,0.3)', background: pullState.refreshing ? '#3b82f6' : pullState.canRefresh ? '#10b981' : 'rgba(255,255,255,0.2)', transform: pullState.refreshing ? 'scale(1.1)' : pullState.canRefresh ? 'scale(1.05)' : 'scale(1)', transition:'all 0.3s' }}>
+            <RefreshCw style={{ width:'24px', height:'24px', color:'white', animation: pullState.refreshing ? 'spin 1s linear infinite' : 'none' }} />
+          </div>
         </div>
       </div>
-    </div>
 
-    {/* Success message */}
-    {showRefresh&&<div style={{position:'fixed',top:'80px',left:'50%',transform:'translateX(-50%)',zIndex:50,background:'rgba(16,185,129,0.9)',backdropFilter:'blur(8px)',padding:'8px 16px',borderRadius:'9999px',boxShadow:'0 10px 30px rgba(0,0,0,0.3)',animation:'slideDown 0.3s ease-out'}}>
-      <span style={{color:'white',fontSize:'14px',fontWeight:500}}>✓ Refreshed</span>
-    </div>}
-
-    {/* Simple Masonry Grid - just use your existing CSS masonry class */}
-    <div ref={gridRef} className="masonry">
-      {wallpapers.map((wp) => (
-        <div key={wp.id} style={{ marginBottom: '40px' }}>
-          <WallpaperCard wp={wp} onClick={() => onWallpaperClick(wp)} />
+      {/* Success message */}
+      {showRefresh && (
+        <div style={{ position:'fixed', top:'80px', left:'50%', transform:'translateX(-50%)', zIndex:50, background:'rgba(16,185,129,0.9)', backdropFilter:'blur(8px)', padding:'8px 16px', borderRadius:'9999px', boxShadow:'0 10px 30px rgba(0,0,0,0.3)', animation:'slideDown 0.3s ease-out' }}>
+          <span style={{ color:'white', fontSize:'14px', fontWeight:500 }}>✓ Refreshed</span>
         </div>
-      ))}
-    </div>
+      )}
 
-    {/* Load more trigger */}
-    {hasMore && <div ref={loadMoreTriggerRef} className="flex items-center justify-center py-8 gap-2">
-      {(loadingMore || isLoading) && <>
-        {[0, 150, 300].map((delay, i) => (
-          <div key={i} className="w-2 h-2 bg-white/60 rounded-full animate-bounce" style={{animationDelay:`${delay}ms`}} />
+      {/* Masonry grid — no onClick passed so WallpaperCard handles nav + loader itself */}
+      <div ref={gridRef} className="masonry">
+        {wallpapers.map((wp) => (
+          <div key={wp.id} style={{ marginBottom: '40px' }}>
+            <WallpaperCard wp={wp} />
+          </div>
         ))}
-      </>}
-    </div>}
+      </div>
 
-    {!hasMore && wallpapers.length > 0 && <div className="text-center py-8 text-white/40 text-sm">You've reached the end</div>}
+      {/* Load more trigger */}
+      {hasMore && (
+        <div ref={loadMoreTriggerRef} className="flex items-center justify-center py-8 gap-2">
+          {(loadingMore || isLoading) && (
+            <>
+              {[0, 150, 300].map((delay, i) => (
+                <div key={i} className="w-2 h-2 bg-white/60 rounded-full animate-bounce" style={{ animationDelay:`${delay}ms` }} />
+              ))}
+            </>
+          )}
+        </div>
+      )}
 
-    <style>{`@keyframes slideDown{from{transform:translate(-50%,-100%);opacity:0}to{transform:translate(-50%,0);opacity:1}}@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
-  </>);
+      {!hasMore && wallpapers.length > 0 && (
+        <div className="text-center py-8 text-white/40 text-sm">You've reached the end</div>
+      )}
+
+      <style>{`
+        @keyframes slideDown { from{transform:translate(-50%,-100%);opacity:0} to{transform:translate(-50%,0);opacity:1} }
+        @keyframes spin      { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+      `}</style>
+    </>
+  );
 };
