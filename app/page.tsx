@@ -11,7 +11,7 @@ import type { Wallpaper, Filter } from './types';
 const ITEMS_PER_PAGE = 30;
 
 export default function WallpaperGallery() {
-  const [showSplash, setShowSplash] = useState(true);
+  const [showSplash, setShowSplash] = useState(fasle);
   const [wallpapers, setWallpapers] = useState<Wallpaper[]>([]);
   const [hasMore, setHasMore]       = useState(true);
   const [page, setPage]             = useState(0);
