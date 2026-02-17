@@ -1,52 +1,39 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { useAuth } from './components/AuthProvider';
 import { fetchWallpapers } from '@/lib/stores/wallpaperStore';
 import { Header } from './components/Header';
 import { Navigation } from './components/Navigation';
-import { SearchModal } from './components/SearchModal';
-import { UploadModal } from './components/UploadModal';
-import { UserProfile } from './components/UserProfile';
 import { WallpaperGrid } from './components/WallpaperGrid';
 import { GlobalStyles } from './components/GlobalStyles';
-import { ProfileNav } from './components/ProfileNav';
-import { NotificationNav } from './components/NotificationNav';
-import type { Wallpaper, ActiveTab, Filter } from './types';
+import type { Wallpaper, Filter } from './types';
+
+const ITEMS_PER_PAGE = 30;
 
 export default function WallpaperGallery() {
-  const { session } = useAuth();
-  const router = useRouter();
   const [showSplash, setShowSplash] = useState(true);
   const [wallpapers, setWallpapers] = useState<Wallpaper[]>([]);
-  const [hasMore, setHasMore] = useState(true);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(0);
-  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
-  const [isUploadOpen, setIsUploadOpen] = useState(false);
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [filter, setFilter] = useState<Filter>('all');
-  const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<ActiveTab>('home');
+  const [hasMore, setHasMore]       = useState(true);
+  const [page, setPage]             = useState(0);
+  const [isLoading, setIsLoading]   = useState(true);
+  const [filter, setFilter]         = useState<Filter>('all');
 
-  const ITEMS_PER_PAGE = 30;
-
+  // Splash screen
   useEffect(() => {
-    const splashTimer = setTimeout(() => setShowSplash(false), 6000);
-    return () => clearTimeout(splashTimer);
+    const t = setTimeout(() => setShowSplash(false), 6000);
+    return () => clearTimeout(t);
   }, []);
 
+  // Initial load
   useEffect(() => {
     (async () => {
       try {
         const data = await fetchWallpapers(0, ITEMS_PER_PAGE);
         setWallpapers(data.wallpapers);
         setHasMore(data.hasMore);
-        setTotal(data.total);
         setPage(1);
-      } catch (error) {
-        console.error('Failed to load wallpapers:', error);
+      } catch (e) {
+        console.error('Failed to load wallpapers:', e);
       } finally {
         setIsLoading(false);
       }
@@ -58,30 +45,26 @@ export default function WallpaperGallery() {
       const data = await fetchWallpapers(0, ITEMS_PER_PAGE);
       setWallpapers(data.wallpapers);
       setHasMore(data.hasMore);
-      setTotal(data.total);
       setPage(1);
-    } catch (error) {
-      console.error('Failed to refresh:', error);
+    } catch (e) {
+      console.error('Failed to refresh:', e);
     }
   };
 
   const handleLoadMore = async () => {
     if (!hasMore || isLoading) return;
     try {
-      const data = await fetchWallpapers(page * ITEMS_PER_PAGE, ITEMS_PER_PAGE);
+      const data = await fetchWallpapers(page, ITEMS_PER_PAGE);
       setWallpapers(prev => {
-        const existingIds = new Set(prev.map((wp: Wallpaper) => wp.id));
-        const newWallpapers = data.wallpapers.filter((wp: Wallpaper) => !existingIds.has(wp.id));
-        return [...prev, ...newWallpapers];
+        const seen = new Set(prev.map((wp: Wallpaper) => wp.id));
+        return [...prev, ...data.wallpapers.filter((wp: Wallpaper) => !seen.has(wp.id))];
       });
       setHasMore(data.hasMore);
-      setPage(prev => prev + 1);
-    } catch (error) {
-      console.error('Failed to load more:', error);
+      setPage(p => p + 1);
+    } catch (e) {
+      console.error('Failed to load more:', e);
     }
   };
-
-  const isFullScreenViewOpen = selectedUserId || activeTab === 'profile' || activeTab === 'notifications';
 
   return (
     <>
@@ -96,60 +79,19 @@ export default function WallpaperGallery() {
 
       <div className="min-h-screen bg-black text-white pb-16">
         <GlobalStyles />
-
-        {!isFullScreenViewOpen && (
-          <Header filter={filter} setFilter={setFilter} onRefresh={handleRefresh} isRefreshing={false} />
-        )}
+        <Header filter={filter} setFilter={setFilter} onRefresh={handleRefresh} isRefreshing={false} />
 
         <main className="max-w-7xl mx-auto px-4 py-8">
           <WallpaperGrid
             wallpapers={wallpapers}
             isLoading={isLoading}
-            onWallpaperClick={() => {}} // Navigation handled inside WallpaperCard
             onRefresh={handleRefresh}
             onLoadMore={handleLoadMore}
             hasMore={hasMore}
           />
         </main>
 
-        <Navigation
-          activeTab={activeTab}
-          setActiveTab={setActiveTab}
-          onSearchOpen={() => setIsSearchOpen(true)}
-          onUploadOpen={() => setIsUploadOpen(true)}
-        />
-
-        <SearchModal
-          isOpen={isSearchOpen}
-          onClose={() => setIsSearchOpen(false)}
-          onWallpaperClick={(wp) => { setIsSearchOpen(false); router.push(`/details/${wp.id}`); }}
-          onUserClick={(userId) => { setIsSearchOpen(false); setSelectedUserId(userId); }}
-        />
-
-        <UploadModal
-          isOpen={isUploadOpen}
-          onClose={() => setIsUploadOpen(false)}
-          onSuccess={handleRefresh}
-        />
-
-        {activeTab === 'profile' && (
-          <ProfileNav
-            onClose={() => setActiveTab('home')}
-            wallpapers={wallpapers}
-            onWallpaperClick={() => { setActiveTab('home'); }}
-          />
-        )}
-
-        {activeTab === 'notifications' && <NotificationNav onClose={() => setActiveTab('home')} />}
-
-        {selectedUserId && (
-          <UserProfile
-            userId={selectedUserId}
-            wallpapers={wallpapers}
-            onClose={() => setSelectedUserId(null)}
-            onWallpaperClick={() => { setSelectedUserId(null); }}
-          />
-        )}
+        <Navigation />
       </div>
     </>
   );
