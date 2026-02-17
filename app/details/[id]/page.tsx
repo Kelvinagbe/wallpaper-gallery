@@ -10,7 +10,6 @@ import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/app/components/AuthProvider';
 import {
   fetchWallpaperById,
-  fetchWallpapers,
   incrementViews,
   incrementDownloads,
 } from '@/lib/stores/wallpaperStore';
@@ -113,7 +112,6 @@ export default function WallpaperDetailPage() {
   const supabase = createClient();
 
   const [wallpaper, setWallpaper] = useState<Wallpaper | null>(null);
-  const [relatedWallpapers, setRelated] = useState<Wallpaper[]>([]);
   const [pageLoading, setPageLoading] = useState(true);
   const [imgLoaded, setImgLoaded] = useState(false);
   const [counts, setCounts] = useState({ likes: 0, downloads: 0, views: 0 });
@@ -141,9 +139,6 @@ export default function WallpaperDetailPage() {
         setWallpaper(data);
         setCounts({ likes: data.likes, downloads: data.downloads, views: data.views });
         setPageLoading(false);
-
-        const { wallpapers: related } = await fetchWallpapers(0, 5);
-        setRelated(related.filter((w: Wallpaper) => w.id !== id).slice(0, 4));
       } catch {
         router.replace('/');
       }
@@ -437,7 +432,7 @@ export default function WallpaperDetailPage() {
             </div>
           )}
 
-     
+      
           {/* Action buttons */}
           {pageLoading || state.dataLoading ? (
             <div className="flex gap-3">
@@ -499,30 +494,7 @@ export default function WallpaperDetailPage() {
             </button>
           </div>
 
-          {/* Related wallpapers */}
-          {!pageLoading && relatedWallpapers.length > 0 && (
-            <div>
-              <h4 className="font-semibold text-white mb-3">Related</h4>
-              <div className="grid grid-cols-2 gap-3">
-                {relatedWallpapers.map(wp => (
-                  <button
-                    key={wp.id}
-                    onClick={() => router.push(`/details/${wp.id}`)}
-                    className="relative aspect-[9/16] rounded-xl overflow-hidden hover:scale-[1.02] transition-transform active:scale-95 bg-zinc-900"
-                  >
-                    <img
-                      src={wp.thumbnail || wp.url}
-                      alt={wp.title}
-                      className="w-full h-full object-cover"
-                      loading="lazy"
-                    />
-                    <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top,rgba(0,0,0,0.6),transparent)' }} />
-                    <p className="absolute bottom-2 left-2 right-2 text-xs text-white font-medium line-clamp-1">{wp.title}</p>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+
 
         </div>
       </div>
