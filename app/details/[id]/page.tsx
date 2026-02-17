@@ -143,7 +143,7 @@ export default function WallpaperDetailPage() {
         setPageLoading(false);
 
         const { wallpapers: related } = await fetchWallpapers(0, 5);
-        setRelated(related.filter(w => w.id !== id).slice(0, 4));
+        setRelated(related.filter((w: Wallpaper) => w.id !== id).slice(0, 4));
       } catch {
         router.replace('/');
       }
@@ -437,7 +437,7 @@ export default function WallpaperDetailPage() {
             </div>
           )}
 
-       
+     
           {/* Action buttons */}
           {pageLoading || state.dataLoading ? (
             <div className="flex gap-3">
