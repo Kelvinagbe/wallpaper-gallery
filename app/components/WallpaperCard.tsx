@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import Image from 'next/image';
 import { Heart, Download, Eye, MoreHorizontal, Share2, Bookmark, Flag } from 'lucide-react';
@@ -8,6 +8,9 @@ import { useAuth } from '@/app/components/AuthProvider';
 import type { Wallpaper } from '../types';
 
 type WallpaperCardProps = { wp: Wallpaper; onClick: () => void };
+
+// Global image cache to prevent re-loading
+const imageCache = new Set<string>();
 
 const BottomSheet = ({ isOpen, onClose, wp, saved, onSave, onDownload, onShare }: any) => {
   if (!isOpen) return null;
@@ -42,8 +45,22 @@ const BottomSheet = ({ isOpen, onClose, wp, saved, onSave, onDownload, onShare }
 
 export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
   const { user } = useAuth();
-  const [state, setState] = useState({loaded:false,liked:false,saved:false,showMenu:false});
+  const isMountedRef = useRef(true);
+  
+  // Check if image was already loaded
+  const [state, setState] = useState({
+    loaded: imageCache.has(wp.url),
+    liked: false,
+    saved: false,
+    showMenu: false
+  });
+  
   const [counts, setCounts] = useState({likes:wp.likes||0,views:wp.views||0});
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => { isMountedRef.current = false; };
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -52,7 +69,9 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
         isWallpaperLiked(wp.id, user.id),
         isWallpaperSaved(wp.id, user.id)
       ]);
-      setState(s => ({ ...s, liked, saved }));
+      if (isMountedRef.current) {
+        setState(s => ({ ...s, liked, saved }));
+      }
     })();
   }, [wp.id, user]);
 
@@ -64,8 +83,10 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
     setCounts(c => ({ ...c, likes: newLiked ? c.likes + 1 : Math.max(0, c.likes - 1) }));
     navigator.vibrate?.(50);
     try { await toggleLike(wp.id); } catch { 
-      setState(s => ({ ...s, liked: !newLiked })); 
-      setCounts(c => ({ ...c, likes: newLiked ? Math.max(0, c.likes - 1) : c.likes + 1 })); 
+      if (isMountedRef.current) {
+        setState(s => ({ ...s, liked: !newLiked })); 
+        setCounts(c => ({ ...c, likes: newLiked ? Math.max(0, c.likes - 1) : c.likes + 1 })); 
+      }
     }
   };
 
@@ -74,7 +95,11 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
     const newSaved = !state.saved;
     setState(s => ({ ...s, saved: newSaved, showMenu: false }));
     navigator.vibrate?.(50);
-    try { await toggleSave(wp.id); } catch { setState(s => ({ ...s, saved: !newSaved })); }
+    try { await toggleSave(wp.id); } catch { 
+      if (isMountedRef.current) {
+        setState(s => ({ ...s, saved: !newSaved })); 
+      }
+    }
   };
 
   const handleDownload = async () => {
@@ -114,10 +139,17 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
 
   const fmt = (n: number) => n >= 1000000 ? `${(n / 1000000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n.toString();
 
+  const handleImageLoad = () => {
+    imageCache.add(wp.url);
+    if (isMountedRef.current) {
+      setState(s => ({ ...s, loaded: true }));
+    }
+  };
+
   return (<>
     <div className="relative w-full">
       <div className="card group relative rounded-xl overflow-hidden cursor-pointer transition-opacity hover:opacity-95" onClick={onClick}>
-        {/* Main image - using Next.js Image with proper aspect ratio */}
+        {/* Container with aspect ratio */}
         <div className="relative w-full" style={{paddingBottom:'125%'}}>
           {!state.loaded && <div className="absolute inset-0 bg-zinc-900 animate-pulse" />}
           
@@ -126,48 +158,51 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
             alt={wp.title} 
             fill
             sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, (max-width: 1536px) 25vw, 20vw"
-            onLoadingComplete={() => setState(s => ({ ...s, loaded: true }))}
+            onLoadingComplete={handleImageLoad}
             className="object-cover"
-            style={{opacity: state.loaded ? 1 : 0, transition: 'opacity 0.3s'}}
+            style={{
+              opacity: state.loaded ? 1 : 0, 
+              transition: state.loaded ? 'none' : 'opacity 0.3s'
+            }}
+            priority={false}
+            loading="lazy"
           />
         </div>
 
-        {/* Overlay on hover */}
-        {state.loaded && (<>
-          <div style={{position:'absolute',inset:0,background:'linear-gradient(to top,rgba(0,0,0,0.8),transparent,transparent)',opacity:0,transition:'opacity 0.2s'}} className="group-hover:opacity-100">
-            <div style={{position:'absolute',top:12,right:12}} className="flex items-center gap-2">
-              <button onClick={handleLike} className={`p-2.5 rounded-full backdrop-blur-md transition-all hover:scale-110 active:scale-95 ${state.liked?'bg-rose-500 hover:bg-rose-600':'bg-black/50 hover:bg-black/70'}`}>
-                <Heart className={`w-4 h-4 ${state.liked?'text-white fill-white':'text-white'}`}/>
-              </button>
-              <button onClick={handleDownload} className="p-2.5 rounded-full bg-black/50 hover:bg-black/70 backdrop-blur-md transition-all hover:scale-110 active:scale-95">
-                <Download className="w-4 h-4 text-white"/>
-              </button>
-            </div>
+        {/* Overlay - always render to prevent layout shift */}
+        <div style={{position:'absolute',inset:0,background:'linear-gradient(to top,rgba(0,0,0,0.8),transparent,transparent)',opacity:0,transition:'opacity 0.2s'}} className="group-hover:opacity-100">
+          <div style={{position:'absolute',top:12,right:12}} className="flex items-center gap-2">
+            <button onClick={handleLike} className={`p-2.5 rounded-full backdrop-blur-md transition-all hover:scale-110 active:scale-95 ${state.liked?'bg-rose-500 hover:bg-rose-600':'bg-black/50 hover:bg-black/70'}`}>
+              <Heart className={`w-4 h-4 ${state.liked?'text-white fill-white':'text-white'}`}/>
+            </button>
+            <button onClick={handleDownload} className="p-2.5 rounded-full bg-black/50 hover:bg-black/70 backdrop-blur-md transition-all hover:scale-110 active:scale-95">
+              <Download className="w-4 h-4 text-white"/>
+            </button>
           </div>
+        </div>
 
-          {/* Bottom info bar */}
-          <div style={{position:'absolute',bottom:0,left:0,right:0,background:'linear-gradient(to top,rgba(0,0,0,0.95),rgba(0,0,0,0.8),transparent)',padding:'10px'}}>
-            <div className="flex items-center justify-between gap-2 mb-1.5">
-              <h3 className="font-medium line-clamp-1 text-xs flex-1">{wp.title}</h3>
-              <button onClick={(e)=>{e.stopPropagation();setState(s=>({...s,showMenu:true}));}} className="p-1.5 rounded-full hover:bg-white/10 transition-colors flex-shrink-0">
-                <MoreHorizontal className="w-4 h-4 text-white/80"/>
-              </button>
+        {/* Bottom info bar - always render */}
+        <div style={{position:'absolute',bottom:0,left:0,right:0,background:'linear-gradient(to top,rgba(0,0,0,0.95),rgba(0,0,0,0.8),transparent)',padding:'10px'}}>
+          <div className="flex items-center justify-between gap-2 mb-1.5">
+            <h3 className="font-medium line-clamp-1 text-xs flex-1">{wp.title}</h3>
+            <button onClick={(e)=>{e.stopPropagation();setState(s=>({...s,showMenu:true}));}} className="p-1.5 rounded-full hover:bg-white/10 transition-colors flex-shrink-0">
+              <MoreHorizontal className="w-4 h-4 text-white/80"/>
+            </button>
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+              <div className="relative w-5 h-5 rounded-full flex-shrink-0 border border-white/20 overflow-hidden bg-zinc-800">
+                <Image src={wp.userAvatar} alt={wp.uploadedBy} fill className="object-cover" sizes="20px" />
+              </div>
+              <span className="text-[10px] text-white/80 truncate font-medium">{wp.uploadedBy}</span>
+              {wp.verified && <VerifiedBadge size="sm"/>}
             </div>
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                <div className="relative w-5 h-5 rounded-full flex-shrink-0 border border-white/20 overflow-hidden">
-                  <Image src={wp.userAvatar} alt={wp.uploadedBy} fill className="object-cover" sizes="20px" />
-                </div>
-                <span className="text-[10px] text-white/80 truncate font-medium">{wp.uploadedBy}</span>
-                {wp.verified && <VerifiedBadge size="sm"/>}
-              </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                {counts.likes>0 && <div className="flex items-center gap-0.5"><Heart className="w-3 h-3 text-rose-400 fill-rose-400"/><span className="text-[10px] font-medium text-rose-400">{fmt(counts.likes)}</span></div>}
-                {counts.views>0 && <div className="flex items-center gap-0.5"><Eye className="w-3 h-3 text-white/60"/><span className="text-[10px] font-medium text-white/60">{fmt(counts.views)}</span></div>}
-              </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {counts.likes>0 && <div className="flex items-center gap-0.5"><Heart className="w-3 h-3 text-rose-400 fill-rose-400"/><span className="text-[10px] font-medium text-rose-400">{fmt(counts.likes)}</span></div>}
+              {counts.views>0 && <div className="flex items-center gap-0.5"><Eye className="w-3 h-3 text-white/60"/><span className="text-[10px] font-medium text-white/60">{fmt(counts.views)}</span></div>}
             </div>
           </div>
-        </>)}
+        </div>
       </div>
     </div>
     <BottomSheet isOpen={state.showMenu} onClose={()=>setState(s=>({...s,showMenu:false}))} wp={wp} saved={state.saved} onSave={handleSave} onDownload={handleDownload} onShare={handleShare}/>
