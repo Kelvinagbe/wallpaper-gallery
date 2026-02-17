@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom';
 import { ChevronLeft, Eye, Heart, Download, Share2, Bookmark, Check, Link as LinkIcon, Loader2 } from 'lucide-react';
 import { VerifiedBadge } from './VerifiedBadge';
 import { LoginPromptModal } from './LoginPromptModal';
-import { incrementViews, incrementDownloads } from '@/lib/stores/wallpaperStore';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/app/components/AuthProvider';
 import type { Wallpaper } from '../types';
@@ -18,14 +17,90 @@ type WallpaperDetailProps = {
 };
 
 const cache = new Map<string, { liked: boolean; saved: boolean; following: boolean; likeCount: number; timestamp: number }>();
+const viewCache = new Map<string, { count: number; lastViewed: number }>();
+const imageLoadCache = new Set<string>(); // Global image cache
 const CACHE_DURATION = 30000;
+const VIEW_CACHE_KEY = 'wallpaper_views';
+const MAX_VIEW_COUNT = 2;
+
+// Load view cache from localStorage
+const loadViewCache = () => {
+  if (typeof window === 'undefined') return;
+  try {
+    const stored = localStorage.getItem(VIEW_CACHE_KEY);
+    if (stored) {
+      const data = JSON.parse(stored);
+      Object.entries(data).forEach(([key, value]: [string, any]) => {
+        viewCache.set(key, value);
+      });
+    }
+  } catch (err) {
+    console.error('Failed to load view cache:', err);
+  }
+};
+
+// Save view cache to localStorage
+const saveViewCache = () => {
+  if (typeof window === 'undefined') return;
+  try {
+    const data: Record<string, any> = {};
+    viewCache.forEach((value, key) => {
+      data[key] = value;
+    });
+    localStorage.setItem(VIEW_CACHE_KEY, JSON.stringify(data));
+  } catch (err) {
+    console.error('Failed to save view cache:', err);
+  }
+};
+
+// Increment view count using service role key
+const incrementViews = async (wallpaperId: string) => {
+  try {
+    // Check cache
+    const cached = viewCache.get(wallpaperId);
+    const now = Date.now();
+    
+    // If user has viewed this wallpaper less than MAX_VIEW_COUNT times
+    if (!cached || cached.count < MAX_VIEW_COUNT) {
+      // Call API route that uses service role key
+      const response = await fetch('/api/increment-view', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wallpaperId })
+      });
+      
+      if (response.ok) {
+        // Update cache
+        viewCache.set(wallpaperId, {
+          count: cached ? cached.count + 1 : 1,
+          lastViewed: now
+        });
+        saveViewCache();
+      }
+    }
+  } catch (err) {
+    console.error('Failed to increment views:', err);
+  }
+};
 
 const ImageWithLoader = ({ src, alt }: { src: string; alt: string }) => {
-  const [loaded, setLoaded] = useState(false);
+  const [loaded, setLoaded] = useState(imageLoadCache.has(src));
+  
+  const handleLoad = () => {
+    imageLoadCache.add(src);
+    setLoaded(true);
+  };
+  
   return (
     <div className="relative">
       {!loaded && <div className="absolute inset-0 skeleton flex items-center justify-center"><div className="w-10 h-10 border-4 border-white/20 border-t-white rounded-full animate-spin" /></div>}
-      <img src={src} alt={alt} className={`w-full h-auto transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`} onLoad={() => setLoaded(true)} />
+      <img 
+        src={src} 
+        alt={alt} 
+        className={`w-full h-auto transition-opacity ${loaded ? 'opacity-100' : 'opacity-0'}`}
+        style={{ transition: loaded ? 'none' : 'opacity 0.3s' }}
+        onLoad={handleLoad}
+      />
     </div>
   );
 };
@@ -79,6 +154,11 @@ export const WallpaperDetail = ({ wallpaper, relatedWallpapers, onClose, onUserC
   const [hearts, setHearts] = useState<Array<{ id: number; x: number; y: number; angle: number; distance: number }>>([]);
   const likeButtonRef = useRef<HTMLButtonElement>(null);
 
+  // Load view cache on mount
+  useEffect(() => {
+    loadViewCache();
+  }, []);
+
   useEffect(() => {
     if (!wallpaper?.createdAt) return;
     const updateTime = () => {
@@ -99,8 +179,10 @@ export const WallpaperDetail = ({ wallpaper, relatedWallpapers, onClose, onUserC
     } else setState(s => ({ ...s, dataLoading: true }));
 
     (async () => {
-      incrementViews(wallpaper.id);
+      // Increment views with cache check
+      await incrementViews(wallpaper.id);
       setCounts(c => ({ ...c, views: c.views + 1 }));
+      
       const [likeRes, saveRes, followRes, likeCountRes] = await Promise.all([
         supabase.from('likes').select('id').eq('user_id', session.user.id).eq('wallpaper_id', wallpaper.id).maybeSingle(),
         supabase.from('saves').select('id').eq('user_id', session.user.id).eq('wallpaper_id', wallpaper.id).maybeSingle(),
@@ -179,11 +261,23 @@ export const WallpaperDetail = ({ wallpaper, relatedWallpapers, onClose, onUserC
       setState(s => ({ ...s, downloading: true }));
       setCounts(c => ({ ...c, downloads: c.downloads + 1 }));
       vibrate(50);
+      
+      // Increment downloads using API route
+      try {
+        await fetch('/api/increment-download', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ wallpaperId: wallpaper.id })
+        });
+      } catch (err) {
+        console.error('Failed to increment downloads:', err);
+      }
+      
       const link = document.createElement('a');
       link.href = wallpaper.url;
       link.download = wallpaper.title || 'wallpaper';
       link.click();
-      incrementDownloads(wallpaper.id);
+      
       setTimeout(() => { setState(s => ({ ...s, downloading: false, downloaded: true })); vibrate(100); }, 1000);
     }
   };
@@ -192,7 +286,7 @@ export const WallpaperDetail = ({ wallpaper, relatedWallpapers, onClose, onUserC
 
   return (
     <>
-      <style jsx>{`@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}@keyframes slideDown{from{transform:translateY(0)}to{transform:translateY(100%)}}@keyframes scaleIn{0%{transform:scale(0)}50%{transform:scale(1.2)}100%{transform:scale(1)}}@keyframes successBounce{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}@keyframes buttonPress{0%{transform:scale(1)}50%{transform:scale(.95)}100%{transform:scale(1)}}@keyframes spin{to{transform:rotate(360deg)}}.animate-slideUp{animation:slideUp .3s ease-out}.animate-slideDown{animation:slideDown .3s ease-out}.scale-in{animation:scaleIn .4s cubic-bezier(.34,1.56,.64,1)}.success-bounce{animation:successBounce .5s ease-out}.button-press{animation:buttonPress .2s ease-out}.spinner{animation:spin .6s linear infinite}`}</style>
+    <style jsx>{`@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}@keyframes slideDown{from{transform:translateY(0)}to{transform:translateY(100%)}}@keyframes scaleIn{0%{transform:scale(0)}50%{transform:scale(1.2)}100%{transform:scale(1)}}@keyframes successBounce{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}@keyframes buttonPress{0%{transform:scale(1)}50%{transform:scale(.95)}100%{transform:scale(1)}}@keyframes spin{to{transform:rotate(360deg)}}.animate-slideUp{animation:slideUp .3s ease-out}.animate-slideDown{animation:slideDown .3s ease-out}.scale-in{animation:scaleIn .4s cubic-bezier(.34,1.56,.64,1)}.success-bounce{animation:successBounce .5s ease-out}.button-press{animation:buttonPress .2s ease-out}.spinner{animation:spin .6s linear infinite}`}</style>
       <FloatingHearts hearts={hearts} />
       <LoginPromptModal isOpen={state.showLoginPrompt} onClose={() => setState(s => ({ ...s, showLoginPrompt: false }))} action={state.loginAction} />
       <div className={`fixed inset-0 bg-black z-50 flex flex-col ${state.isClosing ? 'animate-slideDown' : 'animate-slideUp'}`}>
