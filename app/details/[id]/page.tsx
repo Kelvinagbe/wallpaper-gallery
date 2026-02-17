@@ -432,7 +432,7 @@ export default function WallpaperDetailPage() {
             </div>
           )}
 
-      
+         
           {/* Action buttons */}
           {pageLoading || state.dataLoading ? (
             <div className="flex gap-3">
