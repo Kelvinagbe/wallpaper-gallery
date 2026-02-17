@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { Heart, Download, Eye, MoreHorizontal, Share2, Bookmark, Flag } from 'lucide-react';
 import { VerifiedBadge } from './VerifiedBadge';
@@ -7,7 +8,7 @@ import { toggleLike, isWallpaperLiked, toggleSave, isWallpaperSaved } from '@/li
 import { useAuth } from '@/app/components/AuthProvider';
 import type { Wallpaper } from '../types';
 
-type WallpaperCardProps = { wp: Wallpaper; onClick: () => void };
+type WallpaperCardProps = { wp: Wallpaper; onClick?: () => void };
 
 // Global image cache to prevent re-loading
 const imageCache = new Set<string>();
@@ -45,6 +46,7 @@ const BottomSheet = ({ isOpen, onClose, wp, saved, onSave, onDownload, onShare }
 
 export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
   const { user } = useAuth();
+  const router = useRouter();
   const isMountedRef = useRef(true);
   
   // Check if image was already loaded
@@ -146,9 +148,16 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
     }
   };
 
+  const handleCardClick = () => {
+    router.push(`/details/${wp.id}`);
+  };
+
   return (<>
     <div className="relative w-full">
-      <div className="card group relative rounded-xl overflow-hidden cursor-pointer transition-opacity hover:opacity-95" onClick={onClick}>
+      <div 
+        className="card group relative rounded-xl overflow-hidden cursor-pointer transition-opacity hover:opacity-95" 
+        onClick={handleCardClick}
+      >
         {/* Container with aspect ratio */}
         <div className="relative w-full" style={{paddingBottom:'125%'}}>
           {!state.loaded && <div className="absolute inset-0 bg-zinc-900 animate-pulse" />}
@@ -158,7 +167,7 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
             alt={wp.title} 
             fill
             sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, (max-width: 1536px) 25vw, 20vw"
-            onLoadingComplete={handleImageLoad}
+            onLoad={handleImageLoad}
             className="object-cover"
             style={{
               opacity: state.loaded ? 1 : 0, 
@@ -172,10 +181,10 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
         {/* Overlay - always render to prevent layout shift */}
         <div style={{position:'absolute',inset:0,background:'linear-gradient(to top,rgba(0,0,0,0.8),transparent,transparent)',opacity:0,transition:'opacity 0.2s'}} className="group-hover:opacity-100">
           <div style={{position:'absolute',top:12,right:12}} className="flex items-center gap-2">
-            <button onClick={handleLike} className={`p-2.5 rounded-full backdrop-blur-md transition-all hover:scale-110 active:scale-95 ${state.liked?'bg-rose-500 hover:bg-rose-600':'bg-black/50 hover:bg-black/70'}`}>
+            <button onClick={(e)=>{e.stopPropagation();handleLike(e);}} className={`p-2.5 rounded-full backdrop-blur-md transition-all hover:scale-110 active:scale-95 ${state.liked?'bg-rose-500 hover:bg-rose-600':'bg-black/50 hover:bg-black/70'}`}>
               <Heart className={`w-4 h-4 ${state.liked?'text-white fill-white':'text-white'}`}/>
             </button>
-            <button onClick={handleDownload} className="p-2.5 rounded-full bg-black/50 hover:bg-black/70 backdrop-blur-md transition-all hover:scale-110 active:scale-95">
+            <button onClick={(e)=>{e.stopPropagation();handleDownload();}} className="p-2.5 rounded-full bg-black/50 hover:bg-black/70 backdrop-blur-md transition-all hover:scale-110 active:scale-95">
               <Download className="w-4 h-4 text-white"/>
             </button>
           </div>
