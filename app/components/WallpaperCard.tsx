@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import Image from 'next/image';
 import { Heart, Download, Eye, MoreHorizontal, Share2, Bookmark, Flag } from 'lucide-react';
@@ -42,24 +42,8 @@ const BottomSheet = ({ isOpen, onClose, wp, saved, onSave, onDownload, onShare }
 
 export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
   const { user } = useAuth();
-  const [state, setState] = useState({loaded:false,liked:false,saved:false,showMenu:false,imgHeight:0});
+  const [state, setState] = useState({loaded:false,liked:false,saved:false,showMenu:false});
   const [counts, setCounts] = useState({likes:wp.likes||0,views:wp.views||0});
-  const imgRef = useRef<HTMLImageElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  // Calculate aspect ratio and set container height to prevent layout shift
-  useEffect(() => {
-    if (wp.thumbnail && containerRef.current) {
-      const img = new window.Image();
-      img.src = wp.thumbnail;
-      img.onload = () => {
-        const aspectRatio = img.height / img.width;
-        const containerWidth = containerRef.current?.offsetWidth || 300;
-        const calculatedHeight = containerWidth * aspectRatio;
-        setState(s => ({ ...s, imgHeight: calculatedHeight }));
-      };
-    }
-  }, [wp.thumbnail]);
 
   useEffect(() => {
     if (!user) return;
@@ -131,35 +115,22 @@ export const WallpaperCard = ({ wp, onClick }: WallpaperCardProps) => {
   const fmt = (n: number) => n >= 1000000 ? `${(n / 1000000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n.toString();
 
   return (<>
-    <div 
-      ref={containerRef}
-      className="relative" 
-      style={{ 
-        minHeight: state.imgHeight > 0 ? `${state.imgHeight}px` : '250px',
-        height: state.imgHeight > 0 ? `${state.imgHeight}px` : 'auto',
-        width: '100%'
-      }}
-    >
+    <div className="relative w-full">
       <div className="card group relative rounded-xl overflow-hidden cursor-pointer transition-opacity hover:opacity-95" onClick={onClick}>
-        {/* Skeleton loader while calculating height */}
-        {!state.loaded && (
-          <div style={{position:'absolute',inset:0,background:'#18181b',animation:'pulse 2s cubic-bezier(0.4,0,0.6,1) infinite'}} />
-        )}
-
-        {/* Main image */}
-        <Image
-          src={wp.url} 
-          alt={wp.title} 
-          fill
-          sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, (max-width: 1536px) 25vw, 20vw"
-          onLoad={() => setState(s => ({ ...s, loaded: true }))}
-          className="object-cover"
-          style={{
-            opacity: state.loaded ? 1 : 0,
-            transition: 'opacity 0.3s ease-in-out'
-          }}
-          priority={false}
-        />
+        {/* Main image - using Next.js Image with proper aspect ratio */}
+        <div className="relative w-full" style={{paddingBottom:'125%'}}>
+          {!state.loaded && <div className="absolute inset-0 bg-zinc-900 animate-pulse" />}
+          
+          <Image
+            src={wp.url} 
+            alt={wp.title} 
+            fill
+            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, (max-width: 1536px) 25vw, 20vw"
+            onLoadingComplete={() => setState(s => ({ ...s, loaded: true }))}
+            className="object-cover"
+            style={{opacity: state.loaded ? 1 : 0, transition: 'opacity 0.3s'}}
+          />
+        </div>
 
         {/* Overlay on hover */}
         {state.loaded && (<>
