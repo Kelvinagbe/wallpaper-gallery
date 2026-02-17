@@ -9,7 +9,7 @@ import { GlobalStyles } from './components/GlobalStyles';
 import type { Wallpaper, Filter } from './types';
 
 const ITEMS_PER_PAGE = 30;
-
+ 
 export default function WallpaperGallery() {
   const [showSplash, setShowSplash] = useState(false);
   const [wallpapers, setWallpapers] = useState<Wallpaper[]>([]);
