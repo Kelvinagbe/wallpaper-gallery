@@ -1,7 +1,12 @@
+// app/api/increment-view/route.ts
+// NOTE: You no longer need to call this from the client.
+// incrementViews() in wallpaperStore.ts calls the RPC directly.
+// Keep this route only if you need server-side view tracking
+// (e.g. from SSR/bot traffic where the Supabase client isn't available).
+
 import { createClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
 
-// Service role client — server only, never shipped to the browser
 const getServiceClient = () =>
   createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -9,8 +14,8 @@ const getServiceClient = () =>
     { auth: { autoRefreshToken: false, persistSession: false } },
   );
 
-// Simple in-memory rate limit: 1 view per wallpaper per IP per 60 s
-const seen = new Map<string, number>();
+// Simple in-memory rate limit: 1 view per wallpaper per IP per 60s
+const seen: Record<string, number> = {};
 const RATE_WINDOW_MS = 60_000;
 
 export async function POST(request: NextRequest) {
@@ -25,13 +30,16 @@ export async function POST(request: NextRequest) {
     const ip  = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
     const key = `${ip}:${wallpaperId}`;
     const now = Date.now();
-    if (seen.has(key) && now - seen.get(key)! < RATE_WINDOW_MS) {
-      return NextResponse.json({ skipped: true }, { status: 200 }); // silently skip duplicates
+
+    if (seen[key] && now - seen[key] < RATE_WINDOW_MS) {
+      return NextResponse.json({ skipped: true }, { status: 200 });
     }
-    seen.set(key, now);
+    seen[key] = now;
+
     // Prune old entries to avoid unbounded growth
-    if (seen.size > 10_000) {
-      for (const [k, t] of seen) { if (now - t > RATE_WINDOW_MS) seen.delete(k); }
+    const keys = Object.keys(seen);
+    if (keys.length > 10_000) {
+      keys.forEach(k => { if (now - seen[k] > RATE_WINDOW_MS) delete seen[k]; });
     }
 
     const { error } = await getServiceClient().rpc('increment_views', {
