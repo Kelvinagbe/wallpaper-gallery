@@ -13,18 +13,17 @@ import {
   fetchWallpapers,
   incrementViews,
   incrementDownloads,
-  transformWallpaper,
 } from '@/lib/stores/wallpaperStore';
 import type { Wallpaper } from '@/app/types';
 
-// ─── Cache ────────────────────────────────────────────────────────────────────
+// Cache
 const cache = new Map<string, {
   liked: boolean; saved: boolean; following: boolean;
   likeCount: number; timestamp: number;
 }>();
 const CACHE_DURATION = 30_000;
 
-// ─── Copy Link Modal ──────────────────────────────────────────────────────────
+// CopyLinkModal
 const CopyLinkModal = ({
   isOpen, onClose, link,
 }: { isOpen: boolean; onClose: () => void; link: string }) => {
@@ -32,7 +31,7 @@ const CopyLinkModal = ({
   if (!isOpen) return null;
   return (
     <div
-      style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.8)', backdropFilter:'blur(8px)', zIndex:60, display:'flex', alignItems:'flex-end' }}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)', zIndex: 60, display: 'flex', alignItems: 'flex-end' }}
       onClick={onClose}
     >
       <div className="w-full bg-gradient-to-b from-zinc-900 to-black rounded-t-3xl p-6 space-y-4" onClick={e => e.stopPropagation()}>
@@ -62,7 +61,7 @@ const CopyLinkModal = ({
   );
 };
 
-// ─── Floating Hearts ──────────────────────────────────────────────────────────
+// FloatingHearts
 const FloatingHearts = ({ hearts }: {
   hearts: Array<{ id: number; x: number; y: number; angle: number; distance: number }>;
 }) => {
@@ -105,20 +104,20 @@ const FloatingHearts = ({ hearts }: {
   );
 };
 
-// ─── Page ─────────────────────────────────────────────────────────────────────
+// Page
 export default function WallpaperDetailPage() {
-  const router   = useRouter();
-  const params   = useParams();
-  const id       = params?.id as string;
+  const router = useRouter();
+  const params = useParams();
+  const id = params?.id as string;
   const { session } = useAuth();
   const supabase = createClient();
 
-  const [wallpaper, setWallpaper]           = useState<Wallpaper | null>(null);
-  const [relatedWallpapers, setRelated]     = useState<Wallpaper[]>([]);
-  const [pageLoading, setPageLoading]       = useState(true);
-  const [imgLoaded, setImgLoaded]           = useState(false);
-  const [counts, setCounts]                 = useState({ likes: 0, downloads: 0, views: 0 });
-  const [hearts, setHearts]                 = useState<Array<{ id: number; x: number; y: number; angle: number; distance: number }>>([]);
+  const [wallpaper, setWallpaper] = useState<Wallpaper | null>(null);
+  const [relatedWallpapers, setRelated] = useState<Wallpaper[]>([]);
+  const [pageLoading, setPageLoading] = useState(true);
+  const [imgLoaded, setImgLoaded] = useState(false);
+  const [counts, setCounts] = useState({ likes: 0, downloads: 0, views: 0 });
+  const [hearts, setHearts] = useState<Array<{ id: number; x: number; y: number; angle: number; distance: number }>>([]);
 
   const [state, setState] = useState({
     liked: false, saved: false, following: false,
@@ -131,36 +130,35 @@ export default function WallpaperDetailPage() {
 
   const likeButtonRef = useRef<HTMLButtonElement>(null);
 
-  // ── Fetch wallpaper via store (url field is correctly mapped) ──────────────
+  // Fetch wallpaper
   useEffect(() => {
     if (!id) return;
     (async () => {
       try {
-        const data = await fetchWallpaperById(id); // ✅ url = image_url via transformWallpaper
+        const data = await fetchWallpaperById(id);
         if (!data) { router.replace('/'); return; }
 
         setWallpaper(data);
         setCounts({ likes: data.likes, downloads: data.downloads, views: data.views });
         setPageLoading(false);
 
-        // Related — reuse store transform so url is always correct
-        const { wallpapers: related } = await fetchWallpapers(0, 4);
-        setRelated(related.filter(w => w.id !== id));
+        const { wallpapers: related } = await fetchWallpapers(0, 5);
+        setRelated(related.filter(w => w.id !== id).slice(0, 4));
       } catch {
         router.replace('/');
       }
     })();
   }, [id]);
 
-  // ── Time ago ───────────────────────────────────────────────────────────────
+  // Time ago
   useEffect(() => {
     if (!wallpaper?.createdAt) return;
     const compute = () => {
       const diff = Math.floor((Date.now() - new Date(wallpaper.createdAt!).getTime()) / 1000);
       const timeAgo =
-        diff < 60      ? 'Just now'                        :
-        diff < 3_600   ? `${Math.floor(diff / 60)}m ago`   :
-        diff < 86_400  ? `${Math.floor(diff / 3_600)}h ago`:
+        diff < 60      ? 'Just now'                         :
+        diff < 3_600   ? `${Math.floor(diff / 60)}m ago`    :
+        diff < 86_400  ? `${Math.floor(diff / 3_600)}h ago` :
         diff < 604_800 ? `${Math.floor(diff / 86_400)}d ago`:
                          `${Math.floor(diff / 604_800)}w ago`;
       setState(s => ({ ...s, timeAgo }));
@@ -170,13 +168,13 @@ export default function WallpaperDetailPage() {
     return () => clearInterval(interval);
   }, [wallpaper?.createdAt]);
 
-  // ── Fetch interaction state + increment view ───────────────────────────────
+  // Fetch interactions + increment view
   useEffect(() => {
     if (!wallpaper) return;
     if (!session) { setState(s => ({ ...s, dataLoading: false })); return; }
 
     const cacheKey = `${wallpaper.id}-${session.user.id}`;
-    const cached   = cache.get(cacheKey);
+    const cached = cache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
       setState(s => ({ ...s, liked: cached.liked, saved: cached.saved, following: cached.following, dataLoading: false }));
       setCounts(c => ({ ...c, likes: cached.likeCount }));
@@ -184,7 +182,6 @@ export default function WallpaperDetailPage() {
     }
 
     (async () => {
-      // ✅ Use store RPC directly — no /api/increment-view fetch needed
       await incrementViews(wallpaper.id);
       setCounts(c => ({ ...c, views: c.views + 1 }));
 
@@ -211,7 +208,7 @@ export default function WallpaperDetailPage() {
     })();
   }, [wallpaper?.id, session]);
 
-  // ── Realtime like count ────────────────────────────────────────────────────
+  // Realtime like count
   useEffect(() => {
     if (!wallpaper) return;
     const channel = supabase
@@ -225,15 +222,13 @@ export default function WallpaperDetailPage() {
     return () => { supabase.removeChannel(channel); };
   }, [wallpaper?.id]);
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
-  const vibrate    = (d: number) => navigator.vibrate?.(d);
-  const fmt        = (n: number) => n > 1000 ? `${(n / 1000).toFixed(1)}k` : n;
+  const vibrate = (d: number) => navigator.vibrate?.(d);
+  const fmt = (n: number) => n > 1000 ? `${(n / 1000).toFixed(1)}k` : n;
   const requireAuth = (action: string, cb: () => void) => {
     if (!session) setState(s => ({ ...s, loginAction: action, showLoginPrompt: true }));
     else cb();
   };
 
-  // ── Like ───────────────────────────────────────────────────────────────────
   const handleLike = () => requireAuth('like wallpapers', async () => {
     if (!wallpaper) return;
     const newLiked = !state.liked;
@@ -242,10 +237,9 @@ export default function WallpaperDetailPage() {
     vibrate(50);
 
     const cacheKey = `${wallpaper.id}-${session!.user.id}`;
-    const cached   = cache.get(cacheKey);
+    const cached = cache.get(cacheKey);
     if (cached) cache.set(cacheKey, { ...cached, liked: newLiked, likeCount: newLiked ? cached.likeCount + 1 : cached.likeCount - 1, timestamp: Date.now() });
 
-    // Floating hearts
     if (newLiked && likeButtonRef.current) {
       const rect = likeButtonRef.current.getBoundingClientRect();
       setHearts(Array.from({ length: 8 }, (_, i) => {
@@ -256,10 +250,9 @@ export default function WallpaperDetailPage() {
     }
 
     if (newLiked) await supabase.from('likes').insert({ user_id: session!.user.id, wallpaper_id: wallpaper.id });
-    else          await supabase.from('likes').delete().eq('user_id', session!.user.id).eq('wallpaper_id', wallpaper.id);
+    else await supabase.from('likes').delete().eq('user_id', session!.user.id).eq('wallpaper_id', wallpaper.id);
   });
 
-  // ── Save ───────────────────────────────────────────────────────────────────
   const handleSave = () => requireAuth('save wallpapers', async () => {
     if (!wallpaper) return;
     const newSaved = !state.saved;
@@ -267,14 +260,13 @@ export default function WallpaperDetailPage() {
     vibrate(50);
 
     const cacheKey = `${wallpaper.id}-${session!.user.id}`;
-    const cached   = cache.get(cacheKey);
+    const cached = cache.get(cacheKey);
     if (cached) cache.set(cacheKey, { ...cached, saved: newSaved, timestamp: Date.now() });
 
     if (newSaved) await supabase.from('saves').insert({ user_id: session!.user.id, wallpaper_id: wallpaper.id });
-    else          await supabase.from('saves').delete().eq('user_id', session!.user.id).eq('wallpaper_id', wallpaper.id);
+    else await supabase.from('saves').delete().eq('user_id', session!.user.id).eq('wallpaper_id', wallpaper.id);
   });
 
-  // ── Follow ─────────────────────────────────────────────────────────────────
   const handleFollow = () => requireAuth('follow users', async () => {
     if (!wallpaper?.userId) return;
     const newFollowing = !state.following;
@@ -282,46 +274,42 @@ export default function WallpaperDetailPage() {
     vibrate(50);
 
     const cacheKey = `${wallpaper.id}-${session!.user.id}`;
-    const cached   = cache.get(cacheKey);
+    const cached = cache.get(cacheKey);
     if (cached) cache.set(cacheKey, { ...cached, following: newFollowing, timestamp: Date.now() });
 
     if (newFollowing) await supabase.from('follows').insert({ follower_id: session!.user.id, following_id: wallpaper.userId });
-    else              await supabase.from('follows').delete().eq('follower_id', session!.user.id).eq('following_id', wallpaper.userId);
+    else await supabase.from('follows').delete().eq('follower_id', session!.user.id).eq('following_id', wallpaper.userId);
   });
 
-  // ── Download ───────────────────────────────────────────────────────────────
   const handleDownload = async () => {
     if (!wallpaper || state.downloading || state.downloaded) return;
     setState(s => ({ ...s, downloading: true }));
     vibrate(50);
 
-    // ✅ Store RPC — no /api/increment-download fetch needed
     await incrementDownloads(wallpaper.id);
     setCounts(c => ({ ...c, downloads: c.downloads + 1 }));
 
-    const link  = document.createElement('a');
-    link.href   = wallpaper.url;
+    const link = document.createElement('a');
+    link.href = wallpaper.url;
     link.download = wallpaper.title || 'wallpaper';
     link.click();
 
     setTimeout(() => { setState(s => ({ ...s, downloading: false, downloaded: true })); vibrate(100); }, 1000);
   };
 
-  // ── Stats row data ─────────────────────────────────────────────────────────
   const stats = [
-    { icon: Eye,      value: counts.views,     active: false },
-    { icon: Heart,    value: counts.likes,     active: state.liked,     color: 'rose' },
+    { icon: Eye,      value: counts.views,     active: false,           color: ''        },
+    { icon: Heart,    value: counts.likes,     active: state.liked,     color: 'rose'    },
     { icon: Download, value: counts.downloads, active: state.downloaded, color: 'emerald' },
   ];
 
-  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-black text-white">
       <style>{`
-        @keyframes scaleIn      { 0%{transform:scale(0)} 50%{transform:scale(1.2)} 100%{transform:scale(1)} }
-        @keyframes successBounce{ 0%,100%{transform:scale(1)} 50%{transform:scale(1.1)} }
-        @keyframes spin         { to{transform:rotate(360deg)} }
-        @keyframes shimmer      { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
+        @keyframes scaleIn       { 0%{transform:scale(0)} 50%{transform:scale(1.2)} 100%{transform:scale(1)} }
+        @keyframes successBounce { 0%,100%{transform:scale(1)} 50%{transform:scale(1.1)} }
+        @keyframes spin          { to{transform:rotate(360deg)} }
+        @keyframes shimmer       { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
         .scale-in       { animation: scaleIn .4s cubic-bezier(.34,1.56,.64,1) }
         .success-bounce { animation: successBounce .5s ease-out }
         .spinner        { animation: spin .6s linear infinite }
@@ -340,7 +328,7 @@ export default function WallpaperDetailPage() {
       />
 
       {/* Fixed header */}
-      <div style={{ position:'fixed', top:0, left:0, right:0, zIndex:10, background:'linear-gradient(to bottom,rgba(0,0,0,0.9),transparent)', padding:'12px 16px', display:'flex', alignItems:'center', gap:'12px' }}>
+      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 10, background: 'linear-gradient(to bottom,rgba(0,0,0,0.9),transparent)', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
         <button
           onClick={() => router.back()}
           className="p-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-xl active:scale-95 transition-all flex-shrink-0"
@@ -362,7 +350,7 @@ export default function WallpaperDetailPage() {
             <>
               {!imgLoaded && <div className="absolute inset-0 shimmer" />}
               <img
-                src={wallpaper!.url}  {/* ✅ correctly set via transformWallpaper */}
+                src={wallpaper!.url}
                 alt={wallpaper!.title}
                 className="w-full h-auto block"
                 style={{ opacity: imgLoaded ? 1 : 0, transition: 'opacity 0.3s' }}
@@ -449,7 +437,8 @@ export default function WallpaperDetailPage() {
             </div>
           )}
 
-       {/* Action buttons */}
+       
+          {/* Action buttons */}
           {pageLoading || state.dataLoading ? (
             <div className="flex gap-3">
               <div className="flex-1 h-12 shimmer rounded-full" />
@@ -522,18 +511,19 @@ export default function WallpaperDetailPage() {
                     className="relative aspect-[9/16] rounded-xl overflow-hidden hover:scale-[1.02] transition-transform active:scale-95 bg-zinc-900"
                   >
                     <img
-                      src={wp.thumbnail || wp.url}  {/* ✅ both fields correct via transform */}
+                      src={wp.thumbnail || wp.url}
                       alt={wp.title}
                       className="w-full h-full object-cover"
                       loading="lazy"
                     />
-                    <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top,rgba(0,0,0,0.6),transparent)' }} />
+                    <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top,rgba(0,0,0,0.6),transparent)' }} />
                     <p className="absolute bottom-2 left-2 right-2 text-xs text-white font-medium line-clamp-1">{wp.title}</p>
                   </button>
                 ))}
               </div>
             </div>
           )}
+
         </div>
       </div>
 
