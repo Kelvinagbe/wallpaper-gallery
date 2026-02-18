@@ -4,8 +4,8 @@ import type { Metadata } from 'next';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'Wallpaper Gallery',
-  description: 'Discover and share amazing wallpapers',
+  title: 'Upload your Wallpaper',
+  description: 'Upload your wallpaper',
 };
 
 export default async function RootLayout({
