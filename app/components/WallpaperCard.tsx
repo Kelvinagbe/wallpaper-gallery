@@ -21,8 +21,6 @@ const PLACEHOLDER_COLORS = [
 const ASPECT_RATIOS = ['140%', '120%', '150%', '125%', '135%'];
 
 // ─── Persistent image cache ───────────────────────────────────────────────────
-// Reads sessionStorage on init so cached images survive back navigation.
-// Cards in cache start with loaded=true — no placeholder, no skeleton ever shown.
 const imgCache = (() => {
   const mem = new Set<string>();
   try {
@@ -34,7 +32,8 @@ const imgCache = (() => {
     add: (url: string) => {
       mem.add(url);
       try {
-        sessionStorage.setItem('__wpcache__', JSON.stringify([...mem].slice(-300)));
+        // ✅ Array.from instead of [...mem] to avoid downlevelIteration error
+        sessionStorage.setItem('__wpcache__', JSON.stringify(Array.from(mem).slice(-300)));
       } catch { /* quota */ }
     },
   };
@@ -134,7 +133,6 @@ export const WallpaperCard = ({ wp, onClick, priority = false, placeholderIndex 
   const placeholder = PLACEHOLDER_COLORS[placeholderIndex % PLACEHOLDER_COLORS.length];
   const aspectRatio = ASPECT_RATIOS[placeholderIndex % ASPECT_RATIOS.length];
 
-  // Cached images start as loaded — placeholder is never rendered
   const [state, setState] = useState({
     loaded: imgCache.has(imgSrc),
     liked: false, saved: false, showMenu: false,
@@ -198,7 +196,6 @@ export const WallpaperCard = ({ wp, onClick, priority = false, placeholderIndex 
     setState(s => ({ ...s, showMenu: false }));
   };
 
-  // Save scroll position before navigating to detail page
   const handleCardClick = () => {
     if (onClick) { onClick(); return; }
     saveFeedScroll();
@@ -223,7 +220,6 @@ export const WallpaperCard = ({ wp, onClick, priority = false, placeholderIndex 
         >
           <div className="relative w-full" style={{ paddingBottom: aspectRatio }}>
 
-            {/* Only render placeholder if image is not cached */}
             {!state.loaded && (
               <div className="absolute inset-0 rounded-2xl overflow-hidden z-[1] pointer-events-none" style={{ background: placeholder.bg }}>
                 <div className="absolute inset-0" style={{
