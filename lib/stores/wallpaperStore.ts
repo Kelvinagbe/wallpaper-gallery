@@ -28,7 +28,7 @@ const transformWallpaper = (wp: any): Wallpaper => ({
   views: wp.views || 0,
   uploadedBy: wp.profiles?.full_name || wp.profiles?.username || 'Unknown',
   userId: wp.user_id,
-  userAvatar: wp.profiles?.avatar_url || 'https://avatar.iran.liara.run/public',
+  userAvatar: wp.profiles?.avatar_url || 'favicon.ico',
   aspectRatio: wp.aspect_ratio || 1.5,
   verified: wp.profiles?.verified || false,
   createdAt: wp.created_at,
