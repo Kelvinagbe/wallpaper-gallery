@@ -1,5 +1,3 @@
-'use client';
-
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
@@ -8,37 +6,50 @@ import { Heart, Download, Eye, MoreHorizontal, Share2, Bookmark, Flag } from 'lu
 import { VerifiedBadge } from './VerifiedBadge';
 import { toggleLike, isWallpaperLiked, toggleSave, isWallpaperSaved } from '@/lib/stores/userStore';
 import { useAuth } from '@/app/components/AuthProvider';
+import { saveFeedScroll } from '@/app/page';
 import type { Wallpaper } from '../types';
 
-// ─── 5 placeholder colors — cycles by card index, no Math.random ─────────────
 const PLACEHOLDER_COLORS = [
-  { bg: '#1a1a2e', shimmer: '#16213e' }, // deep navy
-  { bg: '#1e1a2e', shimmer: '#2d1b4e' }, // deep purple
-  { bg: '#1a2e1e', shimmer: '#1b3a20' }, // deep forest
-  { bg: '#2e1a1a', shimmer: '#4e1b1b' }, // deep rose
-  { bg: '#2e2a1a', shimmer: '#4e3d1b' }, // deep amber
+  { bg: '#1a1a2e', shimmer: '#16213e' },
+  { bg: '#1e1a2e', shimmer: '#2d1b4e' },
+  { bg: '#1a2e1e', shimmer: '#1b3a20' },
+  { bg: '#2e1a1a', shimmer: '#4e1b1b' },
+  { bg: '#2e2a1a', shimmer: '#4e3d1b' },
 ];
+const ASPECT_RATIOS = ['140%', '120%', '150%', '125%', '135%'];
 
-// ─── 5 aspect ratios for visual masonry variety — no Math.random ─────────────
-const ASPECT_RATIOS = [
-  '140%', // tall portrait
-  '120%', // medium portrait
-  '150%', // extra tall
-  '125%', // standard portrait
-  '135%', // slightly taller
-];
+// ─── Persistent image cache ───────────────────────────────────────────────────
+// Synced with sessionStorage — survives back navigation, clears on tab close.
+// Cards whose URL is in this cache render the image instantly with NO skeleton.
+const imgCache = (() => {
+  const mem = new Set<string>();
+  try {
+    const saved = sessionStorage.getItem('__wpcache__');
+    if (saved) (JSON.parse(saved) as string[]).forEach(u => mem.add(u));
+  } catch { /* sessionStorage unavailable in SSR */ }
+  return {
+    has: (url: string) => mem.has(url),
+    add: (url: string) => {
+      mem.add(url);
+      try {
+        sessionStorage.setItem('__wpcache__', JSON.stringify([...mem].slice(-300)));
+      } catch { /* quota exceeded */ }
+    },
+  };
+})();
 
-// ─── Singleton NavLoader ──────────────────────────────────────────────────────
-const imageCache = new Set<string>();
+// ─── Nav loader singleton ─────────────────────────────────────────────────────
 let _setNavVisible: ((v: boolean) => void) | null = null;
 let _navLoaderMounted = false;
-
 export const showNavLoader = () => _setNavVisible?.(true);
 export const hideNavLoader = () => _setNavVisible?.(false);
 
 const NavLoaderSingleton = () => {
   const [visible, setVisible] = useState(false);
-  useEffect(() => { _setNavVisible = setVisible; return () => { _setNavVisible = null; }; }, []);
+  useEffect(() => {
+    _setNavVisible = setVisible;
+    return () => { _setNavVisible = null; };
+  }, []);
   if (!visible) return null;
   return createPortal(
     <>
@@ -47,8 +58,8 @@ const NavLoaderSingleton = () => {
         .nav-dot{width:10px;height:10px;border-radius:50%;background:#fff;animation:dotBounce 1.2s ease-in-out infinite}
         .nav-dot:nth-child(2){animation-delay:.2s}.nav-dot:nth-child(3){animation-delay:.4s}
       `}</style>
-      <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', backdropFilter:'blur(2px)', zIndex:99998 }} />
-      <div style={{ position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', zIndex:99999, display:'flex', alignItems:'center', gap:10, pointerEvents:'none' }}>
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[99998]" />
+      <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[99999] flex items-center gap-2.5 pointer-events-none">
         <div className="nav-dot" /><div className="nav-dot" /><div className="nav-dot" />
       </div>
     </>,
@@ -56,22 +67,25 @@ const NavLoaderSingleton = () => {
   );
 };
 
-// ─── BottomSheet ──────────────────────────────────────────────────────────────
-const BottomSheet = ({ isOpen, onClose, wp, saved, onSave, onDownload, onShare }: any) => {
+// ─── Bottom sheet ─────────────────────────────────────────────────────────────
+const BottomSheet = ({ isOpen, onClose, wp, saved, onSave, onDownload, onShare }: {
+  isOpen: boolean; onClose: () => void; wp: Wallpaper; saved: boolean;
+  onSave: () => void; onDownload: () => void; onShare: () => void;
+}) => {
   if (!isOpen) return null;
   const items = [
-    { icon: Bookmark, label: saved ? 'Remove from Saved' : 'Save to Collection', onClick: onSave,     color: saved ? 'blue' : '' },
-    { icon: Download, label: 'Download Wallpaper',                                onClick: onDownload                             },
-    { icon: Share2,   label: 'Share Wallpaper',                                   onClick: onShare                               },
+    { icon: Bookmark, label: saved ? 'Remove from Saved' : 'Save to Collection', onClick: onSave, color: saved ? 'blue' : '' },
+    { icon: Download, label: 'Download Wallpaper', onClick: onDownload },
+    { icon: Share2,   label: 'Share Wallpaper',   onClick: onShare },
     { icon: Flag,     label: 'Report Content', onClick: () => { alert('Report coming soon'); onClose(); }, color: 'red', border: true },
   ];
   return createPortal(
     <>
-      <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', backdropFilter:'blur(8px)', zIndex:100, animation:'fadeIn .2s' }} onClick={onClose} />
-      <div style={{ position:'fixed', bottom:0, left:0, right:0, zIndex:101, animation:'slideUp .3s cubic-bezier(.34,1.56,.64,1)' }}>
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-lg z-[100]" style={{ animation: 'fadeIn .2s' }} onClick={onClose} />
+      <div className="fixed bottom-0 left-0 right-0 z-[101]" style={{ animation: 'slideUp .3s cubic-bezier(.34,1.56,.64,1)' }}>
         <div className="bg-zinc-900 rounded-t-3xl border-t border-white/10 shadow-2xl max-w-2xl mx-auto px-4 pb-6">
           <div className="flex justify-center pt-3 pb-2"><div className="w-12 h-1.5 bg-white/20 rounded-full" /></div>
-          <h3 className="text-lg font-semibold mb-4">{wp.title}</h3>
+          <h3 className="text-lg font-semibold text-white mb-4">{wp.title}</h3>
           <div className="space-y-1">
             {items.map((b, i) => (
               <button key={i} onClick={b.onClick}
@@ -79,11 +93,11 @@ const BottomSheet = ({ isOpen, onClose, wp, saved, onSave, onDownload, onShare }
                 <div className={`w-10 h-10 rounded-full flex items-center justify-center ${b.color === 'red' ? 'bg-red-500/10' : 'bg-white/10'}`}>
                   <b.icon className={`w-5 h-5 ${b.color === 'blue' ? 'fill-blue-400 text-blue-400' : b.color === 'red' ? 'text-red-400' : 'text-white/80'}`} />
                 </div>
-                <span className={`text-base font-medium ${b.color === 'red' ? 'text-red-400' : ''}`}>{b.label}</span>
+                <span className={`text-base font-medium ${b.color === 'red' ? 'text-red-400' : 'text-white'}`}>{b.label}</span>
               </button>
             ))}
           </div>
-          <button onClick={onClose} className="w-full mt-4 py-3 bg-white/5 hover:bg-white/10 rounded-xl font-medium transition-colors">Cancel</button>
+          <button onClick={onClose} className="w-full mt-4 py-3 bg-white/5 hover:bg-white/10 rounded-xl font-medium text-white transition-colors">Cancel</button>
         </div>
       </div>
       <style>{`@keyframes fadeIn{from{opacity:0}to{opacity:1}}@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}`}</style>
@@ -97,15 +111,15 @@ type WallpaperCardProps = {
   wp: Wallpaper;
   onClick?: () => void;
   priority?: boolean;
-  // ✅ NEW: index so each card gets a deterministic placeholder color
   placeholderIndex?: number;
 };
 
 export const WallpaperCard = ({ wp, onClick, priority = false, placeholderIndex = 0 }: WallpaperCardProps) => {
   const { user } = useAuth();
   const router   = useRouter();
-  const isMounted    = useRef(true);
-  const isOwner      = useRef(false);
+  const isMounted = useRef(true);
+  const isOwner   = useRef(false);
+  const imgSrc    = wp.thumbnail || wp.url;
 
   useEffect(() => () => { isMounted.current = false; }, []);
   useEffect(() => {
@@ -113,15 +127,13 @@ export const WallpaperCard = ({ wp, onClick, priority = false, placeholderIndex 
     return () => { if (isOwner.current) _navLoaderMounted = false; };
   }, []);
 
-  // ✅ Deterministic placeholder — no Math.random
   const placeholder = PLACEHOLDER_COLORS[placeholderIndex % PLACEHOLDER_COLORS.length];
   const aspectRatio = ASPECT_RATIOS[placeholderIndex % ASPECT_RATIOS.length];
 
+  // ✅ Cached images start as loaded — no skeleton ever shown on scroll-back
   const [state, setState] = useState({
-    loaded: imageCache.has(wp.thumbnail || wp.url),
-    liked: false,
-    saved: false,
-    showMenu: false,
+    loaded: imgCache.has(imgSrc),
+    liked: false, saved: false, showMenu: false,
   });
   const [counts, setCounts] = useState({ likes: wp.likes || 0, views: wp.views || 0 });
 
@@ -139,7 +151,12 @@ export const WallpaperCard = ({ wp, onClick, priority = false, placeholderIndex 
     setCounts(c => ({ ...c, likes: newLiked ? c.likes + 1 : Math.max(0, c.likes - 1) }));
     navigator.vibrate?.(50);
     try { await toggleLike(wp.id); }
-    catch { if (isMounted.current) { setState(s => ({ ...s, liked: !newLiked })); setCounts(c => ({ ...c, likes: newLiked ? Math.max(0, c.likes - 1) : c.likes + 1 })); } }
+    catch {
+      if (isMounted.current) {
+        setState(s => ({ ...s, liked: !newLiked }));
+        setCounts(c => ({ ...c, likes: newLiked ? Math.max(0, c.likes - 1) : c.likes + 1 }));
+      }
+    }
   };
 
   const handleSave = async () => {
@@ -155,7 +172,7 @@ export const WallpaperCard = ({ wp, onClick, priority = false, placeholderIndex 
     navigator.vibrate?.(50);
     const filename = `${wp.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.jpg`;
     try {
-      const blob = await fetch(wp.url, { mode:'cors' }).then(r => r.blob());
+      const blob = await fetch(wp.url, { mode: 'cors' }).then(r => r.blob());
       const url  = URL.createObjectURL(blob);
       const a    = Object.assign(document.createElement('a'), { href: url, download: filename });
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
@@ -168,141 +185,84 @@ export const WallpaperCard = ({ wp, onClick, priority = false, placeholderIndex 
   };
 
   const handleShare = async () => {
-    if (navigator.share) { try { await navigator.share({ title: wp.title, url: window.location.href }); } catch { } }
-    else { navigator.clipboard.writeText(window.location.href); alert('Link copied!'); }
+    if (navigator.share) { try { await navigator.share({ title: wp.title, url: `${window.location.origin}/details/${wp.id}` }); } catch { } }
+    else { await navigator.clipboard.writeText(`${window.location.origin}/details/${wp.id}`); alert('Link copied!'); }
     setState(s => ({ ...s, showMenu: false }));
   };
 
   const handleCardClick = () => {
     if (onClick) { onClick(); return; }
+    saveFeedScroll();   // ← capture scroll position before leaving
     showNavLoader();
     setTimeout(() => router.push(`/details/${wp.id}`), 80);
   };
 
   const fmt = (n: number) =>
-    n >= 1_000_000 ? `${(n/1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n/1_000).toFixed(1)}k` : String(n);
+    n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n / 1_000).toFixed(1)}k` : String(n);
 
   return (
     <>
       {isOwner.current && <NavLoaderSingleton />}
 
-      {/*
-        ✅ BIGGER CARDS: removed fixed marginBottom wrapper from grid loop.
-        Cards now control their own spacing (marginBottom: 12px).
-        paddingBottom uses per-card aspect ratio for true masonry variety.
-
-        ✅ PINTEREST-STYLE LOADING:
-        Card renders IMMEDIATELY with colored placeholder.
-        Image fades in on its own onLoad — no waiting for siblings.
-        This means the page feels interactive the moment the first card mounts.
-      */}
       <div className="relative w-full" style={{ marginBottom: 12 }}>
         <div
-          className="card group relative rounded-2xl overflow-hidden cursor-pointer"
+          className="group relative rounded-2xl overflow-hidden cursor-pointer"
           style={{ transition: 'transform 0.2s ease, box-shadow 0.2s ease' }}
           onClick={handleCardClick}
-          onMouseEnter={e => {
-            (e.currentTarget as HTMLDivElement).style.transform = 'scale(1.01)';
-            (e.currentTarget as HTMLDivElement).style.boxShadow = '0 20px 60px rgba(0,0,0,0.5)';
-          }}
-          onMouseLeave={e => {
-            (e.currentTarget as HTMLDivElement).style.transform = 'scale(1)';
-            (e.currentTarget as HTMLDivElement).style.boxShadow = 'none';
-          }}
+          onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.transform = 'scale(1.01)'; (e.currentTarget as HTMLDivElement).style.boxShadow = '0 20px 60px rgba(0,0,0,0.5)'; }}
+          onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.transform = 'scale(1)'; (e.currentTarget as HTMLDivElement).style.boxShadow = 'none'; }}
         >
-          {/* ✅ Per-card aspect ratio — bigger & varied */}
           <div className="relative w-full" style={{ paddingBottom: aspectRatio }}>
 
-            {/* ✅ Colored placeholder — shows immediately, no skeleton needed per card */}
-            <div
-              style={{
-                position: 'absolute',
-                inset: 0,
-                background: placeholder.bg,
-                borderRadius: 16,
-                overflow: 'hidden',
-                // Fade out once image loads
-                opacity: state.loaded ? 0 : 1,
-                transition: 'opacity 0.3s ease',
-                pointerEvents: 'none',
-                zIndex: 1,
-              }}
-            >
-              {/* Shimmer sweep on placeholder */}
-              {!state.loaded && (
-                <div style={{
-                  position: 'absolute',
-                  inset: 0,
+            {/* Placeholder — skipped entirely if image is cached */}
+            {!state.loaded && (
+              <div className="absolute inset-0 rounded-2xl overflow-hidden z-[1] pointer-events-none" style={{ background: placeholder.bg }}>
+                <div className="absolute inset-0" style={{
                   background: `linear-gradient(105deg, transparent 40%, ${placeholder.shimmer}99 50%, transparent 60%)`,
                   backgroundSize: '200% 100%',
                   animation: 'shimmerSweep 1.8s ease-in-out infinite',
                 }} />
-              )}
-            </div>
+              </div>
+            )}
 
             <Image
-              src={wp.thumbnail || wp.url}
+              src={imgSrc}
               alt={wp.title}
               fill
-              // ✅ Bigger card sizes: 45vw mobile, 30vw tablet, 22vw desktop
               sizes="(max-width:640px) 45vw, (max-width:1024px) 30vw, (max-width:1536px) 22vw, 18vw"
               onLoad={() => {
-                imageCache.add(wp.thumbnail || wp.url);
+                imgCache.add(imgSrc);
                 if (isMounted.current) setState(s => ({ ...s, loaded: true }));
               }}
-              className="object-cover"
+              className="object-cover z-[2]"
               priority={priority}
               loading={priority ? 'eager' : 'lazy'}
-              style={{
-                opacity: state.loaded ? 1 : 0,
-                transition: 'opacity 0.35s ease',
-                zIndex: 2,
-              }}
+              style={{ opacity: state.loaded ? 1 : 0, transition: state.loaded ? 'opacity 0.3s ease' : 'none' }}
             />
           </div>
 
           {/* Hover overlay */}
-          <div
-            style={{
-              position:'absolute', inset:0, zIndex: 3,
-              background:'linear-gradient(to top,rgba(0,0,0,0.8),transparent,transparent)',
-              opacity:0, transition:'opacity 0.2s',
-            }}
-            className="group-hover:opacity-100"
-          >
-            <div style={{ position:'absolute', top:12, right:12 }} className="flex items-center gap-2">
-              <button
-                aria-label="Like wallpaper"
-                onClick={handleLike}
-                className={`p-2.5 rounded-full backdrop-blur-md transition-all hover:scale-110 active:scale-95 ${state.liked ? 'bg-rose-500 hover:bg-rose-600' : 'bg-black/50 hover:bg-black/70'}`}
-              >
+          <div className="absolute inset-0 z-[3] opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+            style={{ background: 'linear-gradient(to top,rgba(0,0,0,0.8),transparent,transparent)' }}>
+            <div className="absolute top-3 right-3 flex items-center gap-2">
+              <button aria-label="Like" onClick={handleLike}
+                className={`p-2.5 rounded-full backdrop-blur-md transition-all hover:scale-110 active:scale-95 ${state.liked ? 'bg-rose-500 hover:bg-rose-600' : 'bg-black/50 hover:bg-black/70'}`}>
                 <Heart className={`w-4 h-4 ${state.liked ? 'text-white fill-white' : 'text-white'}`} />
               </button>
-              <button
-                aria-label="Download wallpaper"
-                onClick={e => { e.stopPropagation(); handleDownload(); }}
-                className="p-2.5 rounded-full bg-black/50 hover:bg-black/70 backdrop-blur-md transition-all hover:scale-110 active:scale-95"
-              >
+              <button aria-label="Download" onClick={e => { e.stopPropagation(); handleDownload(); }}
+                className="p-2.5 rounded-full bg-black/50 hover:bg-black/70 backdrop-blur-md transition-all hover:scale-110 active:scale-95">
                 <Download className="w-4 h-4 text-white" />
               </button>
             </div>
           </div>
 
           {/* Bottom info bar */}
-          <div
-            style={{
-              position:'absolute', bottom:0, left:0, right:0, zIndex: 4,
-              background:'linear-gradient(to top,rgba(0,0,0,0.95),rgba(0,0,0,0.7),transparent)',
-              padding:'12px 10px 10px',
-            }}
-          >
+          <div className="absolute bottom-0 left-0 right-0 z-[4] px-2.5 pb-2.5 pt-3"
+            style={{ background: 'linear-gradient(to top,rgba(0,0,0,0.95),rgba(0,0,0,0.7),transparent)' }}>
             <div className="flex items-center justify-between gap-2 mb-1.5">
-              <p className="font-medium line-clamp-1 text-xs flex-1">{wp.title}</p>
-              <button
-                aria-label="More options"
-                onClick={e => { e.stopPropagation(); setState(s => ({ ...s, showMenu: true })); }}
-                className="p-1.5 rounded-full hover:bg-white/10 transition-colors flex-shrink-0"
-              >
+              <p className="font-medium line-clamp-1 text-xs flex-1 text-white">{wp.title}</p>
+              <button aria-label="More options" onClick={e => { e.stopPropagation(); setState(s => ({ ...s, showMenu: true })); }}
+                className="p-1.5 rounded-full hover:bg-white/10 transition-colors flex-shrink-0">
                 <MoreHorizontal className="w-4 h-4 text-white/80" />
               </button>
             </div>
@@ -333,18 +293,10 @@ export const WallpaperCard = ({ wp, onClick, priority = false, placeholderIndex 
         </div>
       </div>
 
-      <BottomSheet
-        isOpen={state.showMenu}
-        onClose={() => setState(s => ({ ...s, showMenu: false }))}
-        wp={wp} saved={state.saved} onSave={handleSave} onDownload={handleDownload} onShare={handleShare}
-      />
+      <BottomSheet isOpen={state.showMenu} onClose={() => setState(s => ({ ...s, showMenu: false }))}
+        wp={wp} saved={state.saved} onSave={handleSave} onDownload={handleDownload} onShare={handleShare} />
 
-      <style>{`
-        @keyframes shimmerSweep {
-          0%   { background-position: -200% 0; }
-          100% { background-position: 200% 0; }
-        }
-      `}</style>
+      <style>{`@keyframes shimmerSweep{0%{background-position:-200% 0}100%{background-position:200% 0}}`}</style>
     </>
   );
 };
