@@ -1,90 +1,136 @@
+// hooks/useUpload.ts
 import { useState, useRef, useCallback, useEffect } from 'react';
 
-type LogType = 'log' | 'error' | 'success' | 'warning' | 'info';
+type LogType   = 'log' | 'error' | 'success' | 'warning' | 'info';
 type SpeedType = 'fast' | 'slow' | 'offline';
 
-interface Log {
-  message: string;
-  type: LogType;
-  time: string;
-  icon: string;
-}
-
+interface Log { message: string; type: LogType; time: string; icon: string }
 interface UploadCache {
-  imageUrl?: string;
+  imageUrl?:    string;
   thumbnailUrl?: string;
-  file: { name: string; size: number; type: string };
-  title: string;
-  description: string;
-  userId: string;
-  timestamp: number;
+  file:         { name: string; size: number; type: string };
+  title:        string;
+  description:  string;
+  userId:       string;
+  timestamp:    number;
 }
 
+const CACHE_KEY   = 'upload_cache';
+const CACHE_TTL   = 3_600_000; // 1 hour
+const LOG_ICONS   = { log:'📝', error:'❌', success:'✅', warning:'⚠️', info:'ℹ️' };
+const MAX_W       = 1920;
+const MAX_H       = 1080;
+const THUMB_W     = 400; // ✅ 400px thumbnail instead of 100px — better LCP on detail page
+const TIMEOUT_MS  = 120_000;
+
+// ─── Image compression helpers (outside hook — stable references) ─────────────
+const compressToBlob = (img: HTMLImageElement, w: number, h: number, quality: number, format = 'image/jpeg'): Promise<Blob> =>
+  new Promise((res, rej) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    canvas.getContext('2d')?.drawImage(img, 0, 0, w, h);
+    canvas.toBlob(b => b ? res(b) : rej(new Error('canvas.toBlob returned null')), format, quality);
+  });
+
+const loadImage = (url: string): Promise<HTMLImageElement> =>
+  new Promise((res, rej) => {
+    const img = new Image();
+    img.onload  = () => res(img);
+    img.onerror = () => rej(new Error('Failed to load image'));
+    img.src     = url;
+  });
+
+const compressMain = async (file: File, log: (m: string) => void): Promise<Blob> => {
+  const url = URL.createObjectURL(file);
+  try {
+    const img  = await loadImage(url);
+    const ratio = Math.min(MAX_W / img.width, MAX_H / img.height, 1);
+    const w = Math.round(img.width * ratio), h = Math.round(img.height * ratio);
+    // Iteratively reduce quality until under 250KB
+    let quality = 0.85;
+    let blob    = await compressToBlob(img, w, h, quality);
+    while (blob.size > 250 * 1024 && quality > 0.5) {
+      quality = Math.max(quality - 0.1, 0.5);
+      blob    = await compressToBlob(img, w, h, quality);
+    }
+    log(`Main image: ${(blob.size / 1024).toFixed(1)} KB (q=${quality.toFixed(1)})`);
+    return blob;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+};
+
+const generateThumbnail = async (file: File, log: (m: string) => void): Promise<Blob> => {
+  const url = URL.createObjectURL(file);
+  try {
+    const img  = await loadImage(url);
+    const h    = Math.round((THUMB_W / img.width) * img.height);
+    const blob = await compressToBlob(img, THUMB_W, h, 0.75);
+    log(`Thumbnail: ${(blob.size / 1024).toFixed(1)} KB`);
+    return blob;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+};
+
+// ─── Hook ─────────────────────────────────────────────────────────────────────
 export const useUpload = (userId: string | null) => {
-  const [uploading, setUploading] = useState(false);
-  const [progress, setProgress] = useState(0);
+  const [uploading,       setUploading]       = useState(false);
   const [displayProgress, setDisplayProgress] = useState(0);
-  const [status, setStatus] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [logs, setLogs] = useState<Log[]>([]);
-  const [online, setOnline] = useState(true);
-  const [speed, setSpeed] = useState<SpeedType>('fast');
-  const [canResume, setCanResume] = useState(false);
+  const [status,          setStatus]          = useState('');
+  const [error,           setError]           = useState<string | null>(null);
+  const [logs,            setLogs]            = useState<Log[]>([]);
+  const [online,          setOnline]          = useState(true);
+  const [speed,           setSpeed]           = useState<SpeedType>('fast');
+  const [canResume,       setCanResume]       = useState(false);
 
-  const abortRef = useRef<AbortController | null>(null);
-  const countIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const cacheRef = useRef<UploadCache | null>(null);
+  const abortRef         = useRef<AbortController | null>(null);
+  const progressRef      = useRef(0);     // ✅ real progress stored in ref, not state
+  const animFrameRef     = useRef<number | null>(null);
+  const cacheRef         = useRef<UploadCache | null>(null);
 
-  const CACHE_KEY = 'upload_cache';
-
+  // ── Logging ─────────────────────────────────────────────────────────────────
   const log = useCallback((message: string, type: LogType = 'log') => {
-    const icons = { log: '📝', error: '❌', success: '✅', warning: '⚠️', info: 'ℹ️' };
     const time = new Date().toLocaleTimeString();
-    setLogs(prev => [...prev, { message, type, time, icon: icons[type] }]);
-    console.log(`[${time}] ${icons[type]} ${message}`);
+    setLogs(prev => [...prev, { message, type, time, icon: LOG_ICONS[type] }]);
   }, []);
 
-  // Progressive counting animation
-  const countProgress = useCallback((targetProgress: number, speed: 'slow' | 'normal' | 'fast' = 'normal') => {
-    if (countIntervalRef.current) clearInterval(countIntervalRef.current);
-    const speeds = { slow: 50, normal: 30, fast: 15 };
-    const interval = speeds[speed];
-    countIntervalRef.current = setInterval(() => {
-      setDisplayProgress(current => {
-        if (current >= targetProgress) {
-          if (countIntervalRef.current) clearInterval(countIntervalRef.current);
-          return targetProgress;
-        }
-        const diff = targetProgress - current;
-        const increment = Math.max(0.5, diff / 10);
-        return Math.min(current + increment, targetProgress);
+  // ── Smooth progress animation via rAF (replaces setInterval) ─────────────────
+  const animateProgress = useCallback((target: number) => {
+    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+    const step = () => {
+      setDisplayProgress(cur => {
+        if (cur >= target) return target;
+        const next = cur + Math.max(0.5, (target - cur) / 12);
+        if (next < target) animFrameRef.current = requestAnimationFrame(step);
+        return Math.min(next, target);
       });
-    }, interval);
+    };
+    animFrameRef.current = requestAnimationFrame(step);
   }, []);
 
-  useEffect(() => {
-    if (progress <= 15) countProgress(progress, 'slow');
-    else if (progress <= 70) countProgress(progress, 'normal');
-    else countProgress(progress, 'fast');
-  }, [progress, countProgress]);
+  const setProgress = useCallback((val: number) => {
+    progressRef.current = val;
+    animateProgress(val);
+  }, [animateProgress]);
 
+  // ── Cache ───────────────────────────────────────────────────────────────────
   const saveToCache = useCallback((data: Partial<UploadCache>) => {
     if (!userId) return;
-    const cache: UploadCache = { ...cacheRef.current, ...data, userId, timestamp: Date.now() } as UploadCache;
-    cacheRef.current = cache;
+    const next = { ...cacheRef.current, ...data, userId, timestamp: Date.now() } as UploadCache;
+    cacheRef.current = next;
     try {
-      const { file, ...cacheData } = cache;
-      localStorage.setItem(CACHE_KEY, JSON.stringify({ ...cacheData, file: file ? { name: file.name, size: file.size, type: file.type } : undefined }));
-      log('💾 Progress cached', 'info');
+      localStorage.setItem(CACHE_KEY, JSON.stringify(next));
+      log('Progress cached', 'info');
     } catch { log('Failed to cache progress', 'warning'); }
   }, [userId, log]);
 
   const loadFromCache = useCallback((): UploadCache | null => {
     try {
-      const cached = localStorage.getItem(CACHE_KEY);
-      if (!cached) return null;
-      const data = JSON.parse(cached) as UploadCache;
-      if (Date.now() - data.timestamp > 3600000 || data.userId !== userId) {
+      const raw = localStorage.getItem(CACHE_KEY);
+      if (!raw) return null;
+      const data = JSON.parse(raw) as UploadCache;
+      if (Date.now() - data.timestamp > CACHE_TTL || data.userId !== userId) {
         localStorage.removeItem(CACHE_KEY);
         return null;
       }
@@ -96,190 +142,79 @@ export const useUpload = (userId: string | null) => {
     localStorage.removeItem(CACHE_KEY);
     cacheRef.current = null;
     setCanResume(false);
-    log('🗑️ Cache cleared', 'info');
-  }, [log]);
+  }, []);
 
-  // Compress main image to ~200KB
-  const compressMainImage = useCallback((file: File): Promise<Blob> => {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
+  // ── Upload ──────────────────────────────────────────────────────────────────
+  const uploadFile = useCallback(async (
+    file: File, title: string, description: string, isRetry = false
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (!userId)                      return { success: false, error: 'Must be logged in' };
+    if (!online || speed === 'offline') return { success: false, error: 'No internet connection' };
 
-      img.onload = () => {
-        // Target max width of 1920px for main image
-        const maxWidth = 1920;
-        const maxHeight = 1080;
-        
-        let width = img.width;
-        let height = img.height;
-
-        // Calculate scaling
-        if (width > maxWidth || height > maxHeight) {
-          const ratio = Math.min(maxWidth / width, maxHeight / height);
-          width = width * ratio;
-          height = height * ratio;
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-
-        ctx?.drawImage(img, 0, 0, width, height);
-
-        // Try different quality levels to hit ~200KB target
-        const tryCompress = (quality: number) => {
-          canvas.toBlob((blob) => {
-            if (blob) {
-              const sizeKB = blob.size / 1024;
-              log(`Main image: ${sizeKB.toFixed(2)} KB (quality: ${quality})`, 'info');
-              
-              // If still too large and quality can go lower, try again
-              if (sizeKB > 250 && quality > 0.5) {
-                tryCompress(quality - 0.1);
-              } else {
-                resolve(blob);
-              }
-            } else {
-              reject(new Error('Failed to compress main image'));
-            }
-          }, 'image/jpeg', quality);
-        };
-
-        // Start with 0.8 quality
-        tryCompress(0.8);
-
-        URL.revokeObjectURL(img.src);
-      };
-
-      img.onerror = () => reject(new Error('Failed to load image'));
-      img.src = URL.createObjectURL(file);
-    });
-  }, [log]);
-
-  // Generate tiny thumbnail (~1KB)
-  const generateThumbnail = useCallback((file: File): Promise<Blob> => {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-
-      img.onload = () => {
-        // Very small thumbnail - 100px width for ~1KB
-        const maxWidth = 100;
-        const scale = maxWidth / img.width;
-        canvas.width = maxWidth;
-        canvas.height = img.height * scale;
-
-        ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-        // Ultra compression (30% quality) for ~1KB
-        canvas.toBlob((blob) => {
-          if (blob) {
-            log(`Thumbnail: ${(blob.size / 1024).toFixed(2)} KB`, 'info');
-            resolve(blob);
-          } else reject(new Error('Failed to generate thumbnail'));
-        }, 'image/jpeg', 0.3);
-
-        URL.revokeObjectURL(img.src);
-      };
-
-      img.onerror = () => reject(new Error('Failed to load image'));
-      img.src = URL.createObjectURL(file);
-    });
-  }, [log]);
-
-  const uploadFile = useCallback(async (file: File, title: string, description: string, isRetry: boolean = false): Promise<{ success: boolean; error?: string }> => {
-    if (!userId) { log('User not authenticated', 'error'); return { success: false, error: 'Must be logged in' }; }
-    if (!online || speed === 'offline') { log('No internet connection', 'error'); return { success: false, error: 'No internet connection' }; }
-
-    setLogs(isRetry ? logs : []);
-    if (!isRetry) { log('🚀 Upload process started', 'info'); setProgress(0); setDisplayProgress(0); }
-    else log('🔄 Resuming upload...', 'info');
-
+    // ✅ Functional update — no stale closure on logs
+    setLogs(isRetry ? (prev => prev) : []);
     setUploading(true);
     setError(null);
-    log(`📦 Original file: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`, 'info');
+    setProgress(0);
+    setStatus('Preparing...');
+
+    log(`📦 File: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`, 'info');
     log(`📝 Title: ${title}`, 'info');
     if (speed === 'slow') log('⚠️ Slow connection detected', 'warning');
 
-    const cached = isRetry ? cacheRef.current || loadFromCache() : null;
-    let imageUrl = cached?.imageUrl;
+    const cached = isRetry ? (cacheRef.current || loadFromCache()) : null;
+    let imageUrl    = cached?.imageUrl;
     let thumbnailUrl = cached?.thumbnailUrl;
 
     abortRef.current = new AbortController();
-    const timeout = setTimeout(() => abortRef.current?.abort(), 120000);
+    const timeout = setTimeout(() => abortRef.current?.abort(), TIMEOUT_MS);
 
     try {
       if (!imageUrl) {
-        setStatus('Preparing...');
-        setProgress(5);
-
         log('🖼️ Compressing main image...', 'info');
-        const compressedImage = await compressMainImage(file);
-        log(`✅ Main image compressed to ${(compressedImage.size / 1024).toFixed(2)} KB`, 'success');
+        const compressed = await compressMain(file, m => log(m, 'info'));
+        log(`✅ Compressed: ${(compressed.size / 1024).toFixed(1)} KB`, 'success');
         setProgress(8);
 
         log('🖼️ Generating thumbnail...', 'info');
-        const thumbnailBlob = await generateThumbnail(file);
-        log(`✅ Thumbnail generated (${(thumbnailBlob.size / 1024).toFixed(2)} KB)`, 'success');
+        const thumb = await generateThumbnail(file, m => log(m, 'info'));
         setProgress(10);
 
         saveToCache({ file: { name: file.name, size: file.size, type: file.type }, title, description });
 
-        log('📤 STEP 1: Uploading compressed image...', 'info');
-        setStatus('Uploading compressed image...');
+        // Upload main image
+        log('📤 Uploading image...', 'info');
+        setStatus('Uploading image...');
         setProgress(15);
 
         const fd = new FormData();
-        fd.append('file', compressedImage, file.name);
+        fd.append('file', compressed, file.name);
         fd.append('userId', userId);
         fd.append('folder', 'wallpapers');
 
-        const blobRes = await fetch('https://ovrica.name.ng/api/blob-upload', {
-          method: 'POST',
-          body: fd,
-          signal: abortRef.current.signal,
-          mode: 'cors',
-          credentials: 'omit'
-        });
-
-        log(`Response: ${blobRes.status}`, blobRes.ok ? 'success' : 'error');
-
+        const blobRes = await fetch('https://ovrica.name.ng/api/blob-upload', { method:'POST', body:fd, signal:abortRef.current.signal, mode:'cors', credentials:'omit' });
         if (!blobRes.ok) {
           const err = await blobRes.json().catch(() => ({ error: blobRes.statusText }));
-          log(`Upload failed: ${err.error}`, 'error');
-          throw new Error(err.error || 'Failed to upload to storage');
+          throw new Error(err.error || 'Image upload failed');
         }
-
         const blobData = await blobRes.json();
-        if (!blobData.success || !blobData.url) {
-          log('No image URL returned', 'error');
-          throw new Error('Upload failed: No image URL');
-        }
+        if (!blobData.success || !blobData.url) throw new Error('No image URL returned');
 
         imageUrl = blobData.url;
-        log('✅ Compressed image uploaded!', 'success');
-        log(`🔗 URL: ${imageUrl}`, 'info');
+        log(`✅ Image uploaded`, 'success');
         setProgress(40);
         saveToCache({ imageUrl });
 
+        // Upload thumbnail
         if (!thumbnailUrl) {
-          log('📤 STEP 2: Uploading thumbnail...', 'info');
+          log('📤 Uploading thumbnail...', 'info');
           setStatus('Uploading thumbnail...');
+          const tfd = new FormData();
+          tfd.append('file', thumb, `thumb_${file.name}`);
+          tfd.append('userId', userId);
+          tfd.append('folder', 'wallpapers/thumbnails');
 
-          const thumbFd = new FormData();
-          thumbFd.append('file', thumbnailBlob, `thumb_${file.name}`);
-          thumbFd.append('userId', userId);
-          thumbFd.append('folder', 'wallpapers/thumbnails');
-
-          const thumbRes = await fetch('https://ovrica.name.ng/api/blob-upload', {
-            method: 'POST',
-            body: thumbFd,
-            signal: abortRef.current.signal,
-            mode: 'cors',
-            credentials: 'omit'
-          });
-
+          const thumbRes = await fetch('https://ovrica.name.ng/api/blob-upload', { method:'POST', body:tfd, signal:abortRef.current.signal, mode:'cors', credentials:'omit' });
           if (!thumbRes.ok) {
             log('⚠️ Thumbnail upload failed, using main image', 'warning');
             thumbnailUrl = imageUrl;
@@ -287,8 +222,7 @@ export const useUpload = (userId: string | null) => {
             const thumbData = await thumbRes.json();
             thumbnailUrl = thumbData.success ? thumbData.url : imageUrl;
           }
-
-          log('✅ Thumbnail processed!', 'success');
+          log('✅ Thumbnail done', 'success');
           setProgress(70);
           saveToCache({ imageUrl, thumbnailUrl });
         }
@@ -297,50 +231,31 @@ export const useUpload = (userId: string | null) => {
         setProgress(70);
       }
 
+      // Save to DB
       setStatus('Saving to database...');
-      log('💾 STEP 3: Saving to database...', 'info');
+      log('💾 Saving to database...', 'info');
 
       const dbRes = await fetch('/api/save-wallpaper', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: userId,
-          title: title.trim(),
-          description: description.trim() || null,
-          image_url: imageUrl,
-          thumbnail_url: thumbnailUrl,
-        }),
+        body: JSON.stringify({ user_id: userId, title: title.trim(), description: description.trim() || null, image_url: imageUrl, thumbnail_url: thumbnailUrl }),
+        signal: abortRef.current.signal,
       });
 
       clearTimeout(timeout);
-      log(`Database: ${dbRes.status}`, dbRes.ok ? 'success' : 'error');
 
       if (!dbRes.ok) {
         const dbErr = await dbRes.json().catch(() => ({ error: dbRes.statusText }));
-        log(`Database failed: ${dbErr.error}`, 'error');
+        // Rollback: delete uploaded blob if we just uploaded it
         if (!cached?.imageUrl) {
-          log('🗑️ Cleanup...', 'warning');
-          try {
-            await fetch('https://ovrica.name.ng/api/blob-upload', {
-              method: 'DELETE',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ url: imageUrl }),
-              mode: 'cors'
-            });
-            log('Cleanup done', 'warning');
-          } catch { log('Cleanup failed', 'warning'); }
+          try { await fetch('https://ovrica.name.ng/api/blob-upload', { method:'DELETE', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ url: imageUrl }), mode:'cors' }); } catch { /* ignore */ }
         }
         throw new Error(dbErr.error || 'Database save failed');
       }
 
       const dbData = await dbRes.json();
-      if (!dbData.success) {
-        log('Database save failed', 'error');
-        throw new Error(dbData.error || 'Database save failed');
-      }
+      if (!dbData.success) throw new Error(dbData.error || 'Database save failed');
 
-      log('✅ Database saved!', 'success');
-      log(`📋 ID: ${dbData.data?.id}`, 'success');
       setProgress(100);
       setStatus('Complete!');
       log('🎉 Upload complete!', 'success');
@@ -349,93 +264,76 @@ export const useUpload = (userId: string | null) => {
 
     } catch (e: any) {
       clearTimeout(timeout);
-      if (countIntervalRef.current) clearInterval(countIntervalRef.current);
-      log(`💥 Failed: ${e.message}`, 'error');
+      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
 
-      let msg = e.message || 'Upload failed';
-      let shouldRetry = false;
+      const isAbort   = e.name === 'AbortError';
+      const isNetwork = e.message?.includes('Failed to fetch') || e.message?.includes('Network');
+      const isDB      = e.message?.includes('database') || e.message?.includes('Database');
 
-      if (e.name === 'AbortError') {
-        msg = 'Upload timed out (2 minutes)';
-        log('Timeout', 'error');
-        shouldRetry = true;
-      } else if (e.message.includes('Failed to fetch') || e.message.includes('Network')) {
-        msg = 'Network error. Check connection and retry.';
-        log('Network error', 'error');
-        shouldRetry = true;
-      } else if (e.message.includes('database')) shouldRetry = true;
+      const msg = isAbort   ? 'Upload timed out (2 minutes)' :
+                  isNetwork ? 'Network error. Check connection and retry.' : e.message || 'Upload failed';
 
-      if (shouldRetry && (cacheRef.current?.imageUrl || cacheRef.current?.thumbnailUrl)) {
+      log(`💥 ${msg}`, 'error');
+      setError(msg);
+
+      if ((isAbort || isNetwork || isDB) && (cacheRef.current?.imageUrl || cacheRef.current?.thumbnailUrl)) {
         setCanResume(true);
         log('📌 Can resume from cache', 'info');
       }
 
-      setError(msg);
       return { success: false, error: msg };
     } finally {
       setUploading(false);
     }
-  }, [userId, online, speed, log, compressMainImage, generateThumbnail, saveToCache, loadFromCache, clearCache, logs]);
+  }, [userId, online, speed, log, saveToCache, loadFromCache, clearCache, setProgress]);
 
+  // ── Reset / Cancel ──────────────────────────────────────────────────────────
   const reset = useCallback(() => {
-    setProgress(0);
-    setDisplayProgress(0);
-    setStatus('');
-    setError(null);
-    setUploading(false);
-    setLogs([]);
-    setCanResume(false);
-    if (abortRef.current) { abortRef.current.abort(); abortRef.current = null; }
-    if (countIntervalRef.current) { clearInterval(countIntervalRef.current); countIntervalRef.current = null; }
+    abortRef.current?.abort();
+    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+    setUploading(false); setDisplayProgress(0); setStatus(''); setError(null); setLogs([]); setCanResume(false);
     clearCache();
   }, [clearCache]);
 
   const cancel = useCallback(() => {
     abortRef.current?.abort();
-    if (countIntervalRef.current) clearInterval(countIntervalRef.current);
-    setError(null);
-    setUploading(false);
-    setProgress(0);
-    setDisplayProgress(0);
-    setLogs([]);
+    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+    setUploading(false); setDisplayProgress(0); setStatus(''); setError(null); setLogs([]);
   }, []);
 
+  // ── Network detection ────────────────────────────────────────────────────────
+  // ✅ Uses navigator.connection API — no external fetch to google.com every 30s
   useEffect(() => {
-    const checkSpeed = async () => {
-      if (!navigator.onLine) { setSpeed('offline'); setOnline(false); return; }
-      try {
-        const t = Date.now();
-        const r = await fetch('https://www.google.com/favicon.ico', { method: 'HEAD', cache: 'no-cache', signal: AbortSignal.timeout(5000) });
-        if (r.ok) { setOnline(true); setSpeed(Date.now() - t > 2000 ? 'slow' : 'fast'); }
-      } catch { setSpeed('slow'); }
+    const update = () => {
+      if (!navigator.onLine) { setOnline(false); setSpeed('offline'); return; }
+      setOnline(true);
+      const conn = (navigator as any).connection;
+      const type = conn?.effectiveType as string | undefined;
+      setSpeed(type === '2g' || type === 'slow-2g' ? 'slow' : 'fast');
     };
 
-    const onOnline = () => { setOnline(true); setSpeed('fast'); };
-    const onOffline = () => { setOnline(false); setSpeed('offline'); };
-
-    window.addEventListener('online', onOnline);
-    window.addEventListener('offline', onOffline);
-    checkSpeed();
-    const interval = setInterval(checkSpeed, 30000);
+    update();
+    window.addEventListener('online',  update);
+    window.addEventListener('offline', update);
+    (navigator as any).connection?.addEventListener?.('change', update);
 
     return () => {
-      window.removeEventListener('online', onOnline);
-      window.removeEventListener('offline', onOffline);
-      clearInterval(interval);
-      if (countIntervalRef.current) clearInterval(countIntervalRef.current);
+      window.removeEventListener('online',  update);
+      window.removeEventListener('offline', update);
+      (navigator as any).connection?.removeEventListener?.('change', update);
     };
   }, []);
 
+  // ── Resume check on mount ───────────────────────────────────────────────────
   useEffect(() => {
-    if (userId) {
-      const cached = loadFromCache();
-      if (cached && (cached.imageUrl || cached.thumbnailUrl)) {
-        cacheRef.current = cached;
-        setCanResume(true);
-        log('📦 Found cached data', 'info');
-      }
+    if (!userId) return;
+    const cached = loadFromCache();
+    if (cached && (cached.imageUrl || cached.thumbnailUrl)) {
+      cacheRef.current = cached;
+      setCanResume(true);
+      log('📦 Found resumable upload', 'info');
     }
-  }, [userId, loadFromCache, log]);
+  }, [userId]); // ✅ removed loadFromCache and log from deps — stable functions but avoids loop
 
   return {
     uploading,
