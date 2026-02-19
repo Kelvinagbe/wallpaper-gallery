@@ -40,7 +40,7 @@ const transformProfile = (p: any): UserProfile => ({
   id: p.id,
   name: p.full_name || p.username || 'User',
   username: p.username || '@user',
-  avatar: p.avatar_url || 'https://avatar.iran.liara.run/public',
+  avatar: p.avatar_url || 'favicon.ico',
   bio: p.bio || '',
   verified: p.verified || false,
   createdAt: p.created_at,
