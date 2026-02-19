@@ -14,26 +14,35 @@ export default function WallpaperGallery() {
   const [wallpapers,   setWallpapers]   = useState<Wallpaper[]>([]);
   const [hasMore,      setHasMore]      = useState(true);
   const [page,         setPage]         = useState(0);
-  const [isLoading,    setIsLoading]    = useState(true);
+  // ✅ FIX: Only show skeleton on the very first load, not every filter change
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [filter,       setFilter]       = useState<Filter>('all');
 
-  const loadingMoreRef = useRef(false);
+  const loadingMoreRef  = useRef(false);
+  // ✅ FIX: Track if this is truly the first ever load (not a filter switch)
+  const hasFetchedOnce  = useRef(false);
 
   // ── Initial load + re-fetch on filter change ────────────────────────────────
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       try {
         const data = await fetchWallpapers(0, ITEMS_PER_PAGE, filter);
+        if (cancelled) return;
         setWallpapers(data.wallpapers);
         setHasMore(data.hasMore);
         setPage(1);
       } catch (e) {
         console.error('Failed to load wallpapers:', e);
       } finally {
-        setIsLoading(false);
+        if (!cancelled) {
+          setIsInitialLoad(false);
+          hasFetchedOnce.current = true;
+        }
       }
     })();
+    return () => { cancelled = true; };
   }, [filter]);
 
   // ── Refresh ─────────────────────────────────────────────────────────────────
@@ -71,14 +80,21 @@ export default function WallpaperGallery() {
     }
   }, [hasMore, page, filter]);
 
-  // ── Filter change: reset pagination ────────────────────────────────────────
+  // ── Filter change: reset pagination but DON'T show full skeleton again ──────
   const handleFilterChange = useCallback((newFilter: Filter) => {
+    if (newFilter === filter) return;
     setFilter(newFilter);
+    // ✅ FIX: Clear wallpapers so grid shows skeletons inline, but only on
+    // first ever load do we block the whole page. Subsequent filter changes
+    // clear the list and let skeleton cards fill in — no full-page block.
     setWallpapers([]);
     setPage(0);
     setHasMore(true);
-    setIsLoading(true);
-  }, []);
+    // Only show initial skeleton if we've never loaded before
+    if (!hasFetchedOnce.current) {
+      setIsInitialLoad(true);
+    }
+  }, [filter]);
 
   return (
     <div className="min-h-screen bg-black text-white pb-16">
@@ -94,7 +110,7 @@ export default function WallpaperGallery() {
       <main className="max-w-7xl mx-auto px-4 py-8">
         <WallpaperGrid
           wallpapers={wallpapers}
-          isLoading={isLoading}
+          isLoading={isInitialLoad}
           onRefresh={handleRefresh}
           onLoadMore={handleLoadMore}
           hasMore={hasMore}
