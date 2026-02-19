@@ -46,12 +46,15 @@ const transformProfile = (p: any): UserProfile => ({
   posts: p.posts_count || 0, isFollowing: false,
 });
 
+// ✅ count: 'exact' — 'estimated' returns null on small/new tables, breaking hasMore
+// ✅ empty guard restored — was removed in condensation, caused "no wallpapers" false positive
 const paginatedQuery = async (queryFn: (q: any) => any, page: number, pageSize: number) => {
   const start = page * pageSize, end = start + pageSize - 1;
-  const base = getSupabase().from('wallpapers').select(WALLPAPER_SELECT, { count: 'estimated' });
+  const base = getSupabase().from('wallpapers').select(WALLPAPER_SELECT, { count: 'exact' });
   const { data, error, count } = await queryFn(base).range(start, end);
   if (error) throw new Error(error.message);
-  return { wallpapers: data ? data.map(transformWallpaper) : [], hasMore: end < (count ?? 0) - 1, total: count ?? 0 };
+  if (!data || data.length === 0) return { wallpapers: [], hasMore: false, total: count ?? 0 };
+  return { wallpapers: data.map(transformWallpaper), hasMore: end < (count ?? 0) - 1, total: count ?? 0 };
 };
 
 // ─── Fetch wallpapers (supports filter) ───────────────────────────────────────
@@ -147,7 +150,7 @@ export const fetchProfiles = async (userIds: string[]) => {
 
 export const searchProfiles = async (query: string, page = 0, pageSize = 20) => {
   const start = page * pageSize, end = start + pageSize - 1;
-  const { data, error, count } = await getSupabase().from('profiles').select('*', { count: 'estimated' })
+  const { data, error, count } = await getSupabase().from('profiles').select('*', { count: 'exact' })
     .or(`username.ilike.%${query}%,full_name.ilike.%${query}%`).range(start, end);
   if (error) throw new Error(error.message);
   return { profiles: data ? data.map(transformProfile) : [], hasMore: end < (count ?? 0) - 1, total: count ?? 0 };
@@ -160,9 +163,9 @@ export const getUserCounts = async (userId: string) => {
   if (cached) return cached;
   const sb = getSupabase();
   const [f1, f2, p] = await Promise.all([
-    sb.from('follows').select('id', { count: 'estimated', head: true }).eq('following_id', userId),
-    sb.from('follows').select('id', { count: 'estimated', head: true }).eq('follower_id', userId),
-    sb.from('wallpapers').select('id', { count: 'estimated', head: true }).eq('user_id', userId),
+    sb.from('follows').select('id', { count: 'exact', head: true }).eq('following_id', userId),
+    sb.from('follows').select('id', { count: 'exact', head: true }).eq('follower_id', userId),
+    sb.from('wallpapers').select('id', { count: 'exact', head: true }).eq('user_id', userId),
   ]);
   const result = { followers: f1.count || 0, following: f2.count || 0, posts: p.count || 0 };
   cacheSet(cacheKey, result, 5 * 60_000);
