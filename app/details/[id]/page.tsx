@@ -384,7 +384,7 @@ export default function WallpaperDetailPage() {
         )}
       </div>
 
-    {/* ── INFO SECTION ─────────────────────────────────────────────────────── */}
+     {/* ── INFO SECTION ─────────────────────────────────────────────────────── */}
       <div className="px-4 pt-5 pb-28">
 
         {/* User row */}
