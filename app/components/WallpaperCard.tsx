@@ -1,4 +1,4 @@
-'use client' 
+'use client';
 
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
@@ -8,7 +8,7 @@ import { Heart, Download, Eye, MoreHorizontal, Share2, Bookmark, Flag } from 'lu
 import { VerifiedBadge } from './VerifiedBadge';
 import { toggleLike, isWallpaperLiked, toggleSave, isWallpaperSaved } from '@/lib/stores/userStore';
 import { useAuth } from '@/app/components/AuthProvider';
-import { saveFeedScroll } from '@/app/page';
+import { saveFeedScroll } from '@/lib/feedCache';
 import type { Wallpaper } from '../types';
 
 const PLACEHOLDER_COLORS = [
@@ -21,21 +21,21 @@ const PLACEHOLDER_COLORS = [
 const ASPECT_RATIOS = ['140%', '120%', '150%', '125%', '135%'];
 
 // ─── Persistent image cache ───────────────────────────────────────────────────
-// Synced with sessionStorage — survives back navigation, clears on tab close.
-// Cards whose URL is in this cache render the image instantly with NO skeleton.
+// Reads sessionStorage on init so cached images survive back navigation.
+// Cards in cache start with loaded=true — no placeholder, no skeleton ever shown.
 const imgCache = (() => {
   const mem = new Set<string>();
   try {
     const saved = sessionStorage.getItem('__wpcache__');
     if (saved) (JSON.parse(saved) as string[]).forEach(u => mem.add(u));
-  } catch { /* sessionStorage unavailable in SSR */ }
+  } catch { /* SSR */ }
   return {
     has: (url: string) => mem.has(url),
     add: (url: string) => {
       mem.add(url);
       try {
         sessionStorage.setItem('__wpcache__', JSON.stringify([...mem].slice(-300)));
-      } catch { /* quota exceeded */ }
+      } catch { /* quota */ }
     },
   };
 })();
@@ -99,7 +99,9 @@ const BottomSheet = ({ isOpen, onClose, wp, saved, onSave, onDownload, onShare }
               </button>
             ))}
           </div>
-          <button onClick={onClose} className="w-full mt-4 py-3 bg-white/5 hover:bg-white/10 rounded-xl font-medium text-white transition-colors">Cancel</button>
+          <button onClick={onClose} className="w-full mt-4 py-3 bg-white/5 hover:bg-white/10 rounded-xl font-medium text-white transition-colors">
+            Cancel
+          </button>
         </div>
       </div>
       <style>{`@keyframes fadeIn{from{opacity:0}to{opacity:1}}@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}`}</style>
@@ -132,7 +134,7 @@ export const WallpaperCard = ({ wp, onClick, priority = false, placeholderIndex 
   const placeholder = PLACEHOLDER_COLORS[placeholderIndex % PLACEHOLDER_COLORS.length];
   const aspectRatio = ASPECT_RATIOS[placeholderIndex % ASPECT_RATIOS.length];
 
-  // ✅ Cached images start as loaded — no skeleton ever shown on scroll-back
+  // Cached images start as loaded — placeholder is never rendered
   const [state, setState] = useState({
     loaded: imgCache.has(imgSrc),
     liked: false, saved: false, showMenu: false,
@@ -187,14 +189,19 @@ export const WallpaperCard = ({ wp, onClick, priority = false, placeholderIndex 
   };
 
   const handleShare = async () => {
-    if (navigator.share) { try { await navigator.share({ title: wp.title, url: `${window.location.origin}/details/${wp.id}` }); } catch { } }
-    else { await navigator.clipboard.writeText(`${window.location.origin}/details/${wp.id}`); alert('Link copied!'); }
+    if (navigator.share) {
+      try { await navigator.share({ title: wp.title, url: `${window.location.origin}/details/${wp.id}` }); } catch { }
+    } else {
+      await navigator.clipboard.writeText(`${window.location.origin}/details/${wp.id}`);
+      alert('Link copied!');
+    }
     setState(s => ({ ...s, showMenu: false }));
   };
 
+  // Save scroll position before navigating to detail page
   const handleCardClick = () => {
     if (onClick) { onClick(); return; }
-    saveFeedScroll();   // ← capture scroll position before leaving
+    saveFeedScroll();
     showNavLoader();
     setTimeout(() => router.push(`/details/${wp.id}`), 80);
   };
@@ -216,7 +223,7 @@ export const WallpaperCard = ({ wp, onClick, priority = false, placeholderIndex 
         >
           <div className="relative w-full" style={{ paddingBottom: aspectRatio }}>
 
-            {/* Placeholder — skipped entirely if image is cached */}
+            {/* Only render placeholder if image is not cached */}
             {!state.loaded && (
               <div className="absolute inset-0 rounded-2xl overflow-hidden z-[1] pointer-events-none" style={{ background: placeholder.bg }}>
                 <div className="absolute inset-0" style={{
@@ -295,8 +302,11 @@ export const WallpaperCard = ({ wp, onClick, priority = false, placeholderIndex 
         </div>
       </div>
 
-      <BottomSheet isOpen={state.showMenu} onClose={() => setState(s => ({ ...s, showMenu: false }))}
-        wp={wp} saved={state.saved} onSave={handleSave} onDownload={handleDownload} onShare={handleShare} />
+      <BottomSheet
+        isOpen={state.showMenu}
+        onClose={() => setState(s => ({ ...s, showMenu: false }))}
+        wp={wp} saved={state.saved} onSave={handleSave} onDownload={handleDownload} onShare={handleShare}
+      />
 
       <style>{`@keyframes shimmerSweep{0%{background-position:-200% 0}100%{background-position:200% 0}}`}</style>
     </>
