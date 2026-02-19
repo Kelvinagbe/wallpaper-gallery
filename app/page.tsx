@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { fetchWallpapers } from '@/lib/stores/wallpaperStore';
+import { feedCache } from '@/lib/feedCache';
 import { Header } from './components/Header';
 import { Navigation } from './components/Navigation';
 import { WallpaperGrid } from './components/WallpaperGrid';
@@ -10,32 +11,7 @@ import type { Wallpaper, Filter } from './types';
 
 const ITEMS_PER_PAGE = 30;
 
-// ─── Module-level feed cache ──────────────────────────────────────────────────
-// Survives component unmount/remount (back navigation).
-// Cleared only on hard browser refresh — never on route change.
-export const feedCache: {
-  wallpapers: Wallpaper[];
-  page: number;
-  filter: Filter;
-  scrollY: number;
-  hasMore: boolean;
-  populated: boolean;
-} = {
-  wallpapers: [],
-  page: 0,
-  filter: 'all',
-  scrollY: 0,
-  hasMore: true,
-  populated: false,
-};
-
-// Called by WallpaperCard right before router.push to capture scroll position
-export const saveFeedScroll = () => {
-  feedCache.scrollY = window.scrollY;
-};
-
 export default function WallpaperGallery() {
-  // Initialise directly from cache so first render already has data if returning
   const [wallpapers,    setWallpapers]    = useState<Wallpaper[]>(feedCache.wallpapers);
   const [hasMore,       setHasMore]       = useState(feedCache.hasMore);
   const [page,          setPage]          = useState(feedCache.page);
@@ -44,13 +20,11 @@ export default function WallpaperGallery() {
   const [isRefreshing,  setIsRefreshing]  = useState(false);
 
   const loadingMoreRef   = useRef(false);
-  const filterChangedRef = useRef(false); // prevents double-fetch on mount
+  const filterChangedRef = useRef(false);
 
-  // ── Mount: restore from cache OR do first-ever fetch ───────────────────────
+  // ── Mount: restore from cache OR first-ever fetch ───────────────────────────
   useEffect(() => {
     if (feedCache.populated) {
-      // Back navigation — grid already has data from useState init above.
-      // Just restore scroll position after the grid has painted.
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           window.scrollTo({ top: feedCache.scrollY, behavior: 'instant' });
@@ -59,7 +33,6 @@ export default function WallpaperGallery() {
       return;
     }
 
-    // True first load
     let cancelled = false;
     (async () => {
       try {
@@ -80,11 +53,10 @@ export default function WallpaperGallery() {
       }
     })();
     return () => { cancelled = true; };
-  }, []); // runs once on mount only
+  }, []);
 
-  // ── Filter change: re-fetch, update cache ──────────────────────────────────
+  // ── Filter change ───────────────────────────────────────────────────────────
   useEffect(() => {
-    // Skip on initial mount
     if (!filterChangedRef.current) { filterChangedRef.current = true; return; }
 
     let cancelled = false;
@@ -108,7 +80,7 @@ export default function WallpaperGallery() {
         feedCache.filter     = filter;
         feedCache.populated  = true;
       } catch (e) {
-        console.error('Failed to load wallpapers on filter change:', e);
+        console.error('Failed to load on filter change:', e);
       }
     })();
     return () => { cancelled = true; };
@@ -143,7 +115,6 @@ export default function WallpaperGallery() {
       setWallpapers(prev => {
         const seen = new Set(prev.map((wp: Wallpaper) => wp.id));
         const next = [...prev, ...data.wallpapers.filter((wp: Wallpaper) => !seen.has(wp.id))];
-        // Keep cache in sync — back navigation restores the full scrolled list
         feedCache.wallpapers = next;
         feedCache.page       = page + 1;
         feedCache.hasMore    = data.hasMore;
@@ -165,7 +136,7 @@ export default function WallpaperGallery() {
     setFilter(newFilter);
   }, [filter]);
 
-  // ── Safety net: save scroll on any navigation away ─────────────────────────
+  // ── Safety net: save scroll on page hide ───────────────────────────────────
   useEffect(() => {
     const save = () => { feedCache.scrollY = window.scrollY; };
     window.addEventListener('pagehide', save);
