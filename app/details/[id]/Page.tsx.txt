@@ -40,7 +40,7 @@ const CopyLinkModal = ({
           <LinkIcon className="w-5 h-5 text-white/60 flex-shrink-0" />
           <p className="text-sm text-white/80 flex-1 truncate">{link}</p>
         </div>
-        <button
+         <button
           onClick={async () => {
             await navigator.clipboard.writeText(link);
             setCopied(true);
