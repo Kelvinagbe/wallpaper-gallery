@@ -1,0 +1,882 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WallDrop</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #080808;
+      --surface: #111111;
+      --surface2: #1a1a1a;
+      --border: rgba(255,255,255,0.07);
+      --text: #f0f0f0;
+      --muted: rgba(255,255,255,0.4);
+      --accent: #e8ff47;
+      --accent2: #ff6b6b;
+      --radius: 16px;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── Noise overlay ── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 9999;
+      opacity: 0.4;
+    }
+
+    /* ── HEADER ── */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      padding: 0 24px;
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(8,8,8,0.85);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .logo {
+      font-family: 'Syne', sans-serif;
+      font-weight: 800;
+      font-size: 22px;
+      letter-spacing: -0.5px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .logo span {
+      color: var(--accent);
+      display: inline-block;
+      animation: pulse 3s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .search-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 100px;
+      padding: 8px 16px;
+      transition: border-color 0.2s;
+    }
+
+    .search-bar:focus-within {
+      border-color: var(--accent);
+    }
+
+    .search-bar input {
+      background: none;
+      border: none;
+      outline: none;
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 14px;
+      width: 200px;
+    }
+
+    .search-bar input::placeholder { color: var(--muted); }
+
+    .search-bar svg { color: var(--muted); flex-shrink: 0; }
+
+    /* ── FILTERS ── */
+    .filters {
+      display: flex;
+      gap: 8px;
+      padding: 16px 24px;
+      overflow-x: auto;
+      scrollbar-width: none;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .filters::-webkit-scrollbar { display: none; }
+
+    .filter-btn {
+      flex-shrink: 0;
+      padding: 7px 16px;
+      border-radius: 100px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+
+    .filter-btn:hover {
+      border-color: rgba(255,255,255,0.2);
+      color: var(--text);
+    }
+
+    .filter-btn.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #000;
+      font-weight: 600;
+    }
+
+    /* ── MAIN ── */
+    main {
+      padding: 20px 16px 80px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    /* ── MASONRY GRID ── */
+    .masonry {
+      columns: 2;
+      column-gap: 10px;
+    }
+
+    @media (min-width: 640px)  { .masonry { columns: 3; } }
+    @media (min-width: 1024px) { .masonry { columns: 4; } }
+    @media (min-width: 1280px) { .masonry { columns: 5; } }
+
+    .card {
+      break-inside: avoid;
+      margin-bottom: 10px;
+      border-radius: var(--radius);
+      overflow: hidden;
+      position: relative;
+      cursor: pointer;
+      background: var(--surface);
+      transform: translateY(0);
+      transition: transform 0.25s cubic-bezier(.34,1.56,.64,1), box-shadow 0.25s;
+      animation: cardIn 0.4s ease both;
+    }
+
+    @keyframes cardIn {
+      from { opacity: 0; transform: translateY(16px) scale(0.97); }
+      to   { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .card:hover {
+      transform: translateY(-4px) scale(1.01);
+      box-shadow: 0 24px 60px rgba(0,0,0,0.6);
+      z-index: 2;
+    }
+
+    .card img {
+      width: 100%;
+      height: auto;
+      display: block;
+      transition: opacity 0.35s ease;
+    }
+
+    .card img.loading { opacity: 0; }
+    .card img.loaded  { opacity: 1; }
+
+    /* Skeleton placeholder */
+    .card-skeleton {
+      position: absolute;
+      inset: 0;
+      background: var(--surface2);
+      overflow: hidden;
+    }
+
+    .card-skeleton::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.06) 50%, transparent 60%);
+      background-size: 200% 100%;
+      animation: shimmer 1.6s ease-in-out infinite;
+    }
+
+    @keyframes shimmer {
+      0%   { background-position: -200% 0; }
+      100% { background-position:  200% 0; }
+    }
+
+    /* Card overlay */
+    .card-overlay {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.4) 40%, transparent 70%);
+      opacity: 0;
+      transition: opacity 0.2s;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 12px;
+    }
+
+    .card:hover .card-overlay { opacity: 1; }
+
+    .card-actions-top {
+      display: flex;
+      justify-content: flex-end;
+      gap: 6px;
+    }
+
+    .action-btn {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      backdrop-filter: blur(8px);
+      transition: transform 0.15s, background 0.15s;
+    }
+
+    .action-btn:hover { transform: scale(1.15); }
+    .action-btn:active { transform: scale(0.9); }
+
+    .btn-like { background: rgba(0,0,0,0.5); }
+    .btn-like.liked { background: #f43f5e; }
+    .btn-download { background: rgba(0,0,0,0.5); }
+    .btn-download:hover { background: var(--accent); }
+
+    .btn-like svg, .btn-download svg { width: 15px; height: 15px; }
+    .btn-like svg { stroke: #fff; fill: none; transition: fill 0.15s; }
+    .btn-like.liked svg { fill: #fff; }
+    .btn-download svg { stroke: #000; }
+
+    .card-info {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .card-title {
+      font-family: 'DM Sans', sans-serif;
+      font-size: 12px;
+      font-weight: 500;
+      color: #fff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .card-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card-tag {
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 100px;
+      background: rgba(255,255,255,0.15);
+      color: rgba(255,255,255,0.8);
+      backdrop-filter: blur(4px);
+    }
+
+    .card-res {
+      font-size: 10px;
+      color: var(--accent);
+      font-weight: 600;
+      font-family: 'Syne', sans-serif;
+    }
+
+    /* ── DETAIL MODAL ── */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.92);
+      backdrop-filter: blur(16px);
+      z-index: 200;
+      display: flex;
+      align-items: flex-end;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s;
+    }
+
+    .modal-backdrop.open {
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    .modal {
+      width: 100%;
+      max-width: 480px;
+      margin: 0 auto;
+      background: var(--surface);
+      border-radius: 28px 28px 0 0;
+      border-top: 1px solid var(--border);
+      transform: translateY(100%);
+      transition: transform 0.35s cubic-bezier(.34,1.56,.64,1);
+      overflow: hidden;
+      max-height: 95vh;
+      overflow-y: auto;
+    }
+
+    .modal-backdrop.open .modal {
+      transform: translateY(0);
+    }
+
+    .modal-handle {
+      width: 40px;
+      height: 4px;
+      background: var(--border);
+      border-radius: 100px;
+      margin: 12px auto 0;
+    }
+
+    .modal-image-wrap {
+      margin: 16px;
+      border-radius: 20px;
+      overflow: hidden;
+      position: relative;
+      background: var(--surface2);
+    }
+
+    .modal-image-wrap img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+
+    .modal-image-badge {
+      position: absolute;
+      bottom: 10px;
+      right: 10px;
+      background: rgba(0,0,0,0.7);
+      backdrop-filter: blur(8px);
+      border-radius: 100px;
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      font-family: 'Syne', sans-serif;
+      color: var(--accent);
+    }
+
+    .modal-body {
+      padding: 0 16px 32px;
+    }
+
+    .modal-title {
+      font-family: 'Syne', sans-serif;
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 6px;
+      text-transform: capitalize;
+    }
+
+    .modal-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 20px;
+    }
+
+    .modal-tag {
+      font-size: 11px;
+      padding: 4px 10px;
+      border-radius: 100px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 10px;
+    }
+
+    .modal-btn-primary {
+      flex: 1;
+      padding: 14px;
+      border-radius: 100px;
+      border: none;
+      background: var(--accent);
+      color: #000;
+      font-family: 'Syne', sans-serif;
+      font-weight: 700;
+      font-size: 15px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: transform 0.15s, opacity 0.15s;
+    }
+
+    .modal-btn-primary:hover { opacity: 0.9; transform: scale(1.02); }
+    .modal-btn-primary:active { transform: scale(0.97); }
+
+    .modal-btn-icon {
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--text);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s, transform 0.15s;
+    }
+
+    .modal-btn-icon:hover { background: rgba(255,255,255,0.1); transform: scale(1.05); }
+    .modal-btn-icon:active { transform: scale(0.95); }
+
+    /* ── LOAD MORE ── */
+    .load-more-area {
+      display: flex;
+      justify-content: center;
+      padding: 32px 0;
+      gap: 8px;
+    }
+
+    .dot-loader span {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+      animation: dotBounce 1.2s ease-in-out infinite;
+    }
+
+    .dot-loader span:nth-child(2) { animation-delay: 0.2s; }
+    .dot-loader span:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes dotBounce {
+      0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+      40%           { transform: scale(1);   opacity: 1;   }
+    }
+
+    /* ── TOAST ── */
+    .toast {
+      position: fixed;
+      bottom: 32px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 10px 20px;
+      border-radius: 100px;
+      font-size: 13px;
+      font-weight: 500;
+      opacity: 0;
+      transition: all 0.3s;
+      z-index: 300;
+      white-space: nowrap;
+      pointer-events: none;
+      backdrop-filter: blur(16px);
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    .toast.success { border-color: #10b981; color: #10b981; }
+
+    /* ── EMPTY / ERROR ── */
+    .empty {
+      text-align: center;
+      padding: 80px 20px;
+      color: var(--muted);
+    }
+
+    .empty h3 {
+      font-family: 'Syne', sans-serif;
+      font-size: 24px;
+      margin-bottom: 8px;
+      color: var(--text);
+    }
+
+    /* ── SCROLLBAR ── */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 100px; }
+
+    /* ── API NOTICE ── */
+    .api-notice {
+      background: linear-gradient(135deg, rgba(232,255,71,0.08), rgba(232,255,71,0.03));
+      border: 1px solid rgba(232,255,71,0.2);
+      border-radius: 12px;
+      padding: 12px 16px;
+      margin: 12px 16px 0;
+      font-size: 12px;
+      color: rgba(232,255,71,0.7);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── HEADER ── -->
+<header>
+  <div class="logo">Wall<span>Drop</span></div>
+  <div class="header-right">
+    <div class="search-bar">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+      </svg>
+      <input type="text" id="searchInput" placeholder="Search wallpapers..." />
+    </div>
+  </div>
+</header>
+
+<!-- ── FILTERS ── -->
+<div class="filters">
+  <button class="filter-btn active" data-query="nature">🌿 Nature</button>
+  <button class="filter-btn" data-query="city">🌆 City</button>
+  <button class="filter-btn" data-query="space">🌌 Space</button>
+  <button class="filter-btn" data-query="anime">🎌 Anime</button>
+  <button class="filter-btn" data-query="abstract">🎨 Abstract</button>
+  <button class="filter-btn" data-query="dark">🖤 Dark</button>
+  <button class="filter-btn" data-query="minimal">◽ Minimal</button>
+  <button class="filter-btn" data-query="landscape">🏔 Landscape</button>
+  <button class="filter-btn" data-query="cars">🚗 Cars</button>
+  <button class="filter-btn" data-query="animals">🐾 Animals</button>
+</div>
+
+<!-- ── API NOTICE ── -->
+<div class="api-notice">
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg>
+  Live wallpapers from <strong style="margin:0 3px">Wallhaven API</strong> — free, no key needed for SFW content
+</div>
+
+<!-- ── MAIN GRID ── -->
+<main>
+  <div class="masonry" id="grid"></div>
+  <div class="load-more-area" id="loadMore" style="display:none">
+    <div class="dot-loader"><span></span><span></span><span></span></div>
+  </div>
+</main>
+
+<!-- ── DETAIL MODAL ── -->
+<div class="modal-backdrop" id="modalBackdrop" onclick="closeModal(event)">
+  <div class="modal" id="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-image-wrap">
+      <img id="modalImg" src="" alt="" />
+      <div class="modal-image-badge" id="modalRes"></div>
+    </div>
+    <div class="modal-body">
+      <div class="modal-title" id="modalTitle"></div>
+      <div class="modal-tags" id="modalTags"></div>
+      <div class="modal-actions">
+        <button class="modal-btn-primary" id="downloadBtn" onclick="downloadCurrent()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          Download
+        </button>
+        <button class="modal-btn-icon" onclick="shareCurrentWallpaper()" title="Share">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+          </svg>
+        </button>
+        <button class="modal-btn-icon" onclick="copyLink()" title="Copy link">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── TOAST ── -->
+<div class="toast" id="toast"></div>
+
+<script>
+  // ── State ──────────────────────────────────────────────────────────────────
+  let currentQuery  = 'nature';
+  let currentPage   = 1;
+  let isLoading     = false;
+  let hasMore       = true;
+  let currentWallpaper = null;
+  const liked       = new Set();
+
+  // Wallhaven API — free, no key needed for SFW
+  const API = (q, page) =>
+    `https://wallhaven.cc/api/v1/search?q=${encodeURIComponent(q)}&categories=111&purity=100&sorting=relevance&order=desc&page=${page}&atleast=1920x1080`;
+
+  // ── Fetch wallpapers ───────────────────────────────────────────────────────
+  async function fetchWallpapers(query, page, append = false) {
+    if (isLoading) return;
+    isLoading = true;
+
+    if (!append) {
+      document.getElementById('grid').innerHTML = buildSkeletons(10);
+    }
+    document.getElementById('loadMore').style.display = append ? 'flex' : 'none';
+
+    try {
+      const res  = await fetch(API(query, page));
+      const json = await res.json();
+      const wallpapers = json.data || [];
+
+      hasMore = wallpapers.length === 24;
+
+      if (!append) document.getElementById('grid').innerHTML = '';
+
+      if (wallpapers.length === 0 && !append) {
+        document.getElementById('grid').innerHTML = `
+          <div class="empty" style="grid-column:1/-1">
+            <h3>No wallpapers found</h3>
+            <p>Try a different search term</p>
+          </div>`;
+        return;
+      }
+
+      wallpapers.forEach((wp, i) => renderCard(wp, i));
+
+    } catch (err) {
+      if (!append) {
+        document.getElementById('grid').innerHTML = `
+          <div class="empty" style="grid-column:1/-1">
+            <h3>⚠️ CORS Limitation</h3>
+            <p style="margin-top:8px;font-size:13px">Wallhaven blocks browser requests directly.<br/>
+            In your Next.js app, call the API from a <strong>server route</strong> to avoid CORS.<br/><br/>
+            <code style="background:#1a1a1a;padding:4px 8px;border-radius:6px;font-size:12px">app/api/wallpapers/route.ts</code></p>
+          </div>`;
+      }
+    } finally {
+      isLoading = false;
+      document.getElementById('loadMore').style.display = 'none';
+    }
+  }
+
+  // ── Build skeleton cards ───────────────────────────────────────────────────
+  const HEIGHTS = ['140%','120%','150%','125%','135%'];
+  const COLORS  = ['#1a1a2e','#1e1a2e','#1a2e1e','#2e1a1a','#2e2a1a'];
+
+  function buildSkeletons(n) {
+    return Array.from({ length: n }, (_, i) => `
+      <div class="card" style="animation-delay:${i * 0.05}s">
+        <div style="position:relative;width:100%;padding-bottom:${HEIGHTS[i % 5]}">
+          <div class="card-skeleton" style="background:${COLORS[i % 5]}"></div>
+        </div>
+      </div>`).join('');
+  }
+
+ // ── Render a single card ───────────────────────────────────────────────────
+  function renderCard(wp, idx) {
+    const grid = document.getElementById('grid');
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.style.animationDelay = `${idx * 0.04}s`;
+
+    const tags = (wp.tags || []).slice(0, 2).map(t => t.name || t).join(', ') || wp.category || '';
+    const res  = wp.resolution || '';
+
+    card.innerHTML = `
+      <div style="position:relative">
+        <div class="card-skeleton" id="skel-${wp.id}"></div>
+        <img
+          class="loading"
+          src="${wp.thumbs?.large || wp.path}"
+          alt="${tags}"
+          loading="lazy"
+          onload="onImgLoad(this, '${wp.id}')"
+          onerror="this.src='${wp.thumbs?.small || wp.path}'"
+        />
+        <div class="card-overlay">
+          <div class="card-actions-top">
+            <button class="action-btn btn-like" id="like-${wp.id}" onclick="toggleLike(event,'${wp.id}')">
+              <svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+            </button>
+            <button class="action-btn btn-download" onclick="downloadWallpaper(event,'${wp.path}','${tags}')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            </button>
+          </div>
+          <div class="card-info">
+            <div class="card-title">${tags || 'Wallpaper'}</div>
+            <div class="card-meta">
+              ${res ? `<span class="card-res">${res}</span>` : ''}
+              ${wp.category ? `<span class="card-tag">${wp.category}</span>` : ''}
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    card.addEventListener('click', e => {
+      if (e.target.closest('.action-btn')) return;
+      openModal(wp);
+    });
+
+    grid.appendChild(card);
+  }
+
+  function onImgLoad(img, id) {
+    img.classList.replace('loading', 'loaded');
+    const skel = document.getElementById(`skel-${id}`);
+    if (skel) skel.style.display = 'none';
+  }
+
+  // ── Like toggle ────────────────────────────────────────────────────────────
+  function toggleLike(e, id) {
+    e.stopPropagation();
+    const btn = document.getElementById(`like-${id}`);
+    if (liked.has(id)) { liked.delete(id); btn.classList.remove('liked'); }
+    else               { liked.add(id);    btn.classList.add('liked'); showToast('❤️ Liked!'); }
+  }
+
+  // ── Download ───────────────────────────────────────────────────────────────
+  async function downloadWallpaper(e, url, name) {
+    if (e) e.stopPropagation();
+    showToast('⬇️ Downloading...');
+    try {
+      const res  = await fetch(url, { mode: 'cors' });
+      const blob = await res.blob();
+      const a    = Object.assign(document.createElement('a'), {
+        href: URL.createObjectURL(blob),
+        download: `${(name || 'wallpaper').replace(/[^a-z0-9]/gi,'_')}.jpg`,
+      });
+      a.click();
+      URL.revokeObjectURL(a.href);
+      showToast('✅ Downloaded!', 'success');
+    } catch {
+      // Fallback — open in new tab
+      window.open(url, '_blank');
+      showToast('Opened in new tab', 'success');
+    }
+  }
+
+  function downloadCurrent() {
+    if (!currentWallpaper) return;
+    const tags = (currentWallpaper.tags || []).slice(0,2).map(t => t.name || t).join('_') || 'wallpaper';
+    downloadWallpaper(null, currentWallpaper.path, tags);
+  }
+
+  // ── Modal ──────────────────────────────────────────────────────────────────
+  function openModal(wp) {
+    currentWallpaper = wp;
+    document.getElementById('modalImg').src     = wp.thumbs?.large || wp.path;
+    document.getElementById('modalRes').textContent = wp.resolution || '';
+    const tags = (wp.tags || []).slice(0, 2).map(t => t.name || t);
+    document.getElementById('modalTitle').textContent =
+      tags.join(' · ') || wp.category || 'Wallpaper';
+    document.getElementById('modalTags').innerHTML =
+      (wp.tags || []).slice(0, 8).map(t =>
+        `<span class="modal-tag">${t.name || t}</span>`).join('');
+    document.getElementById('modalBackdrop').classList.add('open');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeModal(e) {
+    if (e && e.target !== document.getElementById('modalBackdrop')) return;
+    document.getElementById('modalBackdrop').classList.remove('open');
+    document.body.style.overflow = '';
+    currentWallpaper = null;
+  }
+
+  function shareCurrentWallpaper() {
+    if (!currentWallpaper) return;
+    if (navigator.share) {
+      navigator.share({ title: 'WallDrop Wallpaper', url: currentWallpaper.url });
+    } else {
+      navigator.clipboard.writeText(currentWallpaper.url);
+      showToast('🔗 Link copied!', 'success');
+    }
+  }
+
+  function copyLink() {
+    if (!currentWallpaper) return;
+    navigator.clipboard.writeText(currentWallpaper.url || window.location.href);
+    showToast('🔗 Link copied!', 'success');
+  }
+
+  // ── Toast ──────────────────────────────────────────────────────────────────
+  let toastTimer;
+  function showToast(msg, type = '') {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className   = `toast show${type ? ' ' + type : ''}`;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.className = 'toast', 2500);
+  }
+
+  // ── Filters ────────────────────────────────────────────────────────────────
+  document.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentQuery = btn.dataset.query;
+      currentPage  = 1;
+      hasMore      = true;
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      fetchWallpapers(currentQuery, currentPage);
+    });
+  });
+
+  // ── Search ─────────────────────────────────────────────────────────────────
+  let searchTimer;
+  document.getElementById('searchInput').addEventListener('input', e => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      const q = e.target.value.trim();
+      if (!q) return;
+      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      currentQuery = q;
+      currentPage  = 1;
+      hasMore      = true;
+      fetchWallpapers(q, 1);
+    }, 500);
+  });
+
+  // ── Infinite scroll ────────────────────────────────────────────────────────
+  const observer = new IntersectionObserver(entries => {
+    if (entries[0].isIntersecting && !isLoading && hasMore) {
+      currentPage++;
+      fetchWallpapers(currentQuery, currentPage, true);
+    }
+  }, { rootMargin: '400px' });
+
+  observer.observe(document.getElementById('loadMore'));
+
+  // ── Close modal on ESC ─────────────────────────────────────────────────────
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeModal({ target: document.getElementById('modalBackdrop') });
+  });
+
+  // ── Initial load ───────────────────────────────────────────────────────────
+  fetchWallpapers(currentQuery, currentPage);
+</script>
+</body>
+</html>
