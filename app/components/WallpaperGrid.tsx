@@ -1,11 +1,96 @@
+'use client';
+
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { RefreshCw } from 'lucide-react';
-import { WallpaperCard } from './WallpaperCard';   // Card still imported here for rendering
+import { WallpaperCard } from './WallpaperCard';
 import { usePrefetch } from '@/app/hooks/usePrefetch';
 import type { Wallpaper } from '../types';
 
-// ─── Stable skeleton heights (SSR-safe — no Math.random) ─────────────────────
-const SKELETON_HEIGHTS = [220,280,200,260,240,300,210,270,230,290,205,265,245,215,285];
+// ─── 5 placeholder color palettes — no Math.random, cycles by index ──────────
+// Each card gets a deterministic color based on its position, just like Pinterest
+const PLACEHOLDER_COLORS = [
+  { bg: '#1a1a2e', shimmer: '#16213e' }, // deep navy
+  { bg: '#1e1a2e', shimmer: '#2d1b4e' }, // deep purple
+  { bg: '#1a2e1e', shimmer: '#1b3a20' }, // deep forest
+  { bg: '#2e1a1a', shimmer: '#4e1b1b' }, // deep rose
+  { bg: '#2e2a1a', shimmer: '#4e3d1b' }, // deep amber
+];
+
+// ─── Fixed aspect ratios for masonry variety — no Math.random ────────────────
+// Pinterest uses a fixed-width masonry where image heights vary by content.
+// We simulate this with 5 aspect ratio "slots" cycling by index.
+const ASPECT_RATIOS = [
+  '140%', // tall portrait
+  '120%', // medium portrait
+  '150%', // extra tall
+  '125%', // standard portrait
+  '135%', // slightly taller
+];
+
+// ─── Skeleton card component ──────────────────────────────────────────────────
+const SkeletonCard = ({ index }: { index: number }) => {
+  const color  = PLACEHOLDER_COLORS[index % PLACEHOLDER_COLORS.length];
+  const aspect = ASPECT_RATIOS[index % ASPECT_RATIOS.length];
+
+  return (
+    <div className="relative w-full rounded-2xl overflow-hidden" style={{ marginBottom: 12 }}>
+      <div style={{ position: 'relative', width: '100%', paddingBottom: aspect }}>
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: color.bg,
+            borderRadius: 16,
+            overflow: 'hidden',
+          }}
+        >
+          {/* Shimmer sweep */}
+          <div style={{
+            position: 'absolute',
+            inset: 0,
+            background: `linear-gradient(105deg, transparent 40%, ${color.shimmer}80 50%, transparent 60%)`,
+            backgroundSize: '200% 100%',
+            animation: 'shimmerSweep 1.6s ease-in-out infinite',
+          }} />
+
+          {/* Bottom info placeholder */}
+          <div style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            padding: '12px',
+            background: 'linear-gradient(to top, rgba(0,0,0,0.7), transparent)',
+          }}>
+            {/* Title bar */}
+            <div style={{
+              height: 10,
+              width: `${55 + (index % 5) * 9}%`,
+              borderRadius: 5,
+              background: 'rgba(255,255,255,0.12)',
+              marginBottom: 8,
+            }} />
+            {/* Avatar + name row */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{
+                width: 20, height: 20,
+                borderRadius: '50%',
+                background: 'rgba(255,255,255,0.15)',
+                flexShrink: 0,
+              }} />
+              <div style={{
+                height: 8,
+                width: `${30 + (index % 3) * 12}%`,
+                borderRadius: 4,
+                background: 'rgba(255,255,255,0.1)',
+              }} />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 type WallpaperGridProps = {
   wallpapers: Wallpaper[];
@@ -31,7 +116,6 @@ export const WallpaperGrid = ({
     pulling: false, distance: 0, refreshing: false, canRefresh: false,
   });
 
-  const wasLoadingRef      = useRef(false);
   const gridRef            = useRef<HTMLDivElement>(null);
   const pullContainerRef   = useRef<HTMLDivElement>(null);
   const loadMoreTriggerRef = useRef<HTMLDivElement>(null);
@@ -56,7 +140,7 @@ export const WallpaperGrid = ({
           finally { setLoadingMore(false); }
         }
       },
-      { threshold: 0.1, rootMargin: '200px' },
+      { threshold: 0.1, rootMargin: '300px' },
     );
     observer.observe(loadMoreTriggerRef.current);
     return () => observer.disconnect();
@@ -119,36 +203,39 @@ export const WallpaperGrid = ({
     };
   }, [pullState.pulling, pullState.canRefresh, pullState.refreshing, onRefresh]);
 
-  // ── Refresh toast trigger ───────────────────────────────────────────────────
-  useEffect(() => {
-    if (wasLoadingRef.current && !isLoading && wallpapers.length > 0) {
-      setShowRefreshToast(true);
-      const t = setTimeout(() => setShowRefreshToast(false), 2000);
-      return () => clearTimeout(t);
-    }
-    wasLoadingRef.current = isLoading;
-  }, [isLoading, wallpapers.length]);
+  // ─────────────────────────────────────────────────────────────────────────────
+  // ✅ PINTEREST PATTERN:
+  //
+  // 1. FULL skeleton — only on very first page load (isLoading=true, no wallpapers)
+  //    Shows 10 skeleton cards that look like a complete page.
+  //
+  // 2. MIX skeleton + real — when filter changes (wallpapers=[]) but isLoading=false
+  //    WallpaperCard renders immediately with its own color placeholder,
+  //    then fades in when the image loads. No waiting for all images.
+  //
+  // 3. No skeleton at all on load-more — cards just append at the bottom.
+  // ─────────────────────────────────────────────────────────────────────────────
 
-  // ── Skeleton: shown only on first load (no wallpapers yet) ─────────────────
-  // ✅ Uses fixed heights — no Math.random(), no hydration mismatch
-  // ✅ Each WallpaperCard replaces its own skeleton the moment its image loads,
-  //    so the grid becomes interactive card by card — not all at once.
+  // Case 1: True initial page load — show full skeleton page
   if (isLoading && wallpapers.length === 0) {
     return (
-      <div className="masonry">
-        {SKELETON_HEIGHTS.map((h, i) => (
-          <div key={i} style={{ marginBottom: 40 }}>
-            <div
-              className="skeleton-shimmer rounded-xl"
-              style={{ height: h }}
-            />
-          </div>
-        ))}
-      </div>
+      <>
+        <div className="masonry">
+          {Array.from({ length: 10 }, (_, i) => (
+            <SkeletonCard key={i} index={i} />
+          ))}
+        </div>
+        <style>{`
+          @keyframes shimmerSweep {
+            0%   { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+          }
+        `}</style>
+      </>
     );
   }
 
-  // ── Empty state ─────────────────────────────────────────────────────────────
+  // Case 2: Empty after filter change
   if (wallpapers.length === 0 && !isLoading) {
     return (
       <div className="text-center py-20">
@@ -159,7 +246,7 @@ export const WallpaperGrid = ({
     );
   }
 
-  // ── Main grid ───────────────────────────────────────────────────────────────
+  // Case 3: Main grid — cards render individually, each owns its own placeholder
   return (
     <>
       {/* Pull-to-refresh indicator */}
@@ -199,29 +286,25 @@ export const WallpaperGrid = ({
       )}
 
       {/*
-        ✅ ARCHITECTURE NOTE:
-        WallpaperGrid is now a thin layout shell.
-        WallpaperCard owns ALL its own state, the NavLoader singleton, and
-        the BottomSheet portal — the grid just maps cards into a masonry layout.
-        
-        The first 6 cards get priority=true → Next.js emits fetchpriority="high"
-        and skips lazy loading, which directly improves LCP.
+        ✅ Cards render IMMEDIATELY — each card shows its own color placeholder
+        while its image loads. Exactly like Pinterest: you see cards right away,
+        images pop in one by one. No waiting for all data.
       */}
       <div ref={gridRef} className="masonry">
         {wallpapers.map((wp, idx) => (
-          <div key={wp.id} style={{ marginBottom: 40 }}>
-            <WallpaperCard
-              wp={wp}
-              priority={idx < 6}          // ← above-fold cards load eagerly
-            />
-          </div>
+          <WallpaperCard
+            key={wp.id}
+            wp={wp}
+            priority={idx < 6}
+            placeholderIndex={idx}
+          />
         ))}
       </div>
 
       {/* Load more sentinel */}
       {hasMore && (
         <div ref={loadMoreTriggerRef} className="flex items-center justify-center py-8 gap-2">
-          {(loadingMore || isLoading) &&
+          {loadingMore &&
             [0, 150, 300].map((delay, i) => (
               <div key={i} className="w-2 h-2 bg-white/60 rounded-full animate-bounce"
                 style={{ animationDelay:`${delay}ms` }} />
@@ -239,6 +322,10 @@ export const WallpaperGrid = ({
       <style>{`
         @keyframes slideDown { from{transform:translate(-50%,-100%);opacity:0} to{transform:translate(-50%,0);opacity:1} }
         @keyframes spin      { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+        @keyframes shimmerSweep {
+          0%   { background-position: -200% 0; }
+          100% { background-position: 200% 0; }
+        }
       `}</style>
     </>
   );
