@@ -10,6 +10,24 @@ import { toggleLike, isWallpaperLiked, toggleSave, isWallpaperSaved } from '@/li
 import { useAuth } from '@/app/components/AuthProvider';
 import type { Wallpaper } from '../types';
 
+// ─── 5 placeholder colors — cycles by card index, no Math.random ─────────────
+const PLACEHOLDER_COLORS = [
+  { bg: '#1a1a2e', shimmer: '#16213e' }, // deep navy
+  { bg: '#1e1a2e', shimmer: '#2d1b4e' }, // deep purple
+  { bg: '#1a2e1e', shimmer: '#1b3a20' }, // deep forest
+  { bg: '#2e1a1a', shimmer: '#4e1b1b' }, // deep rose
+  { bg: '#2e2a1a', shimmer: '#4e3d1b' }, // deep amber
+];
+
+// ─── 5 aspect ratios for visual masonry variety — no Math.random ─────────────
+const ASPECT_RATIOS = [
+  '140%', // tall portrait
+  '120%', // medium portrait
+  '150%', // extra tall
+  '125%', // standard portrait
+  '135%', // slightly taller
+];
+
 // ─── Singleton NavLoader ──────────────────────────────────────────────────────
 const imageCache = new Set<string>();
 let _setNavVisible: ((v: boolean) => void) | null = null;
@@ -75,29 +93,43 @@ const BottomSheet = ({ isOpen, onClose, wp, saved, onSave, onDownload, onShare }
 };
 
 // ─── WallpaperCard ────────────────────────────────────────────────────────────
-type WallpaperCardProps = { wp: Wallpaper; onClick?: () => void; priority?: boolean };
+type WallpaperCardProps = {
+  wp: Wallpaper;
+  onClick?: () => void;
+  priority?: boolean;
+  // ✅ NEW: index so each card gets a deterministic placeholder color
+  placeholderIndex?: number;
+};
 
-export const WallpaperCard = ({ wp, onClick, priority = false }: WallpaperCardProps) => {
+export const WallpaperCard = ({ wp, onClick, priority = false, placeholderIndex = 0 }: WallpaperCardProps) => {
   const { user } = useAuth();
   const router   = useRouter();
   const isMounted    = useRef(true);
   const isOwner      = useRef(false);
 
-  // ✅ Split into two effects so isMounted always cleans up
   useEffect(() => () => { isMounted.current = false; }, []);
   useEffect(() => {
     if (!_navLoaderMounted) { _navLoaderMounted = true; isOwner.current = true; }
     return () => { if (isOwner.current) _navLoaderMounted = false; };
   }, []);
 
-  const [state, setState] = useState({ loaded: imageCache.has(wp.thumbnail || wp.url), liked: false, saved: false, showMenu: false });
+  // ✅ Deterministic placeholder — no Math.random
+  const placeholder = PLACEHOLDER_COLORS[placeholderIndex % PLACEHOLDER_COLORS.length];
+  const aspectRatio = ASPECT_RATIOS[placeholderIndex % ASPECT_RATIOS.length];
+
+  const [state, setState] = useState({
+    loaded: imageCache.has(wp.thumbnail || wp.url),
+    liked: false,
+    saved: false,
+    showMenu: false,
+  });
   const [counts, setCounts] = useState({ likes: wp.likes || 0, views: wp.views || 0 });
 
   useEffect(() => {
     if (!user) return;
     Promise.all([isWallpaperLiked(wp.id, user.id), isWallpaperSaved(wp.id, user.id)])
       .then(([liked, saved]) => { if (isMounted.current) setState(s => ({ ...s, liked, saved })); });
-  }, [wp.id, user?.id]); // ✅ user?.id not user object
+  }, [wp.id, user?.id]);
 
   const handleLike = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -153,44 +185,124 @@ export const WallpaperCard = ({ wp, onClick, priority = false }: WallpaperCardPr
   return (
     <>
       {isOwner.current && <NavLoaderSingleton />}
-      <div className="relative w-full">
-        <div className="card group relative rounded-xl overflow-hidden cursor-pointer transition-opacity hover:opacity-95" onClick={handleCardClick}>
-          <div className="relative w-full" style={{ paddingBottom:'125%' }}>
-            {!state.loaded && <div className="absolute inset-0 bg-zinc-900 rounded-xl animate-pulse" />}
+
+      {/*
+        ✅ BIGGER CARDS: removed fixed marginBottom wrapper from grid loop.
+        Cards now control their own spacing (marginBottom: 12px).
+        paddingBottom uses per-card aspect ratio for true masonry variety.
+
+        ✅ PINTEREST-STYLE LOADING:
+        Card renders IMMEDIATELY with colored placeholder.
+        Image fades in on its own onLoad — no waiting for siblings.
+        This means the page feels interactive the moment the first card mounts.
+      */}
+      <div className="relative w-full" style={{ marginBottom: 12 }}>
+        <div
+          className="card group relative rounded-2xl overflow-hidden cursor-pointer"
+          style={{ transition: 'transform 0.2s ease, box-shadow 0.2s ease' }}
+          onClick={handleCardClick}
+          onMouseEnter={e => {
+            (e.currentTarget as HTMLDivElement).style.transform = 'scale(1.01)';
+            (e.currentTarget as HTMLDivElement).style.boxShadow = '0 20px 60px rgba(0,0,0,0.5)';
+          }}
+          onMouseLeave={e => {
+            (e.currentTarget as HTMLDivElement).style.transform = 'scale(1)';
+            (e.currentTarget as HTMLDivElement).style.boxShadow = 'none';
+          }}
+        >
+          {/* ✅ Per-card aspect ratio — bigger & varied */}
+          <div className="relative w-full" style={{ paddingBottom: aspectRatio }}>
+
+            {/* ✅ Colored placeholder — shows immediately, no skeleton needed per card */}
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                background: placeholder.bg,
+                borderRadius: 16,
+                overflow: 'hidden',
+                // Fade out once image loads
+                opacity: state.loaded ? 0 : 1,
+                transition: 'opacity 0.3s ease',
+                pointerEvents: 'none',
+                zIndex: 1,
+              }}
+            >
+              {/* Shimmer sweep on placeholder */}
+              {!state.loaded && (
+                <div style={{
+                  position: 'absolute',
+                  inset: 0,
+                  background: `linear-gradient(105deg, transparent 40%, ${placeholder.shimmer}99 50%, transparent 60%)`,
+                  backgroundSize: '200% 100%',
+                  animation: 'shimmerSweep 1.8s ease-in-out infinite',
+                }} />
+              )}
+            </div>
+
             <Image
-              src={wp.thumbnail || wp.url}  // ✅ thumbnail in grid, full image on detail page
+              src={wp.thumbnail || wp.url}
               alt={wp.title}
               fill
-              sizes="(max-width:640px) 50vw, (max-width:1024px) 33vw, (max-width:1536px) 25vw, 20vw"
-              onLoad={() => { imageCache.add(wp.thumbnail || wp.url); if (isMounted.current) setState(s => ({ ...s, loaded: true })); }}
+              // ✅ Bigger card sizes: 45vw mobile, 30vw tablet, 22vw desktop
+              sizes="(max-width:640px) 45vw, (max-width:1024px) 30vw, (max-width:1536px) 22vw, 18vw"
+              onLoad={() => {
+                imageCache.add(wp.thumbnail || wp.url);
+                if (isMounted.current) setState(s => ({ ...s, loaded: true }));
+              }}
               className="object-cover"
               priority={priority}
               loading={priority ? 'eager' : 'lazy'}
-              style={{ opacity: state.loaded ? 1 : 0, transition:'opacity 0.25s ease' }}
+              style={{
+                opacity: state.loaded ? 1 : 0,
+                transition: 'opacity 0.35s ease',
+                zIndex: 2,
+              }}
             />
           </div>
 
           {/* Hover overlay */}
-          <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top,rgba(0,0,0,0.8),transparent,transparent)', opacity:0, transition:'opacity 0.2s' }} className="group-hover:opacity-100">
+          <div
+            style={{
+              position:'absolute', inset:0, zIndex: 3,
+              background:'linear-gradient(to top,rgba(0,0,0,0.8),transparent,transparent)',
+              opacity:0, transition:'opacity 0.2s',
+            }}
+            className="group-hover:opacity-100"
+          >
             <div style={{ position:'absolute', top:12, right:12 }} className="flex items-center gap-2">
-              <button aria-label="Like wallpaper" onClick={handleLike}
-                className={`p-2.5 rounded-full backdrop-blur-md transition-all hover:scale-110 active:scale-95 ${state.liked ? 'bg-rose-500 hover:bg-rose-600' : 'bg-black/50 hover:bg-black/70'}`}>
+              <button
+                aria-label="Like wallpaper"
+                onClick={handleLike}
+                className={`p-2.5 rounded-full backdrop-blur-md transition-all hover:scale-110 active:scale-95 ${state.liked ? 'bg-rose-500 hover:bg-rose-600' : 'bg-black/50 hover:bg-black/70'}`}
+              >
                 <Heart className={`w-4 h-4 ${state.liked ? 'text-white fill-white' : 'text-white'}`} />
               </button>
-              <button aria-label="Download wallpaper" onClick={e => { e.stopPropagation(); handleDownload(); }}
-                className="p-2.5 rounded-full bg-black/50 hover:bg-black/70 backdrop-blur-md transition-all hover:scale-110 active:scale-95">
+              <button
+                aria-label="Download wallpaper"
+                onClick={e => { e.stopPropagation(); handleDownload(); }}
+                className="p-2.5 rounded-full bg-black/50 hover:bg-black/70 backdrop-blur-md transition-all hover:scale-110 active:scale-95"
+              >
                 <Download className="w-4 h-4 text-white" />
               </button>
             </div>
           </div>
 
           {/* Bottom info bar */}
-          <div style={{ position:'absolute', bottom:0, left:0, right:0, background:'linear-gradient(to top,rgba(0,0,0,0.95),rgba(0,0,0,0.8),transparent)', padding:'10px' }}>
+          <div
+            style={{
+              position:'absolute', bottom:0, left:0, right:0, zIndex: 4,
+              background:'linear-gradient(to top,rgba(0,0,0,0.95),rgba(0,0,0,0.7),transparent)',
+              padding:'12px 10px 10px',
+            }}
+          >
             <div className="flex items-center justify-between gap-2 mb-1.5">
-              {/* ✅ p not h3 — cards are not document headings */}
               <p className="font-medium line-clamp-1 text-xs flex-1">{wp.title}</p>
-              <button aria-label="More options" onClick={e => { e.stopPropagation(); setState(s => ({ ...s, showMenu: true })); }}
-                className="p-1.5 rounded-full hover:bg-white/10 transition-colors flex-shrink-0">
+              <button
+                aria-label="More options"
+                onClick={e => { e.stopPropagation(); setState(s => ({ ...s, showMenu: true })); }}
+                className="p-1.5 rounded-full hover:bg-white/10 transition-colors flex-shrink-0"
+              >
                 <MoreHorizontal className="w-4 h-4 text-white/80" />
               </button>
             </div>
@@ -203,16 +315,36 @@ export const WallpaperCard = ({ wp, onClick, priority = false }: WallpaperCardPr
                 {wp.verified && <VerifiedBadge size="sm" />}
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
-                {counts.likes > 0 && <div className="flex items-center gap-0.5"><Heart className="w-3 h-3 text-rose-400 fill-rose-400" /><span className="text-[10px] font-medium text-rose-400">{fmt(counts.likes)}</span></div>}
-                {counts.views > 0 && <div className="flex items-center gap-0.5"><Eye className="w-3 h-3 text-white/60" /><span className="text-[10px] font-medium text-white/60">{fmt(counts.views)}</span></div>}
+                {counts.likes > 0 && (
+                  <div className="flex items-center gap-0.5">
+                    <Heart className="w-3 h-3 text-rose-400 fill-rose-400" />
+                    <span className="text-[10px] font-medium text-rose-400">{fmt(counts.likes)}</span>
+                  </div>
+                )}
+                {counts.views > 0 && (
+                  <div className="flex items-center gap-0.5">
+                    <Eye className="w-3 h-3 text-white/60" />
+                    <span className="text-[10px] font-medium text-white/60">{fmt(counts.views)}</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      <BottomSheet isOpen={state.showMenu} onClose={() => setState(s => ({ ...s, showMenu: false }))}
-        wp={wp} saved={state.saved} onSave={handleSave} onDownload={handleDownload} onShare={handleShare} />
+      <BottomSheet
+        isOpen={state.showMenu}
+        onClose={() => setState(s => ({ ...s, showMenu: false }))}
+        wp={wp} saved={state.saved} onSave={handleSave} onDownload={handleDownload} onShare={handleShare}
+      />
+
+      <style>{`
+        @keyframes shimmerSweep {
+          0%   { background-position: -200% 0; }
+          100% { background-position: 200% 0; }
+        }
+      `}</style>
     </>
   );
 };
