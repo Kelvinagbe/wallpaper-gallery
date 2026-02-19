@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter, useParams } from 'next/navigation';
 import Image from 'next/image';
-import { ChevronLeft, Eye, Heart, Download, Share2, Bookmark, Check, Link as LinkIcon, Loader2 } from 'lucide-react';
+import { ChevronLeft, Eye, Heart, Download, Share2, Bookmark, Check, Link as LinkIcon, Loader2, MessageCircle, MoreHorizontal } from 'lucide-react';
 import { VerifiedBadge } from '@/app/components/VerifiedBadge';
 import { LoginPromptModal } from '@/app/components/LoginPromptModal';
 import { createClient } from '@/lib/supabase/client';
@@ -13,16 +13,27 @@ import { fetchWallpaperById, incrementViews, incrementDownloads } from '@/lib/st
 import type { Wallpaper } from '@/app/types';
 
 // ─── Cache ────────────────────────────────────────────────────────────────────
-const cache = new Map<string, { liked: boolean; saved: boolean; following: boolean; likeCount: number; timestamp: number }>();
+const cache = new Map<string, {
+  liked: boolean; saved: boolean; following: boolean;
+  likeCount: number; timestamp: number;
+}>();
 const CACHE_DURATION = 30_000;
 
 // ─── CopyLinkModal ────────────────────────────────────────────────────────────
-const CopyLinkModal = ({ isOpen, onClose, link }: { isOpen: boolean; onClose: () => void; link: string }) => {
+const CopyLinkModal = ({
+  isOpen, onClose, link,
+}: { isOpen: boolean; onClose: () => void; link: string }) => {
   const [copied, setCopied] = useState(false);
   if (!isOpen) return null;
-  return (
-    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.8)', backdropFilter:'blur(8px)', zIndex:60, display:'flex', alignItems:'flex-end' }} onClick={onClose}>
-      <div className="w-full bg-gradient-to-b from-zinc-900 to-black rounded-t-3xl p-6 space-y-4" onClick={e => e.stopPropagation()}>
+  return createPortal(
+    <div
+      style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.8)', backdropFilter:'blur(8px)', zIndex:200, display:'flex', alignItems:'flex-end' }}
+      onClick={onClose}
+    >
+      <div
+        className="w-full bg-gradient-to-b from-zinc-900 to-black rounded-t-3xl p-6 space-y-4"
+        onClick={e => e.stopPropagation()}
+      >
         <div className="w-12 h-1.5 bg-white/20 rounded-full mx-auto" />
         <h3 className="text-xl font-bold text-white text-center">Copy Link</h3>
         <div className="bg-white/5 rounded-xl p-4 flex items-center gap-3 border border-white/10">
@@ -30,19 +41,30 @@ const CopyLinkModal = ({ isOpen, onClose, link }: { isOpen: boolean; onClose: ()
           <p className="text-sm text-white/80 flex-1 truncate">{link}</p>
         </div>
         <button
-          onClick={async () => { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => { setCopied(false); setTimeout(onClose, 500); }, 1500); }}
+          onClick={async () => {
+            await navigator.clipboard.writeText(link);
+            setCopied(true);
+            setTimeout(() => { setCopied(false); setTimeout(onClose, 500); }, 1500);
+          }}
           className={`w-full py-4 rounded-full font-semibold transition-all ${copied ? 'bg-emerald-500 text-white' : 'bg-white text-black hover:bg-gray-200'}`}
         >
-          {copied ? <span className="flex items-center justify-center gap-2"><Check className="w-5 h-5" />Copied!</span> : 'Copy Link'}
+          {copied
+            ? <span className="flex items-center justify-center gap-2"><Check className="w-5 h-5" />Copied!</span>
+            : 'Copy Link'}
         </button>
-        <button onClick={onClose} className="w-full py-4 bg-white/5 hover:bg-white/10 rounded-full font-semibold text-white">Cancel</button>
+        <button onClick={onClose} className="w-full py-4 bg-white/5 hover:bg-white/10 rounded-full font-semibold text-white">
+          Cancel
+        </button>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 };
 
 // ─── FloatingHearts ───────────────────────────────────────────────────────────
-const FloatingHearts = ({ hearts }: { hearts: Array<{ id: number; x: number; y: number; angle: number; distance: number }> }) => {
+const FloatingHearts = ({ hearts }: {
+  hearts: Array<{ id: number; x: number; y: number; angle: number; distance: number }>;
+}) => {
   if (typeof window === 'undefined' || hearts.length === 0) return null;
   return createPortal(
     <>
@@ -53,15 +75,27 @@ const FloatingHearts = ({ hearts }: { hearts: Array<{ id: number; x: number; y: 
           50%  { transform:translate(var(--tx),var(--ty)) scale(1.3) rotate(var(--rotate)); opacity:.95 }
           100% { transform:translate(calc(var(--tx)*1.5),calc(var(--ty)*1.8)) scale(.2) rotate(var(--rotate)); opacity:0 }
         }
-        .heart-float { animation:floatHeart 1.2s cubic-bezier(.25,.46,.45,.94) forwards; pointer-events:none; position:fixed; z-index:9999; filter:drop-shadow(0 4px 12px rgba(244,63,94,.5)); }
+        .heart-float {
+          animation: floatHeart 1.2s cubic-bezier(.25,.46,.45,.94) forwards;
+          pointer-events: none; position: fixed; z-index: 9999;
+          filter: drop-shadow(0 4px 12px rgba(244,63,94,.5));
+        }
       `}</style>
       {hearts.map((heart, i) => {
         const rad = (heart.angle * Math.PI) / 180;
         return (
-          <Heart key={heart.id} className="heart-float text-rose-500 fill-rose-500"
-            style={{ left:`${heart.x}px`, top:`${heart.y}px`, width:'34px', height:'34px',
-              '--tx':`${Math.cos(rad) * heart.distance}px`, '--ty':`${Math.sin(rad) * heart.distance - 50}px`,
-              '--rotate':`${(Math.random() - 0.5) * 45}deg`, animationDelay:`${i * 0.08}s` } as React.CSSProperties} />
+          <Heart
+            key={heart.id}
+            className="heart-float text-rose-500 fill-rose-500"
+            style={{
+              left: `${heart.x}px`, top: `${heart.y}px`,
+              width: '34px', height: '34px',
+              '--tx': `${Math.cos(rad) * heart.distance}px`,
+              '--ty': `${Math.sin(rad) * heart.distance - 50}px`,
+              '--rotate': `${(Math.random() - 0.5) * 45}deg`,
+              animationDelay: `${i * 0.08}s`,
+            } as React.CSSProperties}
+          />
         );
       })}
     </>,
@@ -69,17 +103,18 @@ const FloatingHearts = ({ hearts }: { hearts: Array<{ id: number; x: number; y: 
   );
 };
 
-// ─── Skeleton ─────────────────────────────────────────────────────────────────
-const Shimmer = ({ className }: { className: string }) => <div className={`shimmer rounded ${className}`} />;
+// ─── Shimmer skeleton ─────────────────────────────────────────────────────────
+const Shimmer = ({ className }: { className: string }) => (
+  <div className={`shimmer rounded ${className}`} />
+);
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function WallpaperDetailPage() {
-  const router    = useRouter();
-  const params    = useParams();
-  const id        = params?.id as string;
+  const router     = useRouter();
+  const params     = useParams();
+  const id         = params?.id as string;
   const { session } = useAuth();
-  // ✅ Memoized — was recreated every render
-  const supabase  = useMemo(() => createClient(), []);
+  const supabase   = useMemo(() => createClient(), []);
 
   const [wallpaper,   setWallpaper]   = useState<Wallpaper | null>(null);
   const [pageLoading, setPageLoading] = useState(true);
@@ -89,27 +124,31 @@ export default function WallpaperDetailPage() {
   const [state, setState] = useState({
     liked: false, saved: false, following: false,
     downloading: false, downloaded: false, dataLoading: true,
-    showLoginPrompt: false, loginAction: '', isCopyModalOpen: false, timeAgo: '',
+    showLoginPrompt: false, loginAction: '',
+    isCopyModalOpen: false, timeAgo: '',
   });
 
   const likeButtonRef = useRef<HTMLButtonElement>(null);
-  const viewedRef     = useRef(false); // ✅ prevents double view increment on re-render
+  const viewedRef     = useRef(false);
 
   // ── Fetch wallpaper ─────────────────────────────────────────────────────────
   useEffect(() => {
     if (!id) return;
+    let cancelled = false;
     (async () => {
       try {
         const data = await fetchWallpaperById(id);
         if (!data) { router.replace('/'); return; }
+        if (cancelled) return;
         setWallpaper(data);
         setCounts({ likes: data.likes, downloads: data.downloads, views: data.views });
       } catch {
         router.replace('/');
       } finally {
-        setPageLoading(false);
+        if (!cancelled) setPageLoading(false);
       }
     })();
+    return () => { cancelled = true; };
   }, [id]);
 
   // ── Time ago ────────────────────────────────────────────────────────────────
@@ -117,12 +156,14 @@ export default function WallpaperDetailPage() {
     if (!wallpaper?.createdAt) return;
     const compute = () => {
       const diff = Math.floor((Date.now() - new Date(wallpaper.createdAt!).getTime()) / 1000);
-      setState(s => ({ ...s, timeAgo:
-        diff < 60      ? 'Just now'                          :
-        diff < 3_600   ? `${Math.floor(diff / 60)}m ago`    :
-        diff < 86_400  ? `${Math.floor(diff / 3_600)}h ago` :
-        diff < 604_800 ? `${Math.floor(diff / 86_400)}d ago`:
-                         `${Math.floor(diff / 604_800)}w ago`
+      setState(s => ({
+        ...s,
+        timeAgo:
+          diff < 60      ? 'Just now'
+          : diff < 3_600   ? `${Math.floor(diff / 60)}m ago`
+          : diff < 86_400  ? `${Math.floor(diff / 3_600)}h ago`
+          : diff < 604_800 ? `${Math.floor(diff / 86_400)}d ago`
+          :                  `${Math.floor(diff / 604_800)}w ago`,
       }));
     };
     compute();
@@ -131,7 +172,6 @@ export default function WallpaperDetailPage() {
   }, [wallpaper?.createdAt]);
 
   // ── Interactions + view increment ───────────────────────────────────────────
-  // ✅ Uses session?.user?.id (stable string) not session object — prevents re-firing
   useEffect(() => {
     if (!wallpaper) return;
     if (!session) { setState(s => ({ ...s, dataLoading: false })); return; }
@@ -147,7 +187,6 @@ export default function WallpaperDetailPage() {
     }
 
     (async () => {
-      // ✅ Only increment view once per mount
       if (!viewedRef.current) {
         viewedRef.current = true;
         await incrementViews(wallpaper.id);
@@ -163,12 +202,15 @@ export default function WallpaperDetailPage() {
         supabase.from('likes').select('id', { count: 'exact' }).eq('wallpaper_id', wallpaper.id),
       ]);
 
-      const next = { liked: !!likeRes.data, saved: !!saveRes.data, following: !!followRes.data, likeCount: likeCountRes.count ?? 0, timestamp: Date.now() };
+      const next = {
+        liked: !!likeRes.data, saved: !!saveRes.data, following: !!followRes.data,
+        likeCount: likeCountRes.count ?? 0, timestamp: Date.now(),
+      };
       setState(s => ({ ...s, ...next, dataLoading: false }));
       setCounts(c => ({ ...c, likes: next.likeCount }));
       cache.set(cacheKey, next);
     })();
-  }, [wallpaper?.id, session?.user?.id]); // ✅ stable string dep, not object
+  }, [wallpaper?.id, session?.user?.id]);
 
   // ── Realtime like count ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -185,8 +227,8 @@ export default function WallpaperDetailPage() {
   }, [wallpaper?.id]);
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
-  const vibrate    = (d: number) => navigator.vibrate?.(d);
-  const fmt        = (n: number) => n > 1000 ? `${(n / 1000).toFixed(1)}k` : n;
+  const vibrate     = (d: number) => navigator.vibrate?.(d);
+  const fmt         = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
   const requireAuth = (action: string, cb: () => void) => {
     if (!session) setState(s => ({ ...s, loginAction: action, showLoginPrompt: true }));
     else cb();
@@ -197,7 +239,7 @@ export default function WallpaperDetailPage() {
     if (!wallpaper) return;
     const newLiked = !state.liked;
     setState(s => ({ ...s, liked: newLiked }));
-    setCounts(c => ({ ...c, likes: newLiked ? c.likes + 1 : c.likes - 1 }));
+    setCounts(c => ({ ...c, likes: newLiked ? c.likes + 1 : Math.max(0, c.likes - 1) }));
     vibrate(50);
 
     const cacheKey = `${wallpaper.id}-${session!.user.id}`;
@@ -207,8 +249,11 @@ export default function WallpaperDetailPage() {
     if (newLiked && likeButtonRef.current) {
       const rect = likeButtonRef.current.getBoundingClientRect();
       setHearts(Array.from({ length: 8 }, (_, i) => ({
-        id: Date.now() + i, x: rect.left + rect.width / 2 - 17, y: rect.top + rect.height / 2 - 17,
-        angle: -90 + (i * 270 / 7) + (Math.random() - 0.5) * 20, distance: 100 + Math.random() * 80,
+        id: Date.now() + i,
+        x: rect.left + rect.width / 2 - 17,
+        y: rect.top + rect.height / 2 - 17,
+        angle: -90 + (i * 270 / 7) + (Math.random() - 0.5) * 20,
+        distance: 100 + Math.random() * 80,
       })));
       setTimeout(() => setHearts([]), 1400);
     }
@@ -251,94 +296,296 @@ export default function WallpaperDetailPage() {
     await incrementDownloads(wallpaper.id);
     setCounts(c => ({ ...c, downloads: c.downloads + 1 }));
     const link = document.createElement('a');
-    link.href = wallpaper.url; link.download = wallpaper.title || 'wallpaper'; link.click();
+    link.href = wallpaper.url;
+    link.download = wallpaper.title || 'wallpaper';
+    link.click();
     setTimeout(() => { setState(s => ({ ...s, downloading: false, downloaded: true })); vibrate(100); }, 1000);
   };
 
-  const stats = [
-    { icon: Eye,      value: counts.views,     active: false,           color: ''        },
-    { icon: Heart,    value: counts.likes,     active: state.liked,     color: 'rose'    },
-    { icon: Download, value: counts.downloads, active: state.downloaded, color: 'emerald' },
-  ];
+  // ── Share ────────────────────────────────────────────────────────────────────
+  const handleShare = () => {
+    if (navigator.share) {
+      navigator.share({ title: wallpaper?.title, url: window.location.href })
+        .catch(() => setState(s => ({ ...s, isCopyModalOpen: true })));
+    } else {
+      setState(s => ({ ...s, isCopyModalOpen: true }));
+    }
+  };
 
-  const isLoading = pageLoading || state.dataLoading;
-
+  // ─────────────────────────────────────────────────────────────────────────────
+  // RENDER
+  // ─────────────────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-black text-white">
+    <div className="min-h-screen bg-black text-white overflow-x-hidden">
       <style>{`
         @keyframes scaleIn       { 0%{transform:scale(0)} 50%{transform:scale(1.2)} 100%{transform:scale(1)} }
         @keyframes successBounce { 0%,100%{transform:scale(1)} 50%{transform:scale(1.1)} }
         @keyframes spin          { to{transform:rotate(360deg)} }
         @keyframes shimmer       { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
-        .scale-in       { animation:scaleIn .4s cubic-bezier(.34,1.56,.64,1) }
-        .success-bounce { animation:successBounce .5s ease-out }
-        .spinner        { animation:spin .6s linear infinite }
-        .shimmer        { background:linear-gradient(90deg,#ffffff0a 25%,#ffffff14 50%,#ffffff0a 75%); background-size:200% 100%; animation:shimmer 1.5s infinite; }
+        .scale-in   { animation:scaleIn .4s cubic-bezier(.34,1.56,.64,1) }
+        .spinner    { animation:spin .6s linear infinite }
+        .shimmer    {
+          background: linear-gradient(90deg, #ffffff0a 25%, #ffffff14 50%, #ffffff0a 75%);
+          background-size: 200% 100%;
+          animation: shimmer 1.5s infinite;
+        }
       `}</style>
 
       <FloatingHearts hearts={hearts} />
-      <LoginPromptModal isOpen={state.showLoginPrompt} onClose={() => setState(s => ({ ...s, showLoginPrompt: false }))} action={state.loginAction} />
+      <LoginPromptModal
+        isOpen={state.showLoginPrompt}
+        onClose={() => setState(s => ({ ...s, showLoginPrompt: false }))}
+        action={state.loginAction}
+      />
+      <CopyLinkModal
+        isOpen={state.isCopyModalOpen}
+        onClose={() => setState(s => ({ ...s, isCopyModalOpen: false }))}
+        link={typeof window !== 'undefined' ? window.location.href : ''}
+      />
 
-      {/* Fixed header */}
-      <div style={{ position:'fixed', top:0, left:0, right:0, zIndex:10, background:'linear-gradient(to bottom,rgba(0,0,0,0.9),transparent)', padding:'12px 16px', display:'flex', alignItems:'center', gap:'12px' }}>
-        <button onClick={() => router.back()} className="p-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-xl active:scale-95 transition-all flex-shrink-0">
-          <ChevronLeft className="w-5 h-5 text-white" />
+      {/* ── FULL-BLEED IMAGE SECTION ─────────────────────────────────────────── */}
+      {/* Covers the full width of the screen — same as Pinterest */}
+      <div
+        className="relative w-full"
+        style={{
+          // Full-screen height but aspect-ratio driven — image fills edge to edge
+          minHeight: '60vh',
+          background: '#111',
+        }}
+      >
+        {pageLoading ? (
+          <div className="w-full shimmer" style={{ height: '75vh', borderRadius: 0 }} />
+        ) : (
+          <div className="relative w-full" style={{ minHeight: '65vh' }}>
+            {/* Blurred placeholder while loading */}
+            {!imgLoaded && (
+              <div
+                className="absolute inset-0 shimmer"
+                style={{ borderRadius: 0 }}
+              />
+            )}
+            <Image
+              src={wallpaper!.url}
+              alt={wallpaper!.title}
+              fill
+              priority
+              // ✅ cover fills the container exactly like Pinterest — no letterboxing
+              className="object-cover"
+              sizes="100vw"
+              style={{
+                opacity: imgLoaded ? 1 : 0,
+                transition: 'opacity 0.35s ease',
+              }}
+              onLoad={() => setImgLoaded(true)}
+            />
+
+            {/* Subtle bottom gradient so info below reads cleanly */}
+            <div style={{
+              position: 'absolute',
+              bottom: 0, left: 0, right: 0,
+              height: '120px',
+              background: 'linear-gradient(to top, rgba(0,0,0,0.85), transparent)',
+              pointerEvents: 'none',
+            }} />
+          </div>
+        )}
+
+        {/* ── FLOATING BACK BUTTON — top-left, white rounded square ─────────── */}
+        <button
+          onClick={() => router.back()}
+          style={{
+            position: 'absolute',
+            top: 16,
+            left: 16,
+            zIndex: 20,
+            width: 48,
+            height: 48,
+            borderRadius: 14,
+            background: 'rgba(255,255,255,0.95)',
+            backdropFilter: 'blur(8px)',
+            border: 'none',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
+            cursor: 'pointer',
+            transition: 'transform 0.15s, opacity 0.15s',
+          }}
+          onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.93)')}
+          onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
+          onTouchStart={e => (e.currentTarget.style.transform = 'scale(0.93)')}
+          onTouchEnd={e => (e.currentTarget.style.transform = 'scale(1)')}
+          aria-label="Go back"
+        >
+          <ChevronLeft style={{ width: 26, height: 26, color: '#111', strokeWidth: 2.5 }} />
         </button>
-        {/* ✅ h1 added — fixes heading hierarchy for accessibility */}
-        <h1 className="text-sm font-semibold text-white truncate">
-          {pageLoading ? 'Loading...' : wallpaper?.title}
-        </h1>
+
+        {/* ── FLOATING LIKE + SHARE bar — bottom-right, like Pinterest ────────── */}
+        {!pageLoading && (
+          <div style={{
+            position: 'absolute',
+            bottom: 16,
+            right: 16,
+            zIndex: 20,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 10,
+          }}>
+            {/* Like button */}
+            <button
+              ref={likeButtonRef}
+              onClick={handleLike}
+              style={{
+                width: 52,
+                height: 52,
+                borderRadius: '50%',
+                background: state.liked ? '#f43f5e' : 'rgba(255,255,255,0.92)',
+                backdropFilter: 'blur(8px)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: 'none',
+                cursor: 'pointer',
+                boxShadow: '0 4px 16px rgba(0,0,0,0.25)',
+                transition: 'all 0.2s cubic-bezier(.34,1.56,.64,1)',
+              }}
+              aria-label="Like wallpaper"
+            >
+              <Heart
+                style={{
+                  width: 24,
+                  height: 24,
+                  color: state.liked ? '#fff' : '#111',
+                  fill: state.liked ? '#fff' : 'none',
+                  transition: 'all 0.2s',
+                }}
+              />
+            </button>
+
+         {/* Save button */}
+            <button
+              onClick={handleSave}
+              style={{
+                width: 52,
+                height: 52,
+                borderRadius: '50%',
+                background: state.saved ? '#3b82f6' : 'rgba(255,255,255,0.92)',
+                backdropFilter: 'blur(8px)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: 'none',
+                cursor: 'pointer',
+                boxShadow: '0 4px 16px rgba(0,0,0,0.25)',
+                transition: 'all 0.2s cubic-bezier(.34,1.56,.64,1)',
+              }}
+              aria-label="Save wallpaper"
+            >
+              <Bookmark
+                style={{
+                  width: 22,
+                  height: 22,
+                  color: state.saved ? '#fff' : '#111',
+                  fill: state.saved ? '#fff' : 'none',
+                  transition: 'all 0.2s',
+                }}
+              />
+            </button>
+
+            {/* Share button */}
+            <button
+              onClick={handleShare}
+              style={{
+                width: 52,
+                height: 52,
+                borderRadius: '50%',
+                background: 'rgba(255,255,255,0.92)',
+                backdropFilter: 'blur(8px)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: 'none',
+                cursor: 'pointer',
+                boxShadow: '0 4px 16px rgba(0,0,0,0.25)',
+                transition: 'transform 0.15s',
+              }}
+              aria-label="Share wallpaper"
+            >
+              <Share2 style={{ width: 22, height: 22, color: '#111' }} />
+            </button>
+          </div>
+        )}
+
+        {/* ── LIKE COUNT — bottom-left over image ─────────────────────────────── */}
+        {!pageLoading && counts.likes > 0 && (
+          <div style={{
+            position: 'absolute',
+            bottom: 20,
+            left: 16,
+            zIndex: 20,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+          }}>
+            <Heart style={{ width: 16, height: 16, color: '#f43f5e', fill: '#f43f5e' }} />
+            <span style={{ color: '#fff', fontSize: 14, fontWeight: 600, textShadow: '0 1px 4px rgba(0,0,0,0.5)' }}>
+              {fmt(counts.likes)}
+            </span>
+          </div>
+        )}
       </div>
 
-      <div className="max-w-2xl mx-auto p-4 pt-16 pb-8 space-y-4">
+      {/* ── INFO SECTION — slides directly below image ───────────────────────── */}
+      <div style={{ background: '#000', padding: '16px 16px 100px' }}>
 
-        {/* Main image — ✅ next/image for LCP optimization */}
-        <div className="relative rounded-2xl overflow-hidden bg-zinc-900">
-          {pageLoading ? (
-            <div className="aspect-[9/16] shimmer rounded-2xl" />
-          ) : (
-            <div className="relative w-full" style={{ aspectRatio: '9/16' }}>
-              {!imgLoaded && <div className="absolute inset-0 shimmer" />}
-              <Image
-                src={wallpaper!.url}
-                alt={wallpaper!.title}
-                fill
-                priority                          // ✅ above-fold — high fetchpriority
-                sizes="(max-width:672px) 100vw, 672px"
-                className="object-contain"
-                style={{ opacity: imgLoaded ? 1 : 0, transition: 'opacity 0.3s' }}
-                onLoad={() => setImgLoaded(true)}
-              />
-            </div>
-          )}
-        </div>
-
-        {/* User info */}
-        <div className="flex items-center gap-3 p-2 rounded-xl">
+        {/* User row */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
           {pageLoading ? (
             <>
-              <Shimmer className="w-10 h-10 rounded-full flex-shrink-0" />
-              <div className="flex-1 space-y-2"><Shimmer className="h-4 w-32" /><Shimmer className="h-3 w-20" /></div>
-              <Shimmer className="w-20 h-8 rounded-full" />
+              <Shimmer className="w-11 h-11 rounded-full" />
+              <div style={{ flex: 1 }}>
+                <Shimmer className="h-4 w-32 mb-2" />
+                <Shimmer className="h-3 w-20" />
+              </div>
+              <Shimmer className="w-20 h-9 rounded-full" />
             </>
           ) : (
             <>
-              <button onClick={() => router.push(`/user/${wallpaper!.userId}`)} className="flex items-center gap-3 flex-1 hover:bg-white/5 rounded-xl transition-colors">
-                {/* ✅ next/image for avatar */}
-                <div className="relative w-10 h-10 rounded-full border border-white/20 overflow-hidden flex-shrink-0">
-                  <Image src={wallpaper!.userAvatar} alt={wallpaper!.uploadedBy} fill className="object-cover" sizes="40px" />
+              <button
+                onClick={() => router.push(`/user/${wallpaper!.userId}`)}
+                style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'left' }}
+              >
+                <div style={{ position: 'relative', width: 44, height: 44, borderRadius: '50%', overflow: 'hidden', flexShrink: 0, border: '2px solid rgba(255,255,255,0.15)' }}>
+                  <Image src={wallpaper!.userAvatar} alt={wallpaper!.uploadedBy} fill className="object-cover" sizes="44px" />
                 </div>
-                <div className="flex-1 text-left">
-                  <div className="flex items-center gap-1.5">
-                    <p className="font-semibold text-white">{wallpaper!.uploadedBy}</p>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ color: '#fff', fontWeight: 600, fontSize: 15 }}>{wallpaper!.uploadedBy}</span>
                     {wallpaper!.verified && <VerifiedBadge size="sm" />}
                   </div>
-                  <p className="text-sm text-white/60">{state.timeAgo || 'Just now'}</p>
+                  <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>{state.timeAgo || 'Just now'}</span>
                 </div>
               </button>
-              {state.dataLoading ? <Shimmer className="w-20 h-8 rounded-full" /> : (
-                <button onClick={handleFollow}
-                  className={`px-4 py-1.5 rounded-full text-sm font-semibold transition-all active:scale-95 flex-shrink-0 ${state.following ? 'bg-white/10 text-white border border-white/20' : 'bg-white text-black hover:bg-gray-200'}`}>
+
+              {/* Follow button — Pinterest-style: white pill */}
+              {state.dataLoading ? (
+                <Shimmer className="w-20 h-9 rounded-full" />
+              ) : (
+                <button
+                  onClick={handleFollow}
+                  style={{
+                    padding: '8px 20px',
+                    borderRadius: 9999,
+                    fontSize: 14,
+                    fontWeight: 600,
+                    border: state.following ? '1.5px solid rgba(255,255,255,0.25)' : 'none',
+                    background: state.following ? 'transparent' : '#fff',
+                    color: state.following ? '#fff' : '#000',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    flexShrink: 0,
+                  }}
+                >
                   {state.following ? 'Following' : 'Follow'}
                 </button>
               )}
@@ -346,69 +593,121 @@ export default function WallpaperDetailPage() {
           )}
         </div>
 
-        {/* Title & description — ✅ h2 not h3 (h1 is in header) */}
+        {/* Title */}
         {pageLoading ? (
-          <div className="space-y-2"><Shimmer className="h-5 w-48" /><Shimmer className="h-4 w-full" /><Shimmer className="h-4 w-3/4" /></div>
+          <div style={{ marginBottom: 16 }}>
+            <Shimmer className="h-5 w-48 mb-2" />
+            <Shimmer className="h-4 w-full mb-1" />
+            <Shimmer className="h-4 w-3/4" />
+          </div>
         ) : (
-          <div>
-            <h2 className="font-semibold text-white mb-1">{wallpaper!.title}</h2>
-            {wallpaper!.description && <p className="text-sm text-white/70 leading-relaxed">{wallpaper!.description}</p>}
+          <div style={{ marginBottom: 16 }}>
+            <h2 style={{ color: '#fff', fontWeight: 700, fontSize: 18, marginBottom: 6, lineHeight: 1.3 }}>
+              {wallpaper!.title}
+            </h2>
+            {wallpaper!.description && (
+              <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14, lineHeight: 1.6 }}>
+                {wallpaper!.description}
+              </p>
+            )}
           </div>
         )}
 
-        {/* Stats */}
-        {isLoading ? (
-          <div className="flex items-center gap-6">{[1,2,3].map(i => <Shimmer key={i} className="h-4 w-16" />)}</div>
-        ) : (
-          <div className="flex items-center gap-6 text-sm text-white/50">
-            {stats.map(({ icon: Icon, value, active, color }, i) => (
-              <span key={i} className={`flex items-center gap-1.5 transition-colors ${active ? `text-${color}-400` : ''}`}>
-                <Icon className={`w-4 h-4 ${active ? `fill-${color}-400 text-${color}-400` : ''}`} />
-                {fmt(value)}
-              </span>
-            ))}
+        {/* Stats row */}
+        {!pageLoading && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 20 }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'rgba(255,255,255,0.45)', fontSize: 13 }}>
+              <Eye style={{ width: 15, height: 15 }} />
+              {fmt(counts.views)}
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: state.liked ? '#f43f5e' : 'rgba(255,255,255,0.45)', fontSize: 13 }}>
+              <Heart style={{ width: 15, height: 15, fill: state.liked ? '#f43f5e' : 'none' }} />
+              {fmt(counts.likes)}
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'rgba(255,255,255,0.45)', fontSize: 13 }}>
+              <Download style={{ width: 15, height: 15 }} />
+              {fmt(counts.downloads)}
+            </span>
           </div>
         )}
 
-      
-        {/* Action buttons */}
-        {isLoading ? (
-          <div className="flex gap-3"><Shimmer className="flex-1 h-12 rounded-full" /><Shimmer className="w-12 h-12 rounded-full" /><Shimmer className="w-12 h-12 rounded-full" /></div>
-        ) : (
-          <div className="flex gap-3">
-            <button onClick={handleSave} aria-label={state.saved ? 'Unsave wallpaper' : 'Save wallpaper'}
-              className={`flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-full font-semibold transition-all active:scale-95 ${state.saved ? 'bg-blue-500 text-white hover:bg-blue-600 success-bounce' : 'bg-white text-black hover:bg-gray-200'}`}>
-              <Bookmark className={`w-5 h-5 ${state.saved ? 'fill-white scale-in' : ''}`} />
-              {state.saved ? 'Saved' : 'Save'}
+        {/* ── BOTTOM ACTIONS — Pinterest-style: Download (big) + Share + Copy ── */}
+        {!pageLoading && (
+          <div style={{ display: 'flex', gap: 12 }}>
+            {/* Download — big primary button */}
+            <button
+              onClick={handleDownload}
+              disabled={state.downloading}
+              style={{
+                flex: 1,
+                padding: '14px 0',
+                borderRadius: 9999,
+                background: state.downloaded ? '#10b981' : '#e60023', // Pinterest red
+                color: '#fff',
+                fontWeight: 700,
+                fontSize: 16,
+                border: 'none',
+                cursor: state.downloading ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                transition: 'all 0.25s cubic-bezier(.34,1.56,.64,1)',
+                opacity: state.downloading ? 0.8 : 1,
+                boxShadow: '0 4px 20px rgba(230,0,35,0.35)',
+              }}
+            >
+              {state.downloading ? (
+                <Loader2 style={{ width: 20, height: 20, animation: 'spin 0.6s linear infinite' }} />
+              ) : state.downloaded ? (
+                <><Check style={{ width: 20, height: 20 }} /> Downloaded</>
+              ) : (
+                <><Download style={{ width: 20, height: 20 }} /> Download</>
+              )}
             </button>
-            {/* ✅ aria-labels on icon-only buttons — fixes accessibility score */}
-            <button ref={likeButtonRef} onClick={handleLike} aria-label="Like wallpaper"
-              className={`flex items-center justify-center px-4 py-3 rounded-full border transition-all active:scale-95 ${state.liked ? 'bg-rose-500/20 border-rose-500/50 text-rose-400' : 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10'}`}>
-              <Heart className={`w-5 h-5 ${state.liked ? 'fill-rose-400 text-rose-400 scale-in' : ''}`} />
+
+            {/* Share */}
+            <button
+              onClick={handleShare}
+              style={{
+                width: 54,
+                height: 54,
+                borderRadius: '50%',
+                background: 'rgba(255,255,255,0.08)',
+                border: '1.5px solid rgba(255,255,255,0.12)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                transition: 'background 0.15s',
+              }}
+              aria-label="Share"
+            >
+              <Share2 style={{ width: 20, height: 20, color: '#fff' }} />
             </button>
-            <button onClick={handleDownload} disabled={state.downloading} aria-label="Download wallpaper"
-              className={`flex items-center justify-center px-4 py-3 rounded-full border transition-all ${state.downloading ? 'cursor-not-allowed' : 'active:scale-95'} ${state.downloaded ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400' : 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10'}`}>
-              {state.downloading ? <Loader2 className="w-5 h-5 spinner" /> : <Download className={`w-5 h-5 ${state.downloaded ? 'fill-emerald-400 text-emerald-400 scale-in' : ''}`} />}
+
+            {/* Copy link */}
+            <button
+              onClick={() => setState(s => ({ ...s, isCopyModalOpen: true }))}
+              style={{
+                width: 54,
+                height: 54,
+                borderRadius: '50%',
+                background: 'rgba(255,255,255,0.08)',
+                border: '1.5px solid rgba(255,255,255,0.12)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                transition: 'background 0.15s',
+              }}
+              aria-label="Copy link"
+            >
+              <LinkIcon style={{ width: 20, height: 20, color: '#fff' }} />
             </button>
           </div>
         )}
-
-        {/* Share & Copy */}
-        <div className="grid grid-cols-2 gap-3">
-          <button
-            onClick={() => navigator.share ? navigator.share({ title: wallpaper?.title, url: window.location.href }).catch(() => setState(s => ({ ...s, isCopyModalOpen: true }))) : setState(s => ({ ...s, isCopyModalOpen: true }))}
-            className="flex items-center justify-center gap-2 px-6 py-4 bg-white/5 hover:bg-white/10 rounded-xl transition-all active:scale-95">
-            <Share2 className="w-5 h-5" /><span className="font-medium">Share</span>
-          </button>
-          <button onClick={() => setState(s => ({ ...s, isCopyModalOpen: true }))}
-            className="flex items-center justify-center gap-2 px-6 py-4 bg-white/5 hover:bg-white/10 rounded-xl transition-all active:scale-95">
-            <LinkIcon className="w-5 h-5" /><span className="font-medium">Copy Link</span>
-          </button>
-        </div>
-
       </div>
-
-      <CopyLinkModal isOpen={state.isCopyModalOpen} onClose={() => setState(s => ({ ...s, isCopyModalOpen: false }))} link={typeof window !== 'undefined' ? window.location.href : ''} />
     </div>
   );
 }
