@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useRef, useMemo } from 'react';
@@ -16,7 +15,7 @@ const PLACEHOLDER_COLORS = [
 ];
 const ASPECT_RATIOS = ['140%', '120%', '150%', '125%', '135%'];
 
-// Full skeleton — only on very first ever load
+// Full skeleton — only ever shown on cold first load
 const SkeletonCard = ({ index }: { index: number }) => {
   const color  = PLACEHOLDER_COLORS[index % PLACEHOLDER_COLORS.length];
   const aspect = ASPECT_RATIOS[index % ASPECT_RATIOS.length];
@@ -29,11 +28,14 @@ const SkeletonCard = ({ index }: { index: number }) => {
             backgroundSize: '200% 100%',
             animation: 'shimmerSweep 1.6s ease-in-out infinite',
           }} />
-          <div className="absolute bottom-0 left-0 right-0 p-3" style={{ background: 'linear-gradient(to top,rgba(0,0,0,0.7),transparent)' }}>
-            <div className="h-2.5 rounded mb-2" style={{ width: `${55 + (index % 5) * 9}%`, background: 'rgba(255,255,255,0.12)' }} />
+          <div className="absolute bottom-0 left-0 right-0 p-3"
+            style={{ background: 'linear-gradient(to top,rgba(0,0,0,0.7),transparent)' }}>
+            <div className="h-2.5 rounded mb-2"
+              style={{ width: `${55 + (index % 5) * 9}%`, background: 'rgba(255,255,255,0.12)' }} />
             <div className="flex items-center gap-2">
               <div className="w-5 h-5 rounded-full flex-shrink-0" style={{ background: 'rgba(255,255,255,0.15)' }} />
-              <div className="h-2 rounded" style={{ width: `${30 + (index % 3) * 12}%`, background: 'rgba(255,255,255,0.1)' }} />
+              <div className="h-2 rounded"
+                style={{ width: `${30 + (index % 3) * 12}%`, background: 'rgba(255,255,255,0.1)' }} />
             </div>
           </div>
         </div>
@@ -42,7 +44,7 @@ const SkeletonCard = ({ index }: { index: number }) => {
   );
 };
 
-// Inline ghost card — used during filter change and load-more
+// Ghost card — shown during filter change and load-more (not a full page block)
 const GhostCard = ({ index }: { index: number }) => {
   const color  = PLACEHOLDER_COLORS[index % PLACEHOLDER_COLORS.length];
   const aspect = ASPECT_RATIOS[index % ASPECT_RATIOS.length];
@@ -70,11 +72,15 @@ type WallpaperGridProps = {
   hasMore?: boolean;
 };
 
-export const WallpaperGrid = ({ wallpapers, isLoading, onWallpaperClick, onRefresh, onLoadMore, hasMore = true }: WallpaperGridProps) => {
+export const WallpaperGrid = ({
+  wallpapers, isLoading, onWallpaperClick, onRefresh, onLoadMore, hasMore = true,
+}: WallpaperGridProps) => {
   const [showRefreshToast, setShowRefreshToast] = useState(false);
-  const [loadingMore, setLoadingMore]           = useState(false);
-  const [hasEverLoaded, setHasEverLoaded]       = useState(false);
-  const [pullState, setPullState]               = useState({ pulling: false, distance: 0, refreshing: false, canRefresh: false });
+  const [loadingMore,      setLoadingMore]      = useState(false);
+  const [hasEverLoaded,    setHasEverLoaded]    = useState(false);
+  const [pullState, setPullState] = useState({
+    pulling: false, distance: 0, refreshing: false, canRefresh: false,
+  });
 
   const gridRef            = useRef<HTMLDivElement>(null);
   const pullContainerRef   = useRef<HTMLDivElement>(null);
@@ -87,11 +93,12 @@ export const WallpaperGrid = ({ wallpapers, isLoading, onWallpaperClick, onRefre
   );
   usePrefetch(nextBatchUrls);
 
+  // Once data arrives, mark as ever-loaded — never show full skeleton again
   useEffect(() => {
     if (wallpapers.length > 0 && !hasEverLoaded) setHasEverLoaded(true);
   }, [wallpapers.length]);
 
-  // Load more observer
+  // ── Load more intersection observer ────────────────────────────────────────
   useEffect(() => {
     if (!loadMoreTriggerRef.current || !onLoadMore || !hasMore) return;
     const observer = new IntersectionObserver(
@@ -109,21 +116,31 @@ export const WallpaperGrid = ({ wallpapers, isLoading, onWallpaperClick, onRefre
     return () => observer.disconnect();
   }, [onLoadMore, loadingMore, isLoading, hasMore]);
 
-  // Pull to refresh
+  // ── Pull to refresh ─────────────────────────────────────────────────────────
   const handleTouchStart = (e: TouchEvent) => {
-    if (window.scrollY === 0) { startY.current = e.touches[0].clientY; setPullState(s => ({ ...s, pulling: true })); }
+    if (window.scrollY === 0) {
+      startY.current = e.touches[0].clientY;
+      setPullState(s => ({ ...s, pulling: true }));
+    }
   };
   const handleTouchMove = (e: TouchEvent) => {
     if (!pullState.pulling || window.scrollY > 0) return;
     const distance = Math.max(0, e.touches[0].clientY - startY.current);
-    if (distance > 0) { e.preventDefault(); const d = Math.min(distance * 0.4, 100); setPullState(s => ({ ...s, distance: d, canRefresh: d >= 60 })); }
+    if (distance > 0) {
+      e.preventDefault();
+      const d = Math.min(distance * 0.4, 100);
+      setPullState(s => ({ ...s, distance: d, canRefresh: d >= 60 }));
+    }
   };
   const handleTouchEnd = async () => {
     if (pullState.canRefresh && !pullState.refreshing && onRefresh) {
       setPullState(s => ({ ...s, refreshing: true, distance: 60 }));
       navigator.vibrate?.(50);
-      try { await onRefresh(); setShowRefreshToast(true); setTimeout(() => setShowRefreshToast(false), 2000); }
-      catch { console.error('Refresh failed'); }
+      try {
+        await onRefresh();
+        setShowRefreshToast(true);
+        setTimeout(() => setShowRefreshToast(false), 2000);
+      } catch { console.error('Refresh failed'); }
       setPullState({ pulling: false, distance: 0, refreshing: false, canRefresh: false });
     } else {
       setPullState({ pulling: false, distance: 0, refreshing: false, canRefresh: false });
@@ -144,10 +161,10 @@ export const WallpaperGrid = ({ wallpapers, isLoading, onWallpaperClick, onRefre
   }, [pullState.pulling, pullState.canRefresh, pullState.refreshing, onRefresh]);
 
   // ── LOADING STRATEGY ────────────────────────────────────────────────────────
-  // 1. First ever load (cold) → full skeleton page
-  // 2. Filter change / refresh with no data → inline ghost cards (no full page block)
-  // 3. Normal feed → real cards, images pop in individually; load-more ghost cards inline
-  // 4. Back from detail → hasEverLoaded=true, wallpapers already in state → instant, no skeleton
+  // 1. Cold first load              → full skeleton page (10 cards)
+  // 2. Filter change / empty+loading → inline ghost cards (no full page block)
+  // 3. Empty + not loading           → empty state
+  // 4. Normal / back navigation      → real cards instantly, ghost cards at bottom during load-more
 
   if (!hasEverLoaded && isLoading) {
     return (
@@ -183,16 +200,22 @@ export const WallpaperGrid = ({ wallpapers, isLoading, onWallpaperClick, onRefre
 
   return (
     <>
+      {/* Pull-to-refresh indicator */}
       <div ref={pullContainerRef} className="fixed top-0 left-0 right-0 z-50 pointer-events-none">
         <div className="flex justify-center items-center"
           style={{ transform: `translateY(${pullState.distance - 60}px)`, opacity: pullState.distance / 60, transition: 'opacity 0.2s' }}>
           <div className="mt-4 p-3 rounded-full shadow-xl transition-all duration-300"
-            style={{ backdropFilter: 'blur(12px)', background: pullState.refreshing ? '#3b82f6' : pullState.canRefresh ? '#10b981' : 'rgba(255,255,255,0.2)' }}>
-            <RefreshCw className="w-6 h-6 text-white" style={{ animation: pullState.refreshing ? 'spin 1s linear infinite' : 'none' }} />
+            style={{
+              backdropFilter: 'blur(12px)',
+              background: pullState.refreshing ? '#3b82f6' : pullState.canRefresh ? '#10b981' : 'rgba(255,255,255,0.2)',
+            }}>
+            <RefreshCw className="w-6 h-6 text-white"
+              style={{ animation: pullState.refreshing ? 'spin 1s linear infinite' : 'none' }} />
           </div>
         </div>
       </div>
 
+      {/* Refresh toast */}
       {showRefreshToast && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-emerald-500/90 backdrop-blur-md px-4 py-2 rounded-full shadow-xl"
           style={{ animation: 'slideDown 0.3s ease-out' }}>
@@ -200,6 +223,7 @@ export const WallpaperGrid = ({ wallpapers, isLoading, onWallpaperClick, onRefre
         </div>
       )}
 
+      {/* Main masonry grid */}
       <div ref={gridRef} className="masonry">
         {wallpapers.map((wp, idx) => (
           <WallpaperCard
@@ -210,13 +234,14 @@ export const WallpaperGrid = ({ wallpapers, isLoading, onWallpaperClick, onRefre
             onClick={onWallpaperClick ? () => onWallpaperClick(wp) : undefined}
           />
         ))}
-        {/* Inline ghost cards during load-more — inside the grid, not a spinner below */}
+        {/* Ghost cards during load-more — inside the grid, not a spinner below */}
         {loadingMore && Array.from({ length: 4 }, (_, i) => (
           <GhostCard key={`more-${i}`} index={wallpapers.length + i} />
         ))}
       </div>
 
       {hasMore && <div ref={loadMoreTriggerRef} className="h-1" />}
+
       {!hasMore && wallpapers.length > 0 && (
         <div className="text-center py-8 text-white/40 text-sm">You've reached the end</div>
       )}
