@@ -329,7 +329,7 @@ export const fetchProfiles = async (userIds: string[]) => {
 export const searchProfiles = async (
   query: string, 
   page = 0, 
-  pageSize = 20
+  pageSize = 10
 ) => {
   const supabase = getSupabase();
   const start = page * pageSize;
