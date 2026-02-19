@@ -8,7 +8,7 @@ import { WallpaperGrid } from './components/WallpaperGrid';
 import { GlobalStyles } from './components/GlobalStyles';
 import type { Wallpaper, Filter } from './types';
 
-const ITEMS_PER_PAGE = 15;
+const ITEMS_PER_PAGE = 30;
 
 export default function WallpaperGallery() {
   const [wallpapers,   setWallpapers]   = useState<Wallpaper[]>([]);
