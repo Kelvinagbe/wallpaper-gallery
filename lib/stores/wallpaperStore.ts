@@ -13,7 +13,7 @@ const getSupabase = () => {
 };
 
 // Optimized page size
-const DEFAULT_PAGE_SIZE = 3;
+const DEFAULT_PAGE_SIZE = 2;
 
 // Transform wallpaper from DB to app format
 const transformWallpaper = (wp: any): Wallpaper => ({
