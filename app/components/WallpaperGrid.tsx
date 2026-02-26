@@ -13,7 +13,7 @@ const PLACEHOLDER_COLORS = [
   { bg: '#2e1a1a', shimmer: '#4e1b1b' },
   { bg: '#2e2a1a', shimmer: '#4e3d1b' },
 ];
-const ASPECT_RATIOS = ['140%', '120%', '150%', '125%', '135%'];
+const ASPECT_RATIOS = ['180%', '160%', '190%', '170%', '185%'];
 
 // Full skeleton — only ever shown on cold first load
 const SkeletonCard = ({ index }: { index: number }) => {
