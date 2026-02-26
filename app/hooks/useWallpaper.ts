@@ -227,7 +227,7 @@ export const useTrendingWallpapers = (limit = 24) => {
 export const useWallpapersByCategory = (
   category: string, 
   page = 0, 
-  pageSize = 24
+  pageSize = 2
 ) => {
   const [wallpapers, setWallpapers] = useState<Wallpaper[]>([]);
   const [hasMore, setHasMore] = useState(false);
