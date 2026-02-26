@@ -44,8 +44,8 @@ const transform = (wp: any) => ({
 //   userId   = user UUID         (default: none)
 export async function GET(request: NextRequest) {
   try {
-    const supabase = createClient();
-    const { searchParams } = request.nextUrl;
+  const supabase = await createClient();
+  const { searchParams } = request.nextUrl;
 
     const page     = parseInt(searchParams.get('page')     || '0');
     const limit    = Math.min(parseInt(searchParams.get('limit') || '20'), 50);
