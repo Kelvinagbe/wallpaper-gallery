@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter, useParams } from 'next/navigation';
 import Image from 'next/image';
-import { ChevronLeft, Eye, Heart, Download, Share2, Bookmark, Check, Link as LinkIcon, Loader2 } from 'lucide-react';
+import { ChevronLeft, Eye, Heart, Download, Share2, Bookmark, Check, Link as LinkIcon, Loader2, Maximize2, Minimize2 } from 'lucide-react';
 import { VerifiedBadge } from '@/app/components/VerifiedBadge';
 import { LoginPromptModal } from '@/app/components/LoginPromptModal';
 import { createClient } from '@/lib/supabase/client';
@@ -12,119 +12,84 @@ import { useAuth } from '@/app/components/AuthProvider';
 import { fetchWallpaperById, incrementViews, incrementDownloads } from '@/lib/stores/wallpaperStore';
 import type { Wallpaper } from '@/app/types';
 
-const detailCache = new Map<string, {
-  liked: boolean; saved: boolean; following: boolean;
-  likeCount: number; timestamp: number;
-}>();
+// ─── Caches & helpers ─────────────────────────────────────────────────────────
+const detailCache = new Map<string, { liked: boolean; saved: boolean; following: boolean; likeCount: number; timestamp: number }>();
 const CACHE_TTL = 30_000;
-
-// ─── Persistent image cache (shared with WallpaperCard) ──────────────────────
-// If the user tapped a card from the feed, that image URL is already cached —
-// so the detail page shows it instantly with no skeleton.
 const imgCache = (() => {
   const mem = new Set<string>();
-  try {
-    const saved = sessionStorage.getItem('__wpcache__');
-    if (saved) (JSON.parse(saved) as string[]).forEach(u => mem.add(u));
-  } catch { /* SSR / quota */ }
+  try { (JSON.parse(sessionStorage.getItem('__wpcache__') || '[]') as string[]).forEach(u => mem.add(u)); } catch {}
   return {
-    has: (url: string) => mem.has(url),
-    add: (url: string) => {
-      mem.add(url);
-      try { sessionStorage.setItem('__wpcache__', JSON.stringify([...mem].slice(-300))); } catch { }
-    },
+    has: (u: string) => mem.has(u),
+    add: (u: string) => { mem.add(u); try { sessionStorage.setItem('__wpcache__', JSON.stringify([...mem].slice(-300))); } catch {} },
   };
 })();
+const fmt = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+const SH = 'shimmer-light'; // shimmer class shorthand
 
 // ─── CopyLinkModal ────────────────────────────────────────────────────────────
 const CopyLinkModal = ({ isOpen, onClose, link }: { isOpen: boolean; onClose: () => void; link: string }) => {
   const [copied, setCopied] = useState(false);
   if (!isOpen) return null;
+  const copy = async () => {
+    await navigator.clipboard.writeText(link);
+    setCopied(true);
+    setTimeout(() => { setCopied(false); setTimeout(onClose, 400); }, 1500);
+  };
   return createPortal(
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[200] flex items-end" onClick={onClose}>
-      <div className="w-full bg-gradient-to-b from-zinc-900 to-black rounded-t-3xl p-6 space-y-4" onClick={e => e.stopPropagation()}>
-        <div className="w-12 h-1.5 bg-white/20 rounded-full mx-auto" />
-        <h3 className="text-xl font-bold text-white text-center">Copy Link</h3>
-        <div className="bg-white/5 rounded-xl p-4 flex items-center gap-3 border border-white/10">
-          <LinkIcon className="w-5 h-5 text-white/60 flex-shrink-0" />
-          <p className="text-sm text-white/80 flex-1 truncate">{link}</p>
+    <div className="fixed inset-0 z-[200] flex items-end" style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(8px)' }} onClick={onClose}>
+      <div className="w-full rounded-t-3xl p-6 space-y-4" style={{ background: '#fff', boxShadow: '0 -8px 40px rgba(0,0,0,0.12)' }} onClick={e => e.stopPropagation()}>
+        <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto" />
+        <h3 className="text-lg font-bold text-gray-900 text-center tracking-tight">Share Link</h3>
+        <div className="flex items-center gap-3 px-4 py-3 rounded-2xl" style={{ background: '#f5f5f5' }}>
+          <LinkIcon className="w-4 h-4 text-gray-400 flex-shrink-0" />
+          <p className="text-sm text-gray-600 flex-1 truncate">{link}</p>
         </div>
-        <button
-          onClick={async () => {
-            await navigator.clipboard.writeText(link);
-            setCopied(true);
-            setTimeout(() => { setCopied(false); setTimeout(onClose, 500); }, 1500);
-          }}
-          className={`w-full py-4 rounded-full font-semibold transition-all ${copied ? 'bg-emerald-500 text-white' : 'bg-white text-black hover:bg-gray-200'}`}
-        >
-          {copied ? <span className="flex items-center justify-center gap-2"><Check className="w-5 h-5" />Copied!</span> : 'Copy Link'}
+        <button onClick={copy} className="w-full py-4 rounded-2xl font-semibold text-sm transition-all active:scale-[0.98]" style={{ background: copied ? '#10b981' : '#111', color: '#fff' }}>
+          {copied ? <span className="flex items-center justify-center gap-2"><Check className="w-4 h-4" />Copied!</span> : 'Copy Link'}
         </button>
-        <button onClick={onClose} className="w-full py-4 bg-white/5 hover:bg-white/10 rounded-full font-semibold text-white">Cancel</button>
+        <button onClick={onClose} className="w-full py-3.5 rounded-2xl font-medium text-sm text-gray-500 active:scale-[0.98]" style={{ background: '#f5f5f5' }}>Cancel</button>
       </div>
     </div>,
     document.body,
   );
 };
 
-// ─── Floating hearts ──────────────────────────────────────────────────────────
+// ─── FloatingHearts ───────────────────────────────────────────────────────────
 const FloatingHearts = ({ hearts }: { hearts: Array<{ id: number; x: number; y: number; angle: number; distance: number }> }) => {
-  if (typeof window === 'undefined' || hearts.length === 0) return null;
-  return createPortal(
-    <>
-      <style>{`
-        @keyframes floatHeart{0%{transform:translate(0,0) scale(0);opacity:0}10%{opacity:1;transform:scale(1) rotate(var(--rotate))}50%{transform:translate(var(--tx),var(--ty)) scale(1.3) rotate(var(--rotate));opacity:.95}100%{transform:translate(calc(var(--tx)*1.5),calc(var(--ty)*1.8)) scale(.2) rotate(var(--rotate));opacity:0}}
-        .heart-float{animation:floatHeart 1.2s cubic-bezier(.25,.46,.45,.94) forwards;pointer-events:none;position:fixed;z-index:9999;filter:drop-shadow(0 4px 12px rgba(244,63,94,.5))}
-      `}</style>
-      {hearts.map((h, i) => {
-        const rad = (h.angle * Math.PI) / 180;
-        return (
-          <Heart key={h.id} className="heart-float text-rose-500 fill-rose-500"
-            style={{ left: `${h.x}px`, top: `${h.y}px`, width: 28, height: 28,
-              '--tx': `${Math.cos(rad) * h.distance}px`,
-              '--ty': `${Math.sin(rad) * h.distance - 50}px`,
-              '--rotate': `${(Math.random() - .5) * 45}deg`,
-              animationDelay: `${i * .08}s`,
-            } as React.CSSProperties}
-          />
-        );
-      })}
-    </>,
-    document.body,
-  );
+  if (typeof window === 'undefined' || !hearts.length) return null;
+  return createPortal(<>
+    <style>{`@keyframes floatHeart{0%{transform:translate(0,0) scale(0);opacity:0}10%{opacity:1;transform:scale(1) rotate(var(--rotate))}50%{transform:translate(var(--tx),var(--ty)) scale(1.3) rotate(var(--rotate));opacity:.95}100%{transform:translate(calc(var(--tx)*1.5),calc(var(--ty)*1.8)) scale(.2) rotate(var(--rotate));opacity:0}}.heart-float{animation:floatHeart 1.2s cubic-bezier(.25,.46,.45,.94) forwards;pointer-events:none;position:fixed;z-index:9999;filter:drop-shadow(0 4px 12px rgba(244,63,94,.5))}`}</style>
+    {hearts.map((h, i) => {
+      const rad = (h.angle * Math.PI) / 180;
+      return <Heart key={h.id} className="heart-float text-rose-500 fill-rose-500" style={{ left: `${h.x}px`, top: `${h.y}px`, width: 28, height: 28, '--tx': `${Math.cos(rad) * h.distance}px`, '--ty': `${Math.sin(rad) * h.distance - 50}px`, '--rotate': `${(Math.random() - .5) * 45}deg`, animationDelay: `${i * .08}s` } as React.CSSProperties} />;
+    })}
+  </>, document.body);
 };
-
-const Shimmer = ({ className }: { className: string }) => (
-  <div className={`shimmer rounded ${className}`} />
-);
-
-const fmt = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function WallpaperDetailPage() {
-  const router   = useRouter();
-  const params   = useParams();
-  const id       = params?.id as string;
+  const router = useRouter();
+  const { id } = useParams() as { id: string };
   const { session } = useAuth();
   const supabase = useMemo(() => createClient(), []);
 
-  const [wallpaper,   setWallpaper]   = useState<Wallpaper | null>(null);
-  const [pageLoading, setPageLoading] = useState(true);
-  const [imgSize,     setImgSize]     = useState({ width: 1080, height: 1920 });
-  const [counts,      setCounts]      = useState({ likes: 0, downloads: 0, views: 0 });
-  const [hearts,      setHearts]      = useState<Array<{ id: number; x: number; y: number; angle: number; distance: number }>>([]);
-  const [state, setState] = useState({
+  const [wp, setWp] = useState<Wallpaper | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [imgSize, setImgSize] = useState({ width: 1080, height: 1920 });
+  const [counts, setCounts] = useState({ likes: 0, downloads: 0, views: 0 });
+  const [hearts, setHearts] = useState<Array<{ id: number; x: number; y: number; angle: number; distance: number }>>([]);
+  const [full, setFull] = useState(false);
+  const [imgLoaded, setImgLoaded] = useState(false);
+  const [st, setSt] = useState({
     liked: false, saved: false, following: false,
     downloading: false, downloaded: false, dataLoading: true,
-    showLoginPrompt: false, loginAction: '', isCopyModalOpen: false, timeAgo: '',
+    showLogin: false, loginAction: '', copyOpen: false, timeAgo: '',
   });
 
-  // Check if image was already cached from the feed grid — instant render
-  const [imgLoaded, setImgLoaded] = useState(false);
+  const likeRef = useRef<HTMLButtonElement>(null);
+  const viewedRef = useRef(false);
 
-  const likeButtonRef = useRef<HTMLButtonElement>(null);
-  const viewedRef     = useRef(false);
-
-  // ── Fetch wallpaper ─────────────────────────────────────────────────────────
+  // Fetch wallpaper
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
@@ -133,367 +98,264 @@ export default function WallpaperDetailPage() {
         const data = await fetchWallpaperById(id);
         if (!data) { router.replace('/'); return; }
         if (cancelled) return;
-        setWallpaper(data);
-        // If this image was cached from the grid card, mark loaded immediately
+        setWp(data);
         if (imgCache.has(data.url)) setImgLoaded(true);
         setCounts({ likes: data.likes, downloads: data.downloads, views: data.views });
       } catch { router.replace('/'); }
-      finally { if (!cancelled) setPageLoading(false); }
+      finally { if (!cancelled) setLoading(false); }
     })();
     return () => { cancelled = true; };
   }, [id]);
 
-  // ── Time ago ────────────────────────────────────────────────────────────────
+  // Time ago
   useEffect(() => {
-    if (!wallpaper?.createdAt) return;
+    if (!wp?.createdAt) return;
     const compute = () => {
-      const diff = Math.floor((Date.now() - new Date(wallpaper.createdAt!).getTime()) / 1000);
-      const timeAgo =
-        diff < 60      ? 'Just now'
-        : diff < 3600  ? `${Math.floor(diff / 60)}m ago`
-        : diff < 86400 ? `${Math.floor(diff / 3600)}h ago`
-        : diff < 604800? `${Math.floor(diff / 86400)}d ago`
-        :                `${Math.floor(diff / 604800)}w ago`;
-      setState(s => ({ ...s, timeAgo }));
+      const d = Math.floor((Date.now() - new Date(wp.createdAt!).getTime()) / 1000);
+      setSt(s => ({ ...s, timeAgo: d < 60 ? 'Just now' : d < 3600 ? `${Math.floor(d / 60)}m ago` : d < 86400 ? `${Math.floor(d / 3600)}h ago` : d < 604800 ? `${Math.floor(d / 86400)}d ago` : `${Math.floor(d / 604800)}w ago` }));
     };
-    compute();
-    const t = setInterval(compute, 60_000);
-    return () => clearInterval(t);
-  }, [wallpaper?.createdAt]);
+    compute(); const t = setInterval(compute, 60_000); return () => clearInterval(t);
+  }, [wp?.createdAt]);
 
-  // ── User interaction state + view increment ─────────────────────────────────
+  // User state + view increment
   useEffect(() => {
-    if (!wallpaper) return;
-    if (!session) { setState(s => ({ ...s, dataLoading: false })); return; }
-    const userId   = session.user.id;
-    const cacheKey = `${wallpaper.id}-${userId}`;
-    const cached   = detailCache.get(cacheKey);
+    if (!wp) return;
+    if (!session) { setSt(s => ({ ...s, dataLoading: false })); return; }
+    const uid = session.user.id, key = `${wp.id}-${uid}`, cached = detailCache.get(key);
     if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-      setState(s => ({ ...s, liked: cached.liked, saved: cached.saved, following: cached.following, dataLoading: false }));
-      setCounts(c => ({ ...c, likes: cached.likeCount }));
-      return;
+      setSt(s => ({ ...s, liked: cached.liked, saved: cached.saved, following: cached.following, dataLoading: false }));
+      setCounts(c => ({ ...c, likes: cached.likeCount })); return;
     }
     (async () => {
-      if (!viewedRef.current) {
-        viewedRef.current = true;
-        await incrementViews(wallpaper.id);
-        setCounts(c => ({ ...c, views: c.views + 1 }));
-      }
-      const [likeRes, saveRes, followRes, likeCountRes] = await Promise.all([
-        supabase.from('likes').select('id').eq('user_id', userId).eq('wallpaper_id', wallpaper.id).maybeSingle(),
-        supabase.from('saves').select('id').eq('user_id', userId).eq('wallpaper_id', wallpaper.id).maybeSingle(),
-        wallpaper.userId
-          ? supabase.from('follows').select('id').eq('follower_id', userId).eq('following_id', wallpaper.userId).maybeSingle()
-          : Promise.resolve({ data: null }),
-        supabase.from('likes').select('id', { count: 'exact' }).eq('wallpaper_id', wallpaper.id),
+      if (!viewedRef.current) { viewedRef.current = true; await incrementViews(wp.id); setCounts(c => ({ ...c, views: c.views + 1 })); }
+      const [likeR, saveR, followR, countR] = await Promise.all([
+        supabase.from('likes').select('id').eq('user_id', uid).eq('wallpaper_id', wp.id).maybeSingle(),
+        supabase.from('saves').select('id').eq('user_id', uid).eq('wallpaper_id', wp.id).maybeSingle(),
+        wp.userId ? supabase.from('follows').select('id').eq('follower_id', uid).eq('following_id', wp.userId).maybeSingle() : Promise.resolve({ data: null }),
+        supabase.from('likes').select('id', { count: 'exact' }).eq('wallpaper_id', wp.id),
       ]);
-      const next = {
-        liked: !!likeRes.data, saved: !!saveRes.data, following: !!followRes.data,
-        likeCount: likeCountRes.count ?? 0, timestamp: Date.now(),
-      };
-      setState(s => ({ ...s, ...next, dataLoading: false }));
+      const next = { liked: !!likeR.data, saved: !!saveR.data, following: !!followR.data, likeCount: countR.count ?? 0, timestamp: Date.now() };
+      setSt(s => ({ ...s, ...next, dataLoading: false }));
       setCounts(c => ({ ...c, likes: next.likeCount }));
-      detailCache.set(cacheKey, next);
+      detailCache.set(key, next);
     })();
-  }, [wallpaper?.id, session?.user?.id]);
+  }, [wp?.id, session?.user?.id]);
 
-  // ── Realtime like count ─────────────────────────────────────────────────────
+  // Realtime likes
   useEffect(() => {
-    if (!wallpaper) return;
-    const channel = supabase
-      .channel(`wallpaper-likes-${wallpaper.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'likes', filter: `wallpaper_id=eq.${wallpaper.id}` },
-        async () => {
-          const { count } = await supabase.from('likes').select('id', { count: 'exact' }).eq('wallpaper_id', wallpaper.id);
-          setCounts(c => ({ ...c, likes: count ?? 0 }));
-        })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [wallpaper?.id]);
+    if (!wp) return;
+    const ch = supabase.channel(`wp-likes-${wp.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'likes', filter: `wallpaper_id=eq.${wp.id}` }, async () => {
+        const { count } = await supabase.from('likes').select('id', { count: 'exact' }).eq('wallpaper_id', wp.id);
+        setCounts(c => ({ ...c, likes: count ?? 0 }));
+      }).subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [wp?.id]);
 
-  const requireAuth = (action: string, cb: () => void) => {
-    if (!session) setState(s => ({ ...s, loginAction: action, showLoginPrompt: true }));
-    else cb();
-  };
+  const auth = (action: string, cb: () => void) =>
+    !session ? setSt(s => ({ ...s, loginAction: action, showLogin: true })) : cb();
 
-  // ── Like ────────────────────────────────────────────────────────────────────
-  const handleLike = () => requireAuth('like wallpapers', async () => {
-    if (!wallpaper) return;
-    const newLiked = !state.liked;
-    setState(s => ({ ...s, liked: newLiked }));
-    setCounts(c => ({ ...c, likes: newLiked ? c.likes + 1 : Math.max(0, c.likes - 1) }));
+  // Like
+  const handleLike = () => auth('like wallpapers', async () => {
+    if (!wp) return;
+    const v = !st.liked;
+    setSt(s => ({ ...s, liked: v }));
+    setCounts(c => ({ ...c, likes: v ? c.likes + 1 : Math.max(0, c.likes - 1) }));
     navigator.vibrate?.(50);
-    const cacheKey = `${wallpaper.id}-${session!.user.id}`;
-    const cached   = detailCache.get(cacheKey);
-    if (cached) detailCache.set(cacheKey, { ...cached, liked: newLiked, likeCount: newLiked ? cached.likeCount + 1 : cached.likeCount - 1, timestamp: Date.now() });
-    if (newLiked && likeButtonRef.current) {
-      const r = likeButtonRef.current.getBoundingClientRect();
-      setHearts(Array.from({ length: 8 }, (_, i) => ({
-        id: Date.now() + i,
-        x: r.left + r.width / 2 - 14,
-        y: r.top + r.height / 2 - 14,
-        angle: -90 + (i * 270 / 7) + (Math.random() - .5) * 20,
-        distance: 80 + Math.random() * 60,
-      })));
+    const key = `${wp.id}-${session!.user.id}`, cached = detailCache.get(key);
+    if (cached) detailCache.set(key, { ...cached, liked: v, likeCount: v ? cached.likeCount + 1 : cached.likeCount - 1, timestamp: Date.now() });
+    if (v && likeRef.current) {
+      const r = likeRef.current.getBoundingClientRect();
+      setHearts(Array.from({ length: 8 }, (_, i) => ({ id: Date.now() + i, x: r.left + r.width / 2 - 14, y: r.top + r.height / 2 - 14, angle: -90 + (i * 270 / 7) + (Math.random() - .5) * 20, distance: 80 + Math.random() * 60 })));
       setTimeout(() => setHearts([]), 1400);
     }
-    if (newLiked) await supabase.from('likes').insert({ user_id: session!.user.id, wallpaper_id: wallpaper.id });
-    else          await supabase.from('likes').delete().eq('user_id', session!.user.id).eq('wallpaper_id', wallpaper.id);
+    v ? await supabase.from('likes').insert({ user_id: session!.user.id, wallpaper_id: wp.id })
+      : await supabase.from('likes').delete().eq('user_id', session!.user.id).eq('wallpaper_id', wp.id);
   });
 
-  // ── Save ────────────────────────────────────────────────────────────────────
-  const handleSave = () => requireAuth('save wallpapers', async () => {
-    if (!wallpaper) return;
-    const newSaved = !state.saved;
-    setState(s => ({ ...s, saved: newSaved }));
-    navigator.vibrate?.(50);
-    const cacheKey = `${wallpaper.id}-${session!.user.id}`;
-    const cached   = detailCache.get(cacheKey);
-    if (cached) detailCache.set(cacheKey, { ...cached, saved: newSaved, timestamp: Date.now() });
-    if (newSaved) await supabase.from('saves').insert({ user_id: session!.user.id, wallpaper_id: wallpaper.id });
-    else          await supabase.from('saves').delete().eq('user_id', session!.user.id).eq('wallpaper_id', wallpaper.id);
+  // Save
+  const handleSave = () => auth('save wallpapers', async () => {
+    if (!wp) return;
+    const v = !st.saved; setSt(s => ({ ...s, saved: v })); navigator.vibrate?.(50);
+    const key = `${wp.id}-${session!.user.id}`, cached = detailCache.get(key);
+    if (cached) detailCache.set(key, { ...cached, saved: v, timestamp: Date.now() });
+    v ? await supabase.from('saves').insert({ user_id: session!.user.id, wallpaper_id: wp.id })
+      : await supabase.from('saves').delete().eq('user_id', session!.user.id).eq('wallpaper_id', wp.id);
   });
 
-  // ── Follow ──────────────────────────────────────────────────────────────────
-  const handleFollow = () => requireAuth('follow users', async () => {
-    if (!wallpaper?.userId) return;
-    const newFollowing = !state.following;
-    setState(s => ({ ...s, following: newFollowing }));
-    navigator.vibrate?.(50);
-    const cacheKey = `${wallpaper.id}-${session!.user.id}`;
-    const cached   = detailCache.get(cacheKey);
-    if (cached) detailCache.set(cacheKey, { ...cached, following: newFollowing, timestamp: Date.now() });
-    if (newFollowing) await supabase.from('follows').insert({ follower_id: session!.user.id, following_id: wallpaper.userId });
-    else              await supabase.from('follows').delete().eq('follower_id', session!.user.id).eq('following_id', wallpaper.userId);
+  // Follow
+  const handleFollow = () => auth('follow users', async () => {
+    if (!wp?.userId) return;
+    const v = !st.following; setSt(s => ({ ...s, following: v })); navigator.vibrate?.(50);
+    const key = `${wp.id}-${session!.user.id}`, cached = detailCache.get(key);
+    if (cached) detailCache.set(key, { ...cached, following: v, timestamp: Date.now() });
+    v ? await supabase.from('follows').insert({ follower_id: session!.user.id, following_id: wp.userId })
+      : await supabase.from('follows').delete().eq('follower_id', session!.user.id).eq('following_id', wp.userId);
   });
 
-  // ── Download (real blob, not redirect) ─────────────────────────────────────
+  // Download
   const handleDownload = async () => {
-    if (!wallpaper || state.downloading || state.downloaded) return;
-    setState(s => ({ ...s, downloading: true }));
-    navigator.vibrate?.(50);
+    if (!wp || st.downloading || st.downloaded) return;
+    setSt(s => ({ ...s, downloading: true })); navigator.vibrate?.(50);
     try {
-      await incrementDownloads(wallpaper.id);
-      setCounts(c => ({ ...c, downloads: c.downloads + 1 }));
-      const res  = await fetch(wallpaper.url);
-      const blob = await res.blob();
-      const url  = URL.createObjectURL(blob);
-      const a    = Object.assign(document.createElement('a'), { href: url, download: `${wallpaper.title || 'wallpaper'}.jpg` });
-      a.click();
+      await incrementDownloads(wp.id); setCounts(c => ({ ...c, downloads: c.downloads + 1 }));
+      const blob = await fetch(wp.url).then(r => r.blob()), url = URL.createObjectURL(blob);
+      Object.assign(document.createElement('a'), { href: url, download: `${wp.title || 'wallpaper'}.jpg` }).click();
       URL.revokeObjectURL(url);
-      setState(s => ({ ...s, downloading: false, downloaded: true }));
-      navigator.vibrate?.(100);
-    } catch {
-      setState(s => ({ ...s, downloading: false }));
-    }
+      setSt(s => ({ ...s, downloading: false, downloaded: true })); navigator.vibrate?.(100);
+    } catch { setSt(s => ({ ...s, downloading: false })); }
   };
 
-  // ── Share ───────────────────────────────────────────────────────────────────
-  const handleShare = () => {
-    if (navigator.share) navigator.share({ title: wallpaper?.title, url: window.location.href })
-      .catch(() => setState(s => ({ ...s, isCopyModalOpen: true })));
-    else setState(s => ({ ...s, isCopyModalOpen: true }));
-  };
+  const handleShare = () => navigator.share
+    ? navigator.share({ title: wp?.title, url: window.location.href }).catch(() => setSt(s => ({ ...s, copyOpen: true })))
+    : setSt(s => ({ ...s, copyOpen: true }));
 
-  // ─────────────────────────────────────────────────────────────────────────────
+  // Reusable class strings
+  const overlayBtn = 'w-11 h-11 rounded-full flex items-center justify-center shadow-lg transition-all duration-200 active:scale-90';
+  const actionBtn  = 'flex-1 py-3.5 rounded-2xl flex items-center justify-center gap-2 font-semibold text-sm transition-all active:scale-[0.98]';
+
   return (
-    <div className="min-h-screen bg-black text-white overflow-x-hidden">
+    <div className="min-h-screen" style={{ background: '#fff' }}>
       <style>{`
-        @keyframes spin{to{transform:rotate(360deg)}}
-        @keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
-        .spinner{animation:spin .6s linear infinite}
-        .shimmer{background:linear-gradient(90deg,#ffffff0a 25%,#ffffff14 50%,#ffffff0a 75%);background-size:200% 100%;animation:shimmer 1.5s infinite}
+        @keyframes shimmer-light{0%{background-position:-200% 0}100%{background-position:200% 0}}
+        .shimmer-light{background:linear-gradient(90deg,#f3f4f6 25%,#e9eaec 50%,#f3f4f6 75%);background-size:200% 100%;animation:shimmer-light 1.5s infinite}
+        @keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+        .fade-up{animation:fadeUp 0.4s ease forwards}
       `}</style>
 
       <FloatingHearts hearts={hearts} />
-      <LoginPromptModal isOpen={state.showLoginPrompt} onClose={() => setState(s => ({ ...s, showLoginPrompt: false }))} action={state.loginAction} />
-      <CopyLinkModal isOpen={state.isCopyModalOpen} onClose={() => setState(s => ({ ...s, isCopyModalOpen: false }))} link={typeof window !== 'undefined' ? window.location.href : ''} />
+      <LoginPromptModal isOpen={st.showLogin} onClose={() => setSt(s => ({ ...s, showLogin: false }))} action={st.loginAction} />
+      <CopyLinkModal isOpen={st.copyOpen} onClose={() => setSt(s => ({ ...s, copyOpen: false }))} link={typeof window !== 'undefined' ? window.location.href : ''} />
 
-      {/* ── FIXED HEADER ──────────────────────────────────────────────────────── */}
-      <header className="fixed top-0 left-0 right-0 z-50 flex items-center px-4 pt-4 pb-2 bg-gradient-to-b from-black/70 to-transparent">
-        <button
-          onClick={() => router.back()}
-          className="w-10 h-10 rounded-xl bg-white/90 flex items-center justify-center shadow-lg active:scale-95 transition-transform"
-          aria-label="Go back"
-        >
+      {/* ── Header ── */}
+      <header className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 pt-4 pb-3"
+        style={{ background: full ? 'linear-gradient(to bottom,rgba(0,0,0,0.5),transparent)' : 'linear-gradient(to bottom,rgba(255,255,255,0.95),rgba(255,255,255,0))' }}>
+        <button onClick={() => router.back()} className="w-10 h-10 rounded-xl bg-white/90 flex items-center justify-center shadow-lg active:scale-95 transition-transform" aria-label="Go back">
           <ChevronLeft className="w-5 h-5 text-zinc-900" strokeWidth={2.5} />
         </button>
+        {!loading && wp && (
+          <button onClick={() => setFull(v => !v)} className="w-10 h-10 rounded-xl flex items-center justify-center shadow-lg active:scale-95 transition-transform" style={{ background: 'rgba(255,255,255,0.9)' }} aria-label={full ? 'Exit fullscreen' : 'Fullscreen'}>
+            {full ? <Minimize2 className="w-5 h-5 text-zinc-900" strokeWidth={2.5} /> : <Maximize2 className="w-5 h-5 text-zinc-900" strokeWidth={2.5} />}
+          </button>
+        )}
       </header>
 
-      {/* ── IMAGE — contained, with padding + radius (not full bleed) ─────────── */}
-      <div className="pt-16 px-4">
-        {pageLoading ? (
-          <div className="w-full shimmer rounded-3xl" style={{ height: '70vh' }} />
-        ) : (
-          <div className="relative w-full rounded-3xl overflow-hidden bg-zinc-900 shadow-2xl">
-
-            {/* Placeholder while image loads — hidden instantly if cached */}
-            {!imgLoaded && (
-              <div className="absolute inset-0 shimmer rounded-3xl" />
-            )}
-
-            {/*
-              Natural aspect ratio image — full width of the contained card,
-              natural height (no crop). Shows entire wallpaper like Pinterest detail.
-            */}
-            <Image
-              src={wallpaper!.url}
-              alt={wallpaper!.title}
-              width={imgSize.width}
-              height={imgSize.height}
-              priority
-              className={`w-full h-auto block transition-opacity duration-300 ${imgLoaded ? 'opacity-100' : 'opacity-0'}`}
-              sizes="(max-width: 768px) 100vw, 600px"
-              onLoad={e => {
-                const img = e.currentTarget as HTMLImageElement;
-                setImgSize({ width: img.naturalWidth || 1080, height: img.naturalHeight || 1920 });
-                imgCache.add(wallpaper!.url);
-                setImgLoaded(true);
-              }}
+      {/* ── Image ── */}
+      {loading
+        ? <div className={`w-full ${SH}`} style={{ height: '72vh', borderRadius: '0 0 28px 28px' }} />
+        : <div className="relative w-full overflow-hidden transition-all duration-300" style={{ borderRadius: full ? 0 : '0 0 28px 28px', background: '#f3f4f6' }}>
+            {!imgLoaded && <div className={`absolute inset-0 ${SH}`} style={{ borderRadius: full ? 0 : '0 0 28px 28px' }} />}
+            <Image src={wp!.url} alt={wp!.title} width={imgSize.width} height={imgSize.height} priority
+              className="w-full h-auto block transition-opacity duration-300" style={{ opacity: imgLoaded ? 1 : 0 }}
+              sizes="(max-width:768px) 100vw, 600px"
+              onLoad={e => { const i = e.currentTarget as HTMLImageElement; setImgSize({ width: i.naturalWidth || 1080, height: i.naturalHeight || 1920 }); imgCache.add(wp!.url); setImgLoaded(true); }}
             />
-
-            {/* Like count — bottom left over image */}
-            {imgLoaded && counts.likes > 0 && (
-              <div className="absolute bottom-3 left-3 flex items-center gap-1 bg-black/40 backdrop-blur-sm px-2.5 py-1 rounded-full">
-                <Heart className="w-3.5 h-3.5 text-rose-400 fill-rose-400" />
-                <span className="text-white text-xs font-semibold">{fmt(counts.likes)}</span>
-              </div>
-            )}
-
-            {/* ── Like + Save — bottom right, SMALLER buttons ─────────────────── */}
-            {imgLoaded && (
-              <div className="absolute bottom-3 right-3 flex flex-col gap-2">
-                <button
-                  ref={likeButtonRef}
-                  onClick={handleLike}
-                  className={`w-10 h-10 rounded-full flex items-center justify-center shadow-lg transition-all duration-200 active:scale-90 ${state.liked ? 'bg-rose-500' : 'bg-white/90 backdrop-blur-sm'}`}
-                  aria-label="Like"
-                >
-                  <Heart className={`w-5 h-5 transition-all ${state.liked ? 'text-white fill-white' : 'text-zinc-900'}`} />
+            {imgLoaded && <>
+              {counts.likes > 0 && (
+                <div className="absolute bottom-4 left-4 flex items-center gap-1.5 px-3 py-1.5 rounded-full" style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(8px)' }}>
+                  <Heart className="w-3.5 h-3.5 text-rose-400 fill-rose-400" />
+                  <span className="text-white text-xs font-semibold">{fmt(counts.likes)}</span>
+                </div>
+              )}
+              <div className="absolute bottom-4 right-4 flex flex-col gap-2.5">
+                <button ref={likeRef} onClick={handleLike} className={overlayBtn} style={{ background: st.liked ? '#f43f5e' : 'rgba(255,255,255,0.92)' }} aria-label="Like">
+                  <Heart className="w-5 h-5 transition-all" style={{ color: st.liked ? '#fff' : '#111', fill: st.liked ? '#fff' : 'none' }} />
                 </button>
-                <button
-                  onClick={handleSave}
-                  className={`w-10 h-10 rounded-full flex items-center justify-center shadow-lg transition-all duration-200 active:scale-90 ${state.saved ? 'bg-blue-500' : 'bg-white/90 backdrop-blur-sm'}`}
-                  aria-label="Save"
-                >
-                  <Bookmark className={`w-4.5 h-4.5 transition-all ${state.saved ? 'text-white fill-white' : 'text-zinc-900'}`} />
+                <button onClick={handleSave} className={overlayBtn} style={{ background: st.saved ? '#3b82f6' : 'rgba(255,255,255,0.92)' }} aria-label="Save">
+                  <Bookmark className="w-5 h-5 transition-all" style={{ color: st.saved ? '#fff' : '#111', fill: st.saved ? '#fff' : 'none' }} />
                 </button>
               </div>
-            )}
+            </>}
           </div>
-        )}
-      </div>
+      }
 
-     {/* ── INFO SECTION ─────────────────────────────────────────────────────── */}
-      <div className="px-4 pt-5 pb-28">
+      {/* ── Info ── */}
+      <div className="px-5 pt-6 pb-36 fade-up">
 
         {/* User row */}
-        <div className="flex items-center gap-3 mb-4">
-          {pageLoading ? (
-            <>
-              <Shimmer className="w-11 h-11 rounded-full" />
-              <div className="flex-1"><Shimmer className="h-4 w-32 mb-2" /><Shimmer className="h-3 w-20" /></div>
-              <Shimmer className="w-20 h-9 rounded-full" />
-            </>
-          ) : (
-            <>
-              <button
-                onClick={() => router.push(`/user/${wallpaper!.userId}`)}
-                className="flex items-center gap-3 flex-1 bg-transparent border-none cursor-pointer p-0 text-left"
-              >
-                <div className="relative w-11 h-11 rounded-full overflow-hidden flex-shrink-0 border-2 border-white/15">
-                  <Image src={wallpaper!.userAvatar} alt={wallpaper!.uploadedBy} fill className="object-cover" sizes="44px" />
+        <div className="flex items-center gap-3 mb-5">
+          {loading ? <>
+            <div className={`w-11 h-11 rounded-full ${SH} flex-shrink-0`} />
+            <div className="flex-1"><div className={`h-4 w-32 ${SH} rounded-lg mb-2`} /><div className={`h-3 w-20 ${SH} rounded-lg`} /></div>
+            <div className={`w-20 h-9 ${SH} rounded-full`} />
+          </> : <>
+            <button onClick={() => router.push(`/user/${wp!.userId}`)} className="flex items-center gap-3 flex-1 bg-transparent border-none cursor-pointer p-0 text-left">
+              <div className="relative w-11 h-11 rounded-full overflow-hidden flex-shrink-0" style={{ border: '2px solid #e5e7eb' }}>
+                <Image src={wp!.userAvatar} alt={wp!.uploadedBy} fill className="object-cover" sizes="44px" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-semibold text-[15px]" style={{ color: '#111' }}>{wp!.uploadedBy}</span>
+                  {wp!.verified && <VerifiedBadge size="sm" />}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-white font-semibold text-[15px]">{wallpaper!.uploadedBy}</span>
-                    {wallpaper!.verified && <VerifiedBadge size="sm" />}
-                  </div>
-                  <span className="text-white/50 text-[13px]">{state.timeAgo || 'Just now'}</span>
-                </div>
-              </button>
-
-              {state.dataLoading ? (
-                <Shimmer className="w-20 h-9 rounded-full" />
-              ) : (
-                <button
-                  onClick={handleFollow}
-                  className={`px-5 py-2 rounded-full text-sm font-semibold flex-shrink-0 transition-all active:scale-95 ${state.following ? 'border border-white/25 text-white bg-transparent' : 'bg-white text-black'}`}
-                >
-                  {state.following ? 'Following' : 'Follow'}
+                <span className="text-[13px]" style={{ color: '#9ca3af' }}>{st.timeAgo || 'Just now'}</span>
+              </div>
+            </button>
+            {st.dataLoading
+              ? <div className={`w-20 h-9 rounded-full ${SH}`} />
+              : <button onClick={handleFollow} className="px-5 py-2 rounded-full text-sm font-semibold flex-shrink-0 transition-all active:scale-95"
+                  style={st.following ? { border: '1.5px solid #e5e7eb', color: '#6b7280', background: 'transparent' } : { background: '#111', color: '#fff' }}>
+                  {st.following ? 'Following' : 'Follow'}
                 </button>
-              )}
-            </>
-          )}
+            }
+          </>}
         </div>
 
+        <div className="h-px mb-5" style={{ background: '#f3f4f6' }} />
+
         {/* Title + description */}
-        {pageLoading ? (
-          <div className="mb-4">
-            <Shimmer className="h-5 w-48 mb-2" />
-            <Shimmer className="h-4 w-full mb-1" />
-            <Shimmer className="h-4 w-3/4" />
-          </div>
-        ) : (
-          <div className="mb-4">
-            <h2 className="text-white font-bold text-lg mb-1.5 leading-snug">{wallpaper!.title}</h2>
-            {wallpaper!.description && (
-              <p className="text-white/60 text-sm leading-relaxed">{wallpaper!.description}</p>
-            )}
+        {loading ? <>
+          <div className={`h-5 w-48 ${SH} rounded-lg mb-3`} />
+          <div className={`h-4 w-full ${SH} rounded-lg mb-2`} />
+          <div className={`h-4 w-3/4 ${SH} rounded-lg mb-5`} />
+        </> : (
+          <div className="mb-5">
+            <h2 className="font-bold text-lg mb-2 leading-snug" style={{ color: '#111', letterSpacing: '-0.02em' }}>{wp!.title}</h2>
+            {wp!.description && <p className="text-sm leading-relaxed" style={{ color: '#6b7280' }}>{wp!.description}</p>}
           </div>
         )}
 
         {/* Stats */}
-        {!pageLoading && (
-          <div className="flex items-center gap-5 mb-5">
-            <span className="flex items-center gap-1.5 text-white/45 text-[13px]">
-              <Eye className="w-[15px] h-[15px]" />{fmt(counts.views)}
-            </span>
-            <span className={`flex items-center gap-1.5 text-[13px] ${state.liked ? 'text-rose-500' : 'text-white/45'}`}>
-              <Heart className={`w-[15px] h-[15px] ${state.liked ? 'fill-rose-500' : ''}`} />{fmt(counts.likes)}
-            </span>
-            <span className="flex items-center gap-1.5 text-white/45 text-[13px]">
-              <Download className="w-[15px] h-[15px]" />{fmt(counts.downloads)}
-            </span>
+        {!loading && (
+          <div className="flex items-center gap-5 mb-6">
+            {[
+              { Icon: Eye,      val: fmt(counts.views),     active: false,     color: '' },
+              { Icon: Heart,    val: fmt(counts.likes),     active: st.liked,  color: '#f43f5e' },
+              { Icon: Download, val: fmt(counts.downloads), active: false,     color: '' },
+            ].map(({ Icon, val, active, color }) => (
+              <div key={val} className="flex items-center gap-1.5">
+                <Icon className="w-[15px] h-[15px]" style={{ color: active && color ? color : '#9ca3af' }} />
+                <span className="text-[13px] font-medium" style={{ color: active && color ? color : '#6b7280' }}>{val}</span>
+              </div>
+            ))}
           </div>
         )}
 
-        {/* Actions */}
-        {!pageLoading && (
+      {/* Share + Copy */}
+        {!loading && (
           <div className="flex gap-3">
-            {/* Download — white pill */}
-            <button
-              onClick={handleDownload}
-              disabled={state.downloading}
-              className={`flex-1 py-3.5 rounded-full font-bold text-base flex items-center justify-center gap-2 transition-all active:scale-95 ${state.downloaded ? 'bg-emerald-500 text-white' : 'bg-white text-black'} ${state.downloading ? 'opacity-70 cursor-not-allowed' : ''}`}
-            >
-              {state.downloading
-                ? <Loader2 className="w-5 h-5 spinner" />
-                : state.downloaded
-                  ? <><Check className="w-5 h-5" />Downloaded</>
-                  : <><Download className="w-5 h-5" />Download</>}
+            <button onClick={handleShare} className={actionBtn} style={{ background: '#f5f5f5', color: '#374151' }}>
+              <Share2 className="w-4 h-4" />Share
             </button>
-
-            {/* Share */}
-            <button
-              onClick={handleShare}
-              className="w-[50px] h-[50px] rounded-full bg-white/8 border border-white/12 flex items-center justify-center cursor-pointer active:scale-95 transition-transform"
-              aria-label="Share"
-            >
-              <Share2 className="w-5 h-5 text-white" />
-            </button>
-
-            {/* Copy link */}
-            <button
-              onClick={() => setState(s => ({ ...s, isCopyModalOpen: true }))}
-              className="w-[50px] h-[50px] rounded-full bg-white/8 border border-white/12 flex items-center justify-center cursor-pointer active:scale-95 transition-transform"
-              aria-label="Copy link"
-            >
-              <LinkIcon className="w-5 h-5 text-white" />
+            <button onClick={() => setSt(s => ({ ...s, copyOpen: true }))} className={actionBtn} style={{ background: '#f5f5f5', color: '#374151' }}>
+              <LinkIcon className="w-4 h-4" />Copy Link
             </button>
           </div>
         )}
       </div>
+
+      {/* ── Download bar ── */}
+      {!loading && (
+        <div className="fixed bottom-0 left-0 right-0 z-50 px-5 pb-8 pt-4" style={{ background: 'linear-gradient(to top,#fff 70%,rgba(255,255,255,0))' }}>
+          <button onClick={handleDownload} disabled={st.downloading}
+            className="w-full py-4 rounded-2xl font-bold text-base flex items-center justify-center gap-2.5 transition-all active:scale-[0.98]"
+            style={{ background: st.downloaded ? '#10b981' : '#111', color: '#fff', opacity: st.downloading ? 0.75 : 1, cursor: st.downloading ? 'not-allowed' : 'pointer', boxShadow: st.downloaded ? '0 8px 30px rgba(16,185,129,0.35)' : '0 8px 30px rgba(0,0,0,0.25)' }}>
+            {st.downloading ? <Loader2 className="w-5 h-5 animate-spin" />
+              : st.downloaded ? <><Check className="w-5 h-5" />Downloaded</>
+              : <><Download className="w-5 h-5" />Download</>}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
