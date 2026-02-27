@@ -1,5 +1,3 @@
-// app/details/[id]/layout.tsx
-
 import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
@@ -9,7 +7,6 @@ const APP_NAME = 'Wallpapers';
 function getBaseUrl(): string {
   const headersList = headers();
 
-  // Vercel sets x-forwarded-host in production
   const host =
     headersList.get('x-forwarded-host') ??
     headersList.get('host') ??
