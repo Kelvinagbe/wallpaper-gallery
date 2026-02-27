@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
     return new Response('Missing id', { status: 400 });
   }
 
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const { data: wp } = await supabase
     .from('wallpapers')
