@@ -22,7 +22,7 @@ function getBaseUrl(): string {
 export async function generateMetadata(
   { params }: { params: { id: string } }
 ): Promise<Metadata> {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const { data: wp } = await supabase
     .from('wallpapers')
