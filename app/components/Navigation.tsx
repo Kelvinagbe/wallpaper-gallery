@@ -1,11 +1,11 @@
 'use client';
 
 import { usePathname, useRouter } from 'next/navigation';
-import { Home, Search, Upload, Bell, User, X } from 'lucide-react';
+import { Home, Search, Upload, Bell, User, X, ImageIcon } from 'lucide-react';
 
 interface NavigationProps {
-  isOpen?: boolean;      // ← optional, defaults to false
-  onClose?: () => void;  // ← optional, defaults to noop
+  isOpen?: boolean;
+  onClose?: () => void;
 }
 
 export const Navigation = ({ isOpen = false, onClose = () => {} }: NavigationProps) => {
@@ -13,11 +13,10 @@ export const Navigation = ({ isOpen = false, onClose = () => {} }: NavigationPro
   const router   = useRouter();
 
   const navItems = [
-    { href: '/',        icon: Home,   label: 'Home'    },
-    { href: '/search',  icon: Search, label: 'Search'  },
-    { href: '/upload',  icon: Upload, label: 'Upload'  },
-    { href: '/alerts',  icon: Bell,   label: 'Alerts'  },
-    { href: '/profile', icon: User,   label: 'Profile' },
+    { href: '/',        icon: Home,      label: 'Home'    },
+    { href: '/search',  icon: Search,    label: 'Search'  },
+    { href: '/alerts',  icon: Bell,      label: 'Alerts'  },
+    { href: '/profile', icon: User,      label: 'Profile' },
   ];
 
   const handleNav = (href: string) => {
@@ -25,140 +24,238 @@ export const Navigation = ({ isOpen = false, onClose = () => {} }: NavigationPro
     onClose();
   };
 
+  // ── Shared sidebar content ─────────────────────────────────────────────────
+  const SidebarContent = ({ onItemClick }: { onItemClick: (href: string) => void }) => (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+
+      {/* Logo */}
+      <div
+        onClick={() => onItemClick('/')}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          padding: '0 20px',
+          height: '60px',
+          borderBottom: '1px solid rgba(255,255,255,0.06)',
+          cursor: 'pointer',
+          flexShrink: 0,
+        }}
+      >
+        <div style={{
+          width: '32px',
+          height: '32px',
+          borderRadius: '10px',
+          background: '#fff',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+        }}>
+          <ImageIcon size={16} color="#000" />
+        </div>
+        <span style={{
+          fontFamily: "'Syne', sans-serif",
+          fontWeight: 800,
+          fontSize: '16px',
+          letterSpacing: '-0.3px',
+          background: 'linear-gradient(135deg, #fff 0%, rgba(255,255,255,0.65) 100%)',
+          WebkitBackgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+          backgroundClip: 'text',
+        }}>
+          WALLS
+        </span>
+      </div>
+
+      {/* Nav items */}
+      <nav style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '2px',
+        padding: '16px 12px',
+        flex: 1,
+      }}>
+        {navItems.map(({ href, icon: Icon, label }) => {
+          const active = pathname === href;
+          return (
+            <button
+              key={href}
+              onClick={() => onItemClick(href)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                padding: '10px 12px',
+                borderRadius: '12px',
+                border: 'none',
+                cursor: 'pointer',
+                width: '100%',
+                textAlign: 'left',
+                transition: 'all 0.15s ease',
+                background: active ? 'rgba(255,255,255,0.08)' : 'transparent',
+                color: active ? '#ffffff' : 'rgba(255,255,255,0.4)',
+                position: 'relative',
+              }}
+              onMouseEnter={e => {
+                if (!active) {
+                  e.currentTarget.style.background = 'rgba(255,255,255,0.04)';
+                  e.currentTarget.style.color = 'rgba(255,255,255,0.75)';
+                }
+              }}
+              onMouseLeave={e => {
+                if (!active) {
+                  e.currentTarget.style.background = 'transparent';
+                  e.currentTarget.style.color = 'rgba(255,255,255,0.4)';
+                }
+              }}
+            >
+              {/* Active left bar indicator */}
+              {active && (
+                <span style={{
+                  position: 'absolute',
+                  left: 0,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  width: '3px',
+                  height: '20px',
+                  background: '#fff',
+                  borderRadius: '0 3px 3px 0',
+                }} />
+              )}
+              <Icon size={18} />
+              <span style={{
+                fontFamily: "'Inter', sans-serif",
+                fontWeight: active ? 600 : 400,
+                fontSize: '14px',
+              }}>
+                {label}
+              </span>
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* Bottom — Upload CTA */}
+      <div style={{
+        padding: '12px',
+        borderTop: '1px solid rgba(255,255,255,0.06)',
+      }}>
+        <button
+          onClick={() => onItemClick('/upload')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px',
+            width: '100%',
+            padding: '11px',
+            borderRadius: '12px',
+            border: 'none',
+            background: '#ffffff',
+            color: '#000000',
+            fontFamily: "'Inter', sans-serif",
+            fontWeight: 600,
+            fontSize: '13px',
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.background = 'rgba(255,255,255,0.88)';
+            e.currentTarget.style.transform = 'scale(0.98)';
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.background = '#ffffff';
+            e.currentTarget.style.transform = 'scale(1)';
+          }}
+        >
+          <Upload size={14} />
+          Upload Wallpaper
+        </button>
+      </div>
+
+    </div>
+  );
+
   return (
     <>
-      {/* ── DESKTOP SIDEBAR — always visible on lg+ ─────────────────────── */}
-      <aside className="hidden lg:flex flex-col fixed left-0 top-0 h-full w-16 xl:w-60 bg-black border-r border-white/8 z-40">
+      {/* Google fonts */}
+      <link
+        href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Inter:wght@400;500;600&display=swap"
+        rel="stylesheet"
+      />
 
-        {/* Logo */}
-        <div
-          onClick={() => router.push('/')}
-          className="flex items-center gap-3 px-4 h-14 border-b border-white/8 cursor-pointer flex-shrink-0"
-        >
-          <div className="w-7 h-7 rounded-lg bg-white flex items-center justify-center flex-shrink-0">
-            <span className="text-black text-xs font-black">W</span>
-          </div>
-          <span className="hidden xl:block text-white font-bold text-sm tracking-tight">
-            Wallpaper
-          </span>
-        </div>
-
-        {/* Nav items */}
-        <nav className="flex flex-col gap-0.5 p-3 flex-1 mt-2">
-          {navItems.map(({ href, icon: Icon, label }) => {
-            const active = pathname === href;
-            return (
-              <button
-                key={href}
-                onClick={() => router.push(href)}
-                className={`
-                  flex items-center gap-3 px-3 py-2.5 rounded-xl
-                  transition-all active:scale-95 w-full text-left
-                  ${active
-                    ? 'bg-white/10 text-white'
-                    : 'text-white/40 hover:text-white hover:bg-white/5'
-                  }
-                `}
-              >
-                <div className="relative flex-shrink-0">
-                  <Icon className={`w-5 h-5 ${active ? 'text-white' : ''}`} />
-                  {active && (
-                    <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-white rounded-full" />
-                  )}
-                </div>
-                <span className={`hidden xl:block text-sm font-medium ${active ? 'text-white' : ''}`}>
-                  {label}
-                </span>
-              </button>
-            );
-          })}
-        </nav>
-
-        {/* Upload CTA */}
-        <div className="p-3 border-t border-white/8">
-          <button
-            onClick={() => router.push('/upload')}
-            className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl bg-white hover:bg-white/90 text-black transition-all active:scale-95"
-          >
-            <Upload className="w-4 h-4 flex-shrink-0" />
-            <span className="hidden xl:block text-sm font-semibold">Upload</span>
-          </button>
-        </div>
-
+      {/* ── DESKTOP SIDEBAR ─────────────────────────────────────────────── */}
+      <aside
+        className="hidden lg:block"
+        style={{
+          position: 'fixed',
+          left: 0,
+          top: 0,
+          height: '100%',
+          width: '220px',
+          background: '#0a0a0a',
+          borderRight: '1px solid rgba(255,255,255,0.06)',
+          zIndex: 40,
+        }}
+      >
+        <SidebarContent onItemClick={(href) => router.push(href)} />
       </aside>
 
-      {/* ── MOBILE SLIDE-IN DRAWER ───────────────────────────────────────── */}
-
-      {/* Overlay */}
+      {/* ── MOBILE OVERLAY ──────────────────────────────────────────────── */}
       {isOpen && (
         <div
-          className="lg:hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-[60]"
+          className="lg:hidden"
           onClick={onClose}
-          style={{ animation: 'fadeIn 0.2s ease' }}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.75)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 60,
+            animation: 'fadeIn 0.2s ease',
+          }}
         />
       )}
 
-      {/* Drawer */}
+      {/* ── MOBILE DRAWER ───────────────────────────────────────────────── */}
       <div
-        className={`
-          lg:hidden fixed left-0 top-0 h-full w-72 bg-zinc-950 border-r border-white/8 z-[61]
-          transition-transform duration-300 ease-out
-          ${isOpen ? 'translate-x-0' : '-translate-x-full'}
-        `}
+        className="lg:hidden"
+        style={{
+          position: 'fixed',
+          left: 0,
+          top: 0,
+          height: '100%',
+          width: '260px',
+          background: '#0a0a0a',
+          borderRight: '1px solid rgba(255,255,255,0.06)',
+          zIndex: 61,
+          transform: isOpen ? 'translateX(0)' : 'translateX(-100%)',
+          transition: 'transform 0.28s cubic-bezier(0.32, 0.72, 0, 1)',
+        }}
       >
-        {/* Drawer header */}
-        <div className="flex items-center justify-between px-5 h-14 border-b border-white/8">
-          <div className="flex items-center gap-3">
-            <div className="w-7 h-7 rounded-lg bg-white flex items-center justify-center">
-              <span className="text-black text-xs font-black">W</span>
-            </div>
-            <span className="text-white font-bold text-sm">Wallpaper</span>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-white/8 transition-colors"
-          >
-            <X className="w-5 h-5 text-white/60" />
-          </button>
-        </div>
+        {/* Close button */}
+        <button
+          onClick={onClose}
+          style={{
+            position: 'absolute',
+            top: '14px',
+            right: '14px',
+            padding: '6px',
+            borderRadius: '8px',
+            border: 'none',
+            background: 'rgba(255,255,255,0.06)',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1,
+          }}
+        >
+          <X size={16} color="rgba(255,255,255,0.6)" />
+        </button>
 
-        {/* Drawer nav items */}
-        <nav className="flex flex-col gap-0.5 p-4">
-          {navItems.map(({ href, icon: Icon, label }) => {
-            const active = pathname === href;
-            return (
-              <button
-                key={href}
-                onClick={() => handleNav(href)}
-                className={`
-                  flex items-center gap-4 px-4 py-3 rounded-xl
-                  transition-all active:scale-95 w-full text-left
-                  ${active
-                    ? 'bg-white/10 text-white'
-                    : 'text-white/50 hover:text-white hover:bg-white/5'
-                  }
-                `}
-              >
-                <Icon className={`w-5 h-5 flex-shrink-0 ${active ? 'text-white' : ''}`} />
-                <span className="text-sm font-medium">{label}</span>
-                {active && (
-                  <span className="ml-auto w-1.5 h-1.5 bg-white rounded-full" />
-                )}
-              </button>
-            );
-          })}
-        </nav>
-
-        {/* Upload CTA in drawer */}
-        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-white/8">
-          <button
-            onClick={() => handleNav('/upload')}
-            className="flex items-center justify-center gap-2 w-full py-3 bg-white hover:bg-white/90 text-black rounded-xl font-semibold text-sm transition-all active:scale-95"
-          >
-            <Upload className="w-4 h-4" />
-            Upload Wallpaper
-          </button>
-        </div>
+        <SidebarContent onItemClick={handleNav} />
       </div>
     </>
   );
