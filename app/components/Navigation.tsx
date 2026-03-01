@@ -1,82 +1,165 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
-import { Home, Search, Bell, User, Plus } from 'lucide-react';
-import { useAuth } from './AuthProvider';
-import { LoginPromptModal } from './LoginPromptModal';
+import { usePathname, useRouter } from 'next/navigation';
+import { Home, Search, Upload, Bell, User, X } from 'lucide-react';
 
-export const Navigation = () => {
-  const router   = useRouter();
+interface NavigationProps {
+  isOpen: boolean;       // controlled from WallpaperGallery
+  onClose: () => void;   // controlled from WallpaperGallery
+}
+
+export const Navigation = ({ isOpen, onClose }: NavigationProps) => {
   const pathname = usePathname();
-  const { user } = useAuth();
-  const [showLoginPrompt, setShowLoginPrompt] = useState(false);
-  const [loginAction, setLoginAction]         = useState('');
+  const router   = useRouter();
 
-  const requireAuth = (action: string, cb: () => void) => {
-    if (!user) { setLoginAction(action); setShowLoginPrompt(true); }
-    else cb();
-  };
-
-  const tabs = [
-    { id: 'home',          icon: Home,   label: 'Home',    path: '/',               protected: false },
-    { id: 'search',        icon: Search, label: 'Search',  path: '/search',         protected: false },
-    { id: 'upload',        icon: Plus,   label: '',        path: '/upload',         protected: true,  isUpload: true },
-    { id: 'notifications', icon: Bell,   label: 'Alerts',  path: '/notifications',  protected: true  },
-    { id: 'profile',       icon: User,   label: 'Profile', path: '/profile',        protected: true  },
+  const navItems = [
+    { href: '/',        icon: Home,   label: 'Home'    },
+    { href: '/search',  icon: Search, label: 'Search'  },
+    { href: '/upload',  icon: Upload, label: 'Upload'  },
+    { href: '/alerts',  icon: Bell,   label: 'Alerts'  },
+    { href: '/profile', icon: User,   label: 'Profile' },
   ];
 
-  const isActive = (path: string) => {
-    if (path === '/') return pathname === '/';
-    return pathname.startsWith(path);
+  const handleNav = (href: string) => {
+    router.push(href);
+    onClose();
   };
 
   return (
     <>
-      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-black/95 backdrop-blur-xl border-t border-white/10">
-        <div className="max-w-7xl mx-auto px-4 flex items-center justify-around py-2">
-          {tabs.map(({ id, icon: Icon, label, path, protected: isProtected, isUpload }) =>
-            isUpload ? (
-              <button
-                key={id}
-                onClick={() => requireAuth('upload wallpapers', () => router.push(path))}
-                className="flex flex-col items-center gap-1 px-4 py-1 -mt-6"
-              >
-                <div className="w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-lg shadow-white/25 hover:shadow-white/40 transition-all hover:scale-105">
-                  <Icon className="w-7 h-7 text-black" strokeWidth={2.5} />
-                </div>
-              </button>
-            ) : (
-              <button
-                key={id}
-                onClick={() =>
-                  isProtected
-                    ? requireAuth(`view ${label.toLowerCase()}`, () => router.push(path))
-                    : router.push(path)
-                }
-                className={`flex flex-col items-center gap-1 px-4 py-1 transition-colors relative ${
-                  isActive(path) ? 'text-white' : 'text-white/50'
-                }`}
-              >
-                <Icon
-                  className="w-5 h-5"
-                  fill={id === 'home' && isActive(path) ? 'currentColor' : 'none'}
-                />
-                {id === 'notifications' && user && (
-                  <div className="absolute top-0 right-2 w-2 h-2 bg-white rounded-full" />
-                )}
-                <span className="text-[10px] font-medium">{label}</span>
-              </button>
-            )
-          )}
-        </div>
-      </nav>
+      {/* ── DESKTOP SIDEBAR — always visible on lg+ ─────────────────────── */}
+      <aside className="hidden lg:flex flex-col fixed left-0 top-0 h-full w-16 xl:w-60 bg-black border-r border-white/8 z-40">
 
-      <LoginPromptModal
-        isOpen={showLoginPrompt}
-        onClose={() => setShowLoginPrompt(false)}
-        action={loginAction}
-      />
+        {/* Logo */}
+        <div
+          onClick={() => router.push('/')}
+          className="flex items-center gap-3 px-4 h-14 border-b border-white/8 cursor-pointer flex-shrink-0"
+        >
+          <div className="w-7 h-7 rounded-lg bg-white flex items-center justify-center flex-shrink-0">
+            <span className="text-black text-xs font-black">W</span>
+          </div>
+          <span className="hidden xl:block text-white font-bold text-sm tracking-tight">
+            Wallpaper
+          </span>
+        </div>
+
+        {/* Nav items */}
+        <nav className="flex flex-col gap-0.5 p-3 flex-1 mt-2">
+          {navItems.map(({ href, icon: Icon, label }) => {
+            const active = pathname === href;
+            return (
+              <button
+                key={href}
+                onClick={() => router.push(href)}
+                className={`
+                  flex items-center gap-3 px-3 py-2.5 rounded-xl
+                  transition-all active:scale-95 w-full text-left
+                  ${active
+                    ? 'bg-white/10 text-white'
+                    : 'text-white/40 hover:text-white hover:bg-white/5'
+                  }
+                `}
+              >
+                <div className="relative flex-shrink-0">
+                  <Icon className={`w-5 h-5 ${active ? 'text-white' : ''}`} />
+                  {active && (
+                    <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-white rounded-full" />
+                  )}
+                </div>
+                <span className={`hidden xl:block text-sm font-medium ${active ? 'text-white' : ''}`}>
+                  {label}
+                </span>
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* Upload CTA */}
+        <div className="p-3 border-t border-white/8">
+          <button
+            onClick={() => router.push('/upload')}
+            className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl bg-white hover:bg-white/90 text-black transition-all active:scale-95"
+          >
+            <Upload className="w-4 h-4 flex-shrink-0" />
+            <span className="hidden xl:block text-sm font-semibold">Upload</span>
+          </button>
+        </div>
+
+      </aside>
+
+      {/* ── MOBILE SLIDE-IN DRAWER ───────────────────────────────────────── */}
+
+      {/* Overlay */}
+      {isOpen && (
+        <div
+          className="lg:hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-[60]"
+          onClick={onClose}
+          style={{ animation: 'fadeIn 0.2s ease' }}
+        />
+      )}
+
+      {/* Drawer */}
+      <div
+        className={`
+          lg:hidden fixed left-0 top-0 h-full w-72 bg-zinc-950 border-r border-white/8 z-[61]
+          transition-transform duration-300 ease-out
+          ${isOpen ? 'translate-x-0' : '-translate-x-full'}
+        `}
+      >
+        {/* Drawer header */}
+        <div className="flex items-center justify-between px-5 h-14 border-b border-white/8">
+          <div className="flex items-center gap-3">
+            <div className="w-7 h-7 rounded-lg bg-white flex items-center justify-center">
+              <span className="text-black text-xs font-black">W</span>
+            </div>
+            <span className="text-white font-bold text-sm">Wallpaper</span>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg hover:bg-white/8 transition-colors"
+          >
+            <X className="w-5 h-5 text-white/60" />
+          </button>
+        </div>
+
+        {/* Drawer nav items */}
+        <nav className="flex flex-col gap-0.5 p-4">
+          {navItems.map(({ href, icon: Icon, label }) => {
+            const active = pathname === href;
+            return (
+              <button
+                key={href}
+                onClick={() => handleNav(href)}
+                className={`
+                  flex items-center gap-4 px-4 py-3 rounded-xl
+                  transition-all active:scale-98 w-full text-left
+                  ${active
+                    ? 'bg-white/10 text-white'
+                    : 'text-white/50 hover:text-white hover:bg-white/5'
+                  }
+                `}
+              >
+                <Icon className={`w-5 h-5 flex-shrink-0 ${active ? 'text-white' : ''}`} />
+                <span className="text-sm font-medium">{label}</span>
+                {active && (
+                  <span className="ml-auto w-1.5 h-1.5 bg-white rounded-full" />
+                )}
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* Upload CTA in drawer */}
+        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-white/8">
+          <button
+            onClick={() => handleNav('/upload')}
+            className="flex items-center justify-center gap-2 w-full py-3 bg-white hover:bg-white/90 text-black rounded-xl font-semibold text-sm transition-all active:scale-95"
+          >
+            <Upload className="w-4 h-4" />
+            Upload Wallpaper
+          </button>
+        </div>
+      </div>
     </>
   );
 };
