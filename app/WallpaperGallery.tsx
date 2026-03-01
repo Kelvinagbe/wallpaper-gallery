@@ -11,7 +11,6 @@ import type { Wallpaper, Filter } from './types';
 
 const ITEMS_PER_PAGE = 30;
 
-// ✅ ADDED: Props type to accept server-fetched data
 type Props = {
   initialWallpapers: Wallpaper[];
   initialHasMore: boolean;
@@ -19,7 +18,6 @@ type Props = {
 
 export default function WallpaperGallery({ initialWallpapers, initialHasMore }: Props) {
 
-  // ✅ CHANGED: Seed from server data on first load, feedCache on back navigation
   const [wallpapers,    setWallpapers]    = useState<Wallpaper[]>(
     feedCache.populated ? feedCache.wallpapers : initialWallpapers
   );
@@ -28,18 +26,18 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
   );
   const [page,          setPage]          = useState(feedCache.page);
   const [filter,        setFilter]        = useState<Filter>(feedCache.filter);
-
-  // ✅ CHANGED: false because server already gave us data — no skeleton on first load
   const [isInitialLoad, setIsInitialLoad] = useState(false);
   const [isRefreshing,  setIsRefreshing]  = useState(false);
+
+  // ✅ Controls mobile sidebar open/close
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const loadingMoreRef   = useRef(false);
   const filterChangedRef = useRef(false);
 
-  // ── Mount: restore scroll from cache OR seed cache with server data ─────────
+  // ── Mount ───────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (feedCache.populated) {
-      // Back navigation — restore scroll position exactly as before
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           window.scrollTo({ top: feedCache.scrollY, behavior: 'instant' });
@@ -47,8 +45,6 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
       });
       return;
     }
-
-    // ✅ CHANGED: No fetch needed — seed feedCache with data from server
     feedCache.wallpapers = initialWallpapers;
     feedCache.page       = 1;
     feedCache.hasMore    = initialHasMore;
@@ -148,24 +144,32 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
   }, []);
 
   return (
-    <div className="min-h-screen bg-black text-white pb-16">
+    <div className="min-h-screen bg-black text-white">
       <GlobalStyles />
-      <Header
-        filter={filter}
-        setFilter={handleFilterChange}
-        onRefresh={handleRefresh}
-        isRefreshing={isRefreshing}
+
+      {/* Sidebar — desktop always visible, mobile slide-in drawer */}
+      <Navigation
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
       />
-      <main className="max-w-7xl mx-auto px-4 py-8">
-        <WallpaperGrid
-          wallpapers={wallpapers}
-          isLoading={isInitialLoad}
-          onRefresh={handleRefresh}
-          onLoadMore={handleLoadMore}
-          hasMore={hasMore}
+
+      {/* Main content — offset right on desktop for sidebar */}
+      <div className="lg:ml-16 xl:ml-60">
+        <Header
+          filter={filter}
+          setFilter={handleFilterChange}
+          onMenuOpen={() => setSidebarOpen(true)}
         />
-      </main>
-      <Navigation />
+        <main className="max-w-7xl mx-auto px-4 py-6 pb-8">
+          <WallpaperGrid
+            wallpapers={wallpapers}
+            isLoading={isInitialLoad}
+            onRefresh={handleRefresh}
+            onLoadMore={handleLoadMore}
+            hasMore={hasMore}
+          />
+        </main>
+      </div>
     </div>
   );
 }
