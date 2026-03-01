@@ -4,11 +4,11 @@ import { usePathname, useRouter } from 'next/navigation';
 import { Home, Search, Upload, Bell, User, X } from 'lucide-react';
 
 interface NavigationProps {
-  isOpen: boolean;       // controlled from WallpaperGallery
-  onClose: () => void;   // controlled from WallpaperGallery
+  isOpen?: boolean;      // ← optional, defaults to false
+  onClose?: () => void;  // ← optional, defaults to noop
 }
 
-export const Navigation = ({ isOpen, onClose }: NavigationProps) => {
+export const Navigation = ({ isOpen = false, onClose = () => {} }: NavigationProps) => {
   const pathname = usePathname();
   const router   = useRouter();
 
@@ -132,7 +132,7 @@ export const Navigation = ({ isOpen, onClose }: NavigationProps) => {
                 onClick={() => handleNav(href)}
                 className={`
                   flex items-center gap-4 px-4 py-3 rounded-xl
-                  transition-all active:scale-98 w-full text-left
+                  transition-all active:scale-95 w-full text-left
                   ${active
                     ? 'bg-white/10 text-white'
                     : 'text-white/50 hover:text-white hover:bg-white/5'
