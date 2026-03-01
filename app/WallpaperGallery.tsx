@@ -154,7 +154,7 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
       />
 
       {/* Main content — offset right on desktop for sidebar */}
-      <div className="lg:ml-16 xl:ml-60">
+      <div className="sidebar-offset">
         <Header
           filter={filter}
           setFilter={handleFilterChange}
