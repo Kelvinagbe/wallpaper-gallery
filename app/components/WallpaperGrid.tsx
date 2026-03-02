@@ -263,7 +263,7 @@ export const WallpaperGrid = ({
               />
             ))}
           </div>
-          <span className="text-white/30 text-xs">Loading more...</span>
+          <span className="text-black/30 text-xs">Loading more...</span>
         </div>
       )}
 
