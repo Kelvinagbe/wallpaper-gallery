@@ -73,7 +73,7 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
       const data = await fetchWallpapers(page, ITEMS_PER_PAGE, filter);
       setWallpapers(prev => {
         const seen = new Set(prev.map(wp => wp.id));
-        const next = [...prev, ...data.wallpapers.filter(wp => !seen.has(wp.id))];
+        const next = [...prev, ...data.wallpapers.filter((wp: Wallpaper) => !seen.has(wp.id))];
         Object.assign(feedCache, { wallpapers: next, page: page + 1, hasMore: data.hasMore });
         return next;
       });
