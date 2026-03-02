@@ -9,7 +9,7 @@ import { WallpaperGrid } from './components/WallpaperGrid';
 import { GlobalStyles } from './components/GlobalStyles';
 import type { Wallpaper, Filter } from './types';
 
-const ITEMS_PER_PAGE = 10;
+const ITEMS_PER_PAGE = 3;
 
 type Props = { initialWallpapers: Wallpaper[]; initialHasMore: boolean; };
 
