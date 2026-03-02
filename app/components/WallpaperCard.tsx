@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
@@ -170,47 +169,47 @@ export const WallpaperCard = ({ wp, onClick, priority = false, placeholderIndex 
   return (
     <>
       {isOwner.current && <NavLoaderSingleton />}
-      <div className="relative w-full rounded-xl overflow-hidden cursor-pointer bg-black" style={{ aspectRatio: '9/16' }} onClick={handleCardClick}>
+      <div className="relative w-full rounded-xl overflow-hidden cursor-pointer" style={{ aspectRatio: '9/16', background: ph.bg }} onClick={handleCardClick}>
 
-        {/* Shimmer */}
+        {/* Shimmer — shown while loading */}
         {!state.loaded && (
-          <div className="absolute inset-0 z-[1]" style={{ background: ph.bg }}>
+          <div className="absolute inset-0 z-[1]">
             <div className="absolute inset-0" style={{ background: `linear-gradient(105deg,transparent 40%,${ph.shimmer}99 50%,transparent 60%)`, backgroundSize: '200% 100%', animation: 'shimmerSweep 1.8s ease-in-out infinite' }} />
           </div>
         )}
 
+        {/* Image — always mounted so it loads immediately */}
         <Image src={imgSrc} alt={wp.title} fill sizes="(max-width:480px) 50vw,(max-width:768px) 33vw,(max-width:1024px) 25vw,20vw"
           onLoad={() => { imgCache.add(imgSrc); if (isMounted.current) set({ loaded: true }); }}
           className="object-cover z-[2]" priority={priority} loading={priority ? 'eager' : 'lazy'}
-          style={{ opacity: state.loaded ? 1 : 0, transition: state.loaded ? 'opacity 0.3s ease' : 'none' }}
+          style={{ opacity: state.loaded ? 1 : 0, transition: 'opacity 0.4s ease' }}
         />
 
-        {/* Gradient */}
-        <div className="absolute inset-0 z-[3]" style={{ background: 'linear-gradient(to top,rgba(0,0,0,0.88) 0%,rgba(0,0,0,0.2) 40%,transparent 65%)' }} />
+        {/* Gradient — only show once image is loaded */}
+        {state.loaded && (
+          <div className="absolute inset-0 z-[3]" style={{ background: 'linear-gradient(to top,rgba(0,0,0,0.88) 0%,rgba(0,0,0,0.2) 40%,transparent 65%)' }} />
+        )}
 
-        {/* Info */}
-        <div className="absolute bottom-0 left-0 right-0 z-[4] px-2 pb-2.5 pt-6">
-          <p className="text-white text-[11px] font-medium leading-tight line-clamp-1 mb-1.5">{wp.title}</p>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1 min-w-0 flex-1">
-              <div className="relative w-4 h-4 rounded-full flex-shrink-0 overflow-hidden border border-white/20 bg-zinc-800">
-                <Image src={wp.userAvatar} alt={wp.uploadedBy} fill className="object-cover" sizes="16px" />
-              </div>
-              <span className="text-[10px] text-white/70 truncate">{wp.uploadedBy}</span>
-              {wp.verified && <VerifiedBadge size="sm" />}
+        {/* Info — only show once image is loaded */}
+        {state.loaded && (
+          <div className="absolute bottom-0 left-0 right-0 z-[4] px-2 pb-2.5 pt-6">
+            <p className="text-white text-[11px] font-medium leading-tight line-clamp-1 mb-1.5">{wp.title}</p>
+            <div className="flex items-center justify-end">
+              <button aria-label="Like" onClick={handleLike} className="flex items-center gap-1">
+                <Heart className={`w-3.5 h-3.5 transition-all ${state.liked ? 'fill-rose-500 text-rose-500 scale-110' : 'text-white/60'}`} />
+                {likeCount > 0 && <span className={`text-[10px] font-medium ${state.liked ? 'text-rose-400' : 'text-white/50'}`}>{fmt(likeCount)}</span>}
+              </button>
             </div>
-            <button aria-label="Like" onClick={handleLike} className="flex items-center gap-1 flex-shrink-0 ml-1">
-              <Heart className={`w-3.5 h-3.5 transition-all ${state.liked ? 'fill-rose-500 text-rose-500 scale-110' : 'text-white/60'}`} />
-              {likeCount > 0 && <span className={`text-[10px] font-medium ${state.liked ? 'text-rose-400' : 'text-white/50'}`}>{fmt(likeCount)}</span>}
-            </button>
           </div>
-        </div>
+        )}
 
-        {/* More */}
-        <button aria-label="More options" onClick={e => { e.stopPropagation(); set({ showMenu: true }); }}
-          className="absolute top-2 right-2 z-[5] p-1.5 rounded-full bg-white/20 backdrop-blur-sm hover:bg-white/30 transition-colors">
-          <MoreHorizontal className="w-3.5 h-3.5 text-white" />
-        </button>
+        {/* More options */}
+        {state.loaded && (
+          <button aria-label="More options" onClick={e => { e.stopPropagation(); set({ showMenu: true }); }}
+            className="absolute top-2 right-2 z-[5] p-1.5 rounded-full bg-white/20 backdrop-blur-sm hover:bg-white/30 transition-colors">
+            <MoreHorizontal className="w-3.5 h-3.5 text-white" />
+          </button>
+        )}
       </div>
 
       <BottomSheet isOpen={state.showMenu} onClose={() => set({ showMenu: false })}
