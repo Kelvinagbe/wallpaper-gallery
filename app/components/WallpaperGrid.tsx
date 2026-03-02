@@ -278,8 +278,8 @@ export const WallpaperGrid = ({
         .wallpaper-grid {
           display: grid;
           grid-template-columns: repeat(2, 1fr);
-          gap: 10px;
-          padding: 10px;
+          gap: 14px;
+          padding: 6px;
         }
         @media (min-width: 480px) { .wallpaper-grid { grid-template-columns: repeat(3, 1fr); } }
         @media (min-width: 768px) { .wallpaper-grid { grid-template-columns: repeat(4, 1fr); } }
