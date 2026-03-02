@@ -86,7 +86,7 @@ export default function UserProfilePage() {
     supabase.from(table)
       .select('wallpaper_id, wallpapers(*, profiles:user_id(username, full_name, avatar_url, verified))')
       .eq('user_id', session.user.id).order('created_at', { ascending: false }).limit(24)
-      .then(({ data }) => {
+      .then(({ data }: { data: any[] | null }) => {
         if (!data) return;
         const mapped = data.map(mapWallpaper);
         activeTab === 'liked' ? setLiked(mapped) : setSaved(mapped);
@@ -105,9 +105,9 @@ export default function UserProfilePage() {
 
   const currentWallpapers = activeTab === 'posts' ? posts : activeTab === 'liked' ? liked : saved;
   const tabs = [
-    { id: 'posts' as TabType, icon: Grid,     label: 'Posts',  count: stats.posts  },
-    { id: 'liked' as TabType, icon: Heart,    label: 'Liked',  count: liked.length },
-    { id: 'saved' as TabType, icon: Bookmark, label: 'Saved',  count: saved.length },
+    { id: 'posts' as TabType, icon: Grid,     label: 'Posts', count: stats.posts  },
+    { id: 'liked' as TabType, icon: Heart,    label: 'Liked', count: liked.length },
+    { id: 'saved' as TabType, icon: Bookmark, label: 'Saved', count: saved.length },
   ];
 
   return (
@@ -118,19 +118,17 @@ export default function UserProfilePage() {
         .no-scrollbar::-webkit-scrollbar{display:none}.no-scrollbar{-ms-overflow-style:none;scrollbar-width:none}
       `}</style>
 
-      {/* Fixed header */}
+      {/* Header */}
       <div className="fixed top-0 left-0 right-0 z-20 flex items-center gap-3 px-4 pt-5 pb-3">
-        <button onClick={() => router.back()} style={{ background: 'rgba(0,0,0,0.18)', backdropFilter: 'blur(8px)' }}
+        <button onClick={() => router.back()}
+          style={{ background: 'rgba(0,0,0,0.18)', backdropFilter: 'blur(8px)' }}
           className="w-12 h-12 rounded-full flex items-center justify-center active:scale-90 transition-transform flex-shrink-0">
           <ChevronLeft className="w-6 h-6 text-white" strokeWidth={2.5} />
         </button>
-        <h1 className="text-sm font-semibold text-gray-900 truncate">
-          {pageLoading ? '' : profile?.name}
-        </h1>
+        {!pageLoading && <h1 className="text-sm font-semibold text-gray-900 truncate">{profile?.name}</h1>}
       </div>
 
       <div className="max-w-lg mx-auto pb-12">
-
         {pageLoading ? (
           <div className="pt-24 px-5">
             <div className="flex flex-col items-center mb-8">
@@ -151,22 +149,16 @@ export default function UserProfilePage() {
           <>
             {/* Cover + Avatar */}
             <div className="relative">
-              {/* Cover gradient */}
               <div className="h-44 w-full" style={{ background: 'linear-gradient(135deg,#e8eaf0 0%,#ede8f0 50%,#e8f0ea 100%)' }} />
-
-              {/* Avatar overlapping cover */}
               <div className="absolute left-1/2 -translate-x-1/2" style={{ bottom: '-44px' }}>
                 <div className="relative">
-                  <img src={profile.avatar} alt={profile.name}
-                    className="w-24 h-24 rounded-full object-cover border-4 border-white shadow-lg" />
-                  {profile.verified && (
-                    <div className="absolute bottom-0 right-0"><VerifiedBadge size="md" /></div>
-                  )}
+                  <img src={profile.avatar} alt={profile.name} className="w-24 h-24 rounded-full object-cover border-4 border-white shadow-lg" />
+                  {profile.verified && <div className="absolute bottom-0 right-0"><VerifiedBadge size="md" /></div>}
                 </div>
               </div>
             </div>
 
-            {/* Profile info */}
+            {/* Info */}
             <div className="text-center pt-14 pb-6 px-5">
               <h2 className="text-xl font-bold text-gray-900 mb-0.5">{profile.name}</h2>
               {profile.username && <p className="text-sm text-gray-400 mb-3">@{profile.username}</p>}
@@ -186,13 +178,11 @@ export default function UserProfilePage() {
                 ))}
               </div>
 
-              {/* Follow button */}
+              {/* Follow */}
               {session && !isOwnProfile && (
                 <button onClick={handleFollow} disabled={followLoading}
                   className="px-10 py-3 rounded-full font-semibold text-sm transition-all active:scale-95"
-                  style={isFollowing
-                    ? { border: '1.5px solid #e5e7eb', color: '#6b7280', background: 'transparent' }
-                    : { background: '#111', color: '#fff' }}>
+                  style={isFollowing ? { border: '1.5px solid #e5e7eb', color: '#6b7280' } : { background: '#111', color: '#fff' }}>
                   {isFollowing ? 'Following' : 'Follow'}
                 </button>
               )}
@@ -204,9 +194,7 @@ export default function UserProfilePage() {
                 {tabs.filter(t => t.id === 'posts' || isOwnProfile).map(({ id, icon: Icon, label, count }) => (
                   <button key={id} onClick={() => setActiveTab(id)}
                     className="flex items-center gap-1.5 px-4 py-2.5 rounded-full text-sm font-medium transition-all whitespace-nowrap"
-                    style={activeTab === id
-                      ? { background: '#111', color: '#fff' }
-                      : { background: '#fff', color: '#6b7280', border: '1px solid #e5e7eb' }}>
+                    style={activeTab === id ? { background: '#111', color: '#fff' } : { background: '#fff', color: '#6b7280', border: '1px solid #e5e7eb' }}>
                     <Icon className="w-3.5 h-3.5" />
                     {label}
                     <span className="opacity-50 text-xs ml-0.5">{count}</span>
@@ -214,7 +202,6 @@ export default function UserProfilePage() {
                 ))}
               </div>
 
-              {/* Grid */}
               {tabLoading ? (
                 <div className="grid grid-cols-3 gap-2">
                   {[...Array(9)].map((_, i) => <Shimmer key={i} className="aspect-[9/16]" />)}
