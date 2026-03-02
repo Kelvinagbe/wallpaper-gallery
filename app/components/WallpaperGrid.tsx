@@ -258,7 +258,7 @@ export const WallpaperGrid = ({
             {[0, 1, 2].map(i => (
               <div
                 key={i}
-                className="w-2 h-2 rounded-full bg-black/900"
+                className="w-2 h-2 rounded-full bg-black/90"
                 style={{ animation: `dotBounce 1.2s ease-in-out ${i * 0.2}s infinite` }}
               />
             ))}
