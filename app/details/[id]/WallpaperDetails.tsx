@@ -79,19 +79,19 @@ export default function WallpaperDetail({ initialWallpaper }: { initialWallpaper
   const supabase = useMemo(() => createClient(), []);
   const wp = initialWallpaper;
 
-  const [likes, setLikes] = useState(wp.likes);
-  const [hearts, setHearts] = useState<Array<{ id: number; x: number; y: number; angle: number; distance: number }>>([]);
-  const [full, setFull] = useState(false);
+  const [likes,     setLikes]     = useState(wp.likes);
+  const [hearts,    setHearts]    = useState<Array<{ id: number; x: number; y: number; angle: number; distance: number }>>([]);
+  const [full,      setFull]      = useState(false);
   const [imgLoaded, setImgLoaded] = useState(imgCache.has(wp.url));
-  const [timeAgo, setTimeAgo] = useState(() => wp.createdAt ? timeAgoStr(wp.createdAt) : 'Just now');
+  const [timeAgo,   setTimeAgo]   = useState(() => wp.createdAt ? timeAgoStr(wp.createdAt) : 'Just now');
   const [st, setSt] = useState({
     liked: false, following: false,
     downloading: false, downloaded: false, dataLoading: true,
     showLogin: false, loginAction: '', copyOpen: false,
   });
 
-  const likeRef = useRef<HTMLButtonElement>(null);
-  const viewedRef = useRef(false);
+  const likeRef    = useRef<HTMLButtonElement>(null);
+  const viewedRef  = useRef(false);
   const set = (patch: Partial<typeof st>) => setSt(s => ({ ...s, ...patch }));
 
   useEffect(() => {
@@ -107,8 +107,7 @@ export default function WallpaperDetail({ initialWallpaper }: { initialWallpaper
     const cached = cache.get(key);
     if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
       set({ liked: cached.liked, following: cached.following, dataLoading: false });
-      setLikes(cached.likeCount);
-      return;
+      setLikes(cached.likeCount); return;
     }
     (async () => {
       if (!viewedRef.current) { viewedRef.current = true; await incrementViews(wp.id); }
@@ -191,50 +190,58 @@ export default function WallpaperDetail({ initialWallpaper }: { initialWallpaper
         .shimmer-light{background:linear-gradient(90deg,#f3f4f6 25%,#e9eaec 50%,#f3f4f6 75%);background-size:200% 100%;animation:shimmer-light 1.5s infinite;}
         @keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
         .fade-up{animation:fadeUp 0.4s ease forwards;}
+        .no-save{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
       `}</style>
 
       <FloatingHearts hearts={hearts} />
       <LoginPromptModal isOpen={st.showLogin} onClose={() => set({ showLogin: false })} action={st.loginAction} />
       <CopyLinkModal isOpen={st.copyOpen} onClose={() => set({ copyOpen: false })} link={typeof window !== 'undefined' ? window.location.href : ''} />
 
-      {/* ── Header overlay ── */}
+      {/* Header */}
       <header className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 pt-5 pb-3">
         <button onClick={() => full ? setFull(false) : router.back()} className={overlayBtn} style={{ background: 'rgba(0,0,0,0.25)', backdropFilter: 'blur(6px)' }} aria-label="Go back">
           <ChevronLeft className="w-7 h-7 text-white" strokeWidth={2.5} />
         </button>
-        <button onClick={() => setFull(v => !v)} className={overlayBtn} style={{ background: 'rgba(0,0,0,0.25)', backdropFilter: 'blur(6px)' }} aria-label={full ? 'Exit fullscreen' : 'Fullscreen'}>
+        <button onClick={() => setFull(v => !v)} className={overlayBtn} style={{ background: 'rgba(0,0,0,0.25)', backdropFilter: 'blur(6px)' }} aria-label="Toggle fullscreen">
           {full ? <Minimize2 className="w-6 h-6 text-white" strokeWidth={2.5} /> : <Maximize2 className="w-6 h-6 text-white" strokeWidth={2.5} />}
         </button>
       </header>
 
-      {/* ── Image ── */}
-      <div className="relative w-full overflow-hidden transition-all duration-300" style={{ height: full ? '100dvh' : '72vh', borderRadius: full ? 0 : '0 0 32px 32px', background: '#f3f4f6' }}>
+      {/* Image — protected */}
+      <div
+        className="relative w-full overflow-hidden transition-all duration-300 no-save"
+        style={{ height: full ? '100dvh' : '72vh', borderRadius: full ? 0 : '0 0 32px 32px', background: '#f3f4f6' }}
+        onContextMenu={e => e.preventDefault()}
+      >
         {!imgLoaded && <div className={`absolute inset-0 ${SH}`} />}
+
         <Image
           src={wp.url} alt={wp.title} fill priority
-          className="object-cover transition-opacity duration-300"
-          style={{ opacity: imgLoaded ? 1 : 0 }}
+          draggable={false}
+          className="object-cover transition-opacity duration-300 no-save"
+          style={{ opacity: imgLoaded ? 1 : 0, pointerEvents: 'none', userSelect: 'none', WebkitUserSelect: 'none' }}
           sizes="(max-width:768px) 100vw, 600px"
           onLoad={() => { imgCache.add(wp.url); setImgLoaded(true); }}
         />
 
-        {/* Like + count overlay on image */}
+        {/* Transparent blocker — prevents long-press save, sits above image but below buttons */}
+        <div className="absolute inset-0 z-[2]" onContextMenu={e => e.preventDefault()} />
+
+        {/* Like button — above blocker */}
         {imgLoaded && (
-          <div className="absolute bottom-5 right-5 flex flex-col items-center gap-1.5">
+          <div className="absolute bottom-5 right-5 z-[3] flex flex-col items-center gap-1.5">
             <button ref={likeRef} onClick={handleLike} className={overlayBtn} style={{ background: st.liked ? '#f43f5e' : 'rgba(0,0,0,0.25)', backdropFilter: 'blur(6px)' }} aria-label="Like">
-              <Heart className="w-6 h-6 transition-all" style={{ color: '#fff', fill: st.liked ? '#fff' : 'none' }} />
+              <Heart className="w-6 h-6" style={{ color: '#fff', fill: st.liked ? '#fff' : 'none' }} />
             </button>
             {likes > 0 && <span className="text-white text-xs font-semibold drop-shadow">{fmt(likes)}</span>}
           </div>
         )}
       </div>
 
-      {/* ── Info ── */}
+      {/* Info */}
       {!full && (
         <div className="px-5 pt-6 pb-32 fade-up">
-
-          {/* Title */}
-          <h2 className="font-bold text-xl mb-1 leading-snug text-gray-900" style={{ letterSpacing: '-0.02em' }}>{wp.title}</h2>
+          <h2 className="font-bold text-xl mb-1 text-gray-900" style={{ letterSpacing: '-0.02em' }}>{wp.title}</h2>
           {wp.description && <p className="text-sm text-gray-500 leading-relaxed mb-5">{wp.description}</p>}
 
           <div className="h-px bg-gray-100 mb-5" />
@@ -254,8 +261,9 @@ export default function WallpaperDetail({ initialWallpaper }: { initialWallpaper
               </div>
             </button>
             {st.dataLoading
-              ? <div className="w-20 h-9 rounded-full shimmer-light" />
-              : <button onClick={handleFollow} className="px-5 py-2 rounded-full text-sm font-semibold flex-shrink-0 transition-all active:scale-95" style={st.following ? { border: '1.5px solid #e5e7eb', color: '#6b7280' } : { background: '#111', color: '#fff' }}>
+              ? <div className={`w-20 h-9 rounded-full ${SH}`} />
+              : <button onClick={handleFollow} className="px-5 py-2 rounded-full text-sm font-semibold flex-shrink-0 transition-all active:scale-95"
+                  style={st.following ? { border: '1.5px solid #e5e7eb', color: '#6b7280' } : { background: '#111', color: '#fff' }}>
                   {st.following ? 'Following' : 'Follow'}
                 </button>
             }
@@ -273,14 +281,11 @@ export default function WallpaperDetail({ initialWallpaper }: { initialWallpaper
         </div>
       )}
 
-      {/* ── Download button ── */}
+      {/* Download */}
       <div className="fixed bottom-0 left-0 right-0 z-50 px-5 pb-8">
-        <button
-          onClick={handleDownload}
-          disabled={st.downloading}
+        <button onClick={handleDownload} disabled={st.downloading}
           className="w-full py-4 rounded-2xl font-bold text-base flex items-center justify-center gap-2.5 text-white transition-all active:scale-[0.98]"
-          style={{ background: st.downloaded ? '#10b981' : '#111', opacity: st.downloading ? 0.75 : 1, boxShadow: st.downloaded ? '0 8px 30px rgba(16,185,129,0.35)' : '0 8px 30px rgba(0,0,0,0.2)' }}
-        >
+          style={{ background: st.downloaded ? '#10b981' : '#111', opacity: st.downloading ? 0.75 : 1, boxShadow: st.downloaded ? '0 8px 30px rgba(16,185,129,0.35)' : '0 8px 30px rgba(0,0,0,0.2)' }}>
           {st.downloading ? <Loader2 className="w-5 h-5 animate-spin" />
             : st.downloaded ? <><Check className="w-5 h-5" />Downloaded</>
             : <><Download className="w-5 h-5" />Download Wallpaper</>}
