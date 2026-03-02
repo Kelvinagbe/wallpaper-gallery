@@ -253,17 +253,17 @@ export const WallpaperGrid = ({
 
       {/* Bottom loader shown while fetching next page */}
       {loadingMore && (
-        <div className="flex flex-col items-center justify-center py-8 gap-2">
+        <div className="flex flex-col items-center a-center py-8 gap-2">
           <div className="flex items-center gap-1.5">
             {[0, 1, 2].map(i => (
               <div
                 key={i}
-                className="w-2 h-2 rounded-full bg-white/40"
+                className="w-2 h-2 rounded-full bg-black/900"
                 style={{ animation: `dotBounce 1.2s ease-in-out ${i * 0.2}s infinite` }}
               />
             ))}
           </div>
-          <span className="text-black/30 text-xs">Loading more...</span>
+          <span className="text-black/900 text-xs">Loading more...</span>
         </div>
       )}
 
