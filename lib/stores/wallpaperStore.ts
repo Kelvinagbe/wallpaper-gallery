@@ -52,7 +52,7 @@ const transformProfile = (p: any): UserProfile => ({
 
 // Fetch paginated wallpapers
 // ✅ Added optional `filter` param — only change from your original
-export const fetchWallpapers = async (page = 0, pageSize = DEFAULT_PAGE_SIZE, filter: Filter = 'all') => {
+export const fetchWallpapers = async (page = 0, pageSize = 10, filter: Filter = 'all') => {
   const supabase = getSupabase();
   console.log(`🔍 Fetching wallpapers - Page ${page}, Size ${pageSize}, Filter ${filter}`);
 
