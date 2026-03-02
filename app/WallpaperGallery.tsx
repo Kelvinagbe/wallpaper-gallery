@@ -19,7 +19,6 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
   const [page,          setPage]          = useState(feedCache.page);
   const [filter,        setFilter]        = useState<Filter>(feedCache.filter);
   const [isInitialLoad, setIsInitialLoad] = useState(false);
-  const [isRefreshing,  setIsRefreshing]  = useState(false);
   const [sidebarOpen,   setSidebarOpen]   = useState(false);
 
   const loadingMoreRef   = useRef(false);
@@ -30,11 +29,7 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
       requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo({ top: feedCache.scrollY, behavior: 'instant' })));
       return;
     }
-    feedCache.wallpapers = initialWallpapers;
-    feedCache.page       = 1;
-    feedCache.hasMore    = initialHasMore;
-    feedCache.filter     = filter;
-    feedCache.populated  = true;
+    Object.assign(feedCache, { wallpapers: initialWallpapers, page: 1, hasMore: initialHasMore, filter, populated: true });
   }, []);
 
   useEffect(() => {
@@ -49,22 +44,11 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
         if (cancelled) return;
         setWallpapers(data.wallpapers); setHasMore(data.hasMore); setPage(1);
         Object.assign(feedCache, { wallpapers: data.wallpapers, page: 1, hasMore: data.hasMore, filter, populated: true });
-      } catch (e) { console.error('Failed to load on filter change:', e); }
+      } catch (e) { console.error('Filter change failed:', e); }
       finally { if (!cancelled) setIsInitialLoad(false); }
     })();
     return () => { cancelled = true; };
   }, [filter]);
-
-  const handleRefresh = useCallback(async () => {
-    if (isRefreshing) return;
-    setIsRefreshing(true);
-    try {
-      const data = await fetchWallpapers(0, ITEMS_PER_PAGE, filter);
-      setWallpapers(data.wallpapers); setHasMore(data.hasMore); setPage(1);
-      Object.assign(feedCache, { wallpapers: data.wallpapers, page: 1, hasMore: data.hasMore, scrollY: 0 });
-    } catch (e) { console.error('Failed to refresh:', e); }
-    finally { setIsRefreshing(false); }
-  }, [filter, isRefreshing]);
 
   const handleLoadMore = useCallback(async () => {
     if (!hasMore || loadingMoreRef.current) return;
@@ -78,7 +62,7 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
         return next;
       });
       setHasMore(data.hasMore); setPage(p => p + 1);
-    } catch (e) { console.error('Failed to load more:', e); }
+    } catch (e) { console.error('Load more failed:', e); }
     finally { loadingMoreRef.current = false; }
   }, [hasMore, page, filter]);
 
@@ -95,7 +79,7 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
   }, []);
 
   return (
-    <div className="min-h-screen bg-gray-400 text-gray-900">
+    <div className="min-h-screen bg-gray-50 text-gray-900">
       <GlobalStyles />
       <Navigation isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="sidebar-offset">
@@ -104,7 +88,6 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
           <WallpaperGrid
             wallpapers={wallpapers}
             isLoading={isInitialLoad}
-            onRefresh={handleRefresh}
             onLoadMore={handleLoadMore}
             hasMore={hasMore}
           />
