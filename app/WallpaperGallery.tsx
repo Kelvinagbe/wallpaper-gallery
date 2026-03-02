@@ -55,16 +55,23 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
     loadingMoreRef.current = true;
     try {
       const data = await fetchWallpapers(page, ITEMS_PER_PAGE, filter);
-      setWallpapers(prev => {
-        const seen = new Set(prev.map(wp => wp.id));
-        const next = [...prev, ...data.wallpapers.filter((wp: Wallpaper) => !seen.has(wp.id))];
-        Object.assign(feedCache, { wallpapers: next, page: page + 1, hasMore: data.hasMore });
-        return next;
-      });
-      setHasMore(data.hasMore); setPage(p => p + 1);
+      const seen = new Set(wallpapers.map(wp => wp.id));
+      const newOnes = data.wallpapers.filter((wp: Wallpaper) => !seen.has(wp.id));
+
+      for (const wp of newOnes) {
+        await new Promise(res => setTimeout(res, 80));
+        setWallpapers(prev => {
+          const next = [...prev, wp];
+          Object.assign(feedCache, { wallpapers: next, page: page + 1, hasMore: data.hasMore });
+          return next;
+        });
+      }
+
+      setHasMore(data.hasMore);
+      setPage(p => p + 1);
     } catch (e) { console.error('Load more failed:', e); }
     finally { loadingMoreRef.current = false; }
-  }, [hasMore, page, filter]);
+  }, [hasMore, page, filter, wallpapers]);
 
   const handleFilterChange = useCallback((newFilter: Filter) => {
     if (newFilter === filter) return;
