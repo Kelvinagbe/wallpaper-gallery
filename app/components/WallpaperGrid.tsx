@@ -7,11 +7,11 @@ import { usePrefetch } from '@/app/hooks/usePrefetch';
 import type { Wallpaper } from '../types';
 
 const PLACEHOLDER_COLORS = [
-  { bg: '#1a1a2e', shimmer: '#16213e' },
-  { bg: '#1e1a2e', shimmer: '#2d1b4e' },
-  { bg: '#1a2e1e', shimmer: '#1b3a20' },
-  { bg: '#2e1a1a', shimmer: '#4e1b1b' },
-  { bg: '#2e2a1a', shimmer: '#4e3d1b' },
+  { bg: '#e8eaf0', shimmer: '#d0d4e8' },
+  { bg: '#ede8f0', shimmer: '#d8cce8' },
+  { bg: '#e8f0ea', shimmer: '#cce0d0' },
+  { bg: '#f0e8e8', shimmer: '#e8cccc' },
+  { bg: '#f0ede8', shimmer: '#e8dcc8' },
 ];
 
 // Full skeleton — only ever shown on cold first load
