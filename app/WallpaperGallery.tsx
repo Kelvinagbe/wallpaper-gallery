@@ -95,7 +95,7 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
   }, []);
 
   return (
-    <div className="min-h-screen bg-gray-500 text-gray-900">
+    <div className="min-h-screen bg-gray-400 text-gray-900">
       <GlobalStyles />
       <Navigation isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="sidebar-offset">
