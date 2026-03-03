@@ -7,7 +7,7 @@ import { ForgotPasswordScreen } from './ForgotPasswordScreen';
 
 export type AuthView = 'login' | 'signup' | 'forgot-password';
 
-type Props = { onViewChange: (view: AuthView) => void; redirectTo?: string; };
+type Props = { redirectTo?: string; };
 
 export const AuthUI = ({ redirectTo = '/' }: Props) => {
   const [view, setView] = useState<AuthView>('login');
