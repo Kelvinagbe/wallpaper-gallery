@@ -1,7 +1,7 @@
 'use client';
 
 import { usePathname, useRouter } from 'next/navigation';
-import { Home, Search, Upload, Bell, User, X, ImageIcon } from 'lucide-react';
+import { Home, Search, Upload, Bell, User, X } from 'lucide-react';
 
 interface NavigationProps {
   isOpen?: boolean;
@@ -13,10 +13,10 @@ export const Navigation = ({ isOpen = false, onClose = () => {} }: NavigationPro
   const router   = useRouter();
 
   const navItems = [
-    { href: '/',        icon: Home,      label: 'Home'    },
-    { href: '/search',  icon: Search,    label: 'Search'  },
-    { href: '/alerts',  icon: Bell,      label: 'Alerts'  },
-    { href: '/profile', icon: User,      label: 'Profile' },
+    { href: '/',        icon: Home,   label: 'Home'    },
+    { href: '/search',  icon: Search, label: 'Search'  },
+    { href: '/alerts',  icon: Bell,   label: 'Alerts'  },
+    { href: '/profile', icon: User,   label: 'Profile' },
   ];
 
   const handleNav = (href: string) => {
@@ -24,7 +24,6 @@ export const Navigation = ({ isOpen = false, onClose = () => {} }: NavigationPro
     onClose();
   };
 
-  // ── Shared sidebar content ─────────────────────────────────────────────────
   const SidebarContent = ({ onItemClick }: { onItemClick: (href: string) => void }) => (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
 
@@ -34,35 +33,32 @@ export const Navigation = ({ isOpen = false, onClose = () => {} }: NavigationPro
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: '12px',
+          gap: '10px',
           padding: '0 20px',
-          height: '60px',
-          borderBottom: '1px solid rgba(255,255,222,20)',
+          height: '64px',
+          borderBottom: '1px solid #f0f0f0',
           cursor: 'pointer',
           flexShrink: 0,
         }}
       >
-        <div style={{
-          width: '32px',
-          height: '32px',
-          borderRadius: '10px',
-          background: '#fff',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexShrink: 0,
-        }}>
-          <ImageIcon size={16} color="#000" />
-        </div>
+        {/* favicon.ico as logo */}
+        <img
+          src="/favicon.ico"
+          alt="Logo"
+          style={{
+            width: '28px',
+            height: '28px',
+            borderRadius: '8px',
+            objectFit: 'contain',
+            flexShrink: 0,
+          }}
+        />
         <span style={{
           fontFamily: "'Syne', sans-serif",
           fontWeight: 800,
-          fontSize: '16px',
-          letterSpacing: '-0.3px',
-          background: 'linear-gradient(135deg, #fff 0%, rgba(255,255,255,0.65) 100%)',
-          WebkitBackgroundClip: 'text',
-          WebkitTextFillColor: 'transparent',
-          backgroundClip: 'text',
+          fontSize: '15px',
+          letterSpacing: '0.08em',
+          color: '#0a0a0a',
         }}>
           WALLS
         </span>
@@ -85,49 +81,37 @@ export const Navigation = ({ isOpen = false, onClose = () => {} }: NavigationPro
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '12px',
-                padding: '10px 12px',
-                borderRadius: '12px',
+                gap: '11px',
+                padding: '10px 14px',
+                borderRadius: '10px',
                 border: 'none',
                 cursor: 'pointer',
                 width: '100%',
                 textAlign: 'left',
                 transition: 'all 0.15s ease',
-                background: active ? 'rgba(255,255,255,0.08)' : 'transparent',
-                color: active ? '#ffffff' : 'rgba(255,255,255,0.4)',
+                background: active ? '#0a0a0a' : 'transparent',
+                color: active ? '#ffffff' : '#6b7280',
                 position: 'relative',
               }}
               onMouseEnter={e => {
                 if (!active) {
-                  e.currentTarget.style.background = 'rgba(255,255,255,0.04)';
-                  e.currentTarget.style.color = 'rgba(255,255,255,0.75)';
+                  e.currentTarget.style.background = '#f5f5f5';
+                  e.currentTarget.style.color = '#0a0a0a';
                 }
               }}
               onMouseLeave={e => {
                 if (!active) {
                   e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.color = 'rgba(255,255,255,0.4)';
+                  e.currentTarget.style.color = '#6b7280';
                 }
               }}
             >
-              {/* Active left bar indicator */}
-              {active && (
-                <span style={{
-                  position: 'absolute',
-                  left: 0,
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  width: '3px',
-                  height: '20px',
-                  background: '#fff',
-                  borderRadius: '0 3px 3px 0',
-                }} />
-              )}
-              <Icon size={18} />
+              <Icon size={17} strokeWidth={active ? 2.2 : 1.8} />
               <span style={{
                 fontFamily: "'Inter', sans-serif",
                 fontWeight: active ? 600 : 400,
-                fontSize: '14px',
+                fontSize: '13.5px',
+                letterSpacing: '-0.01em',
               }}>
                 {label}
               </span>
@@ -139,7 +123,7 @@ export const Navigation = ({ isOpen = false, onClose = () => {} }: NavigationPro
       {/* Bottom — Upload CTA */}
       <div style={{
         padding: '12px',
-        borderTop: '1px solid rgba(255,255,255,0.06)',
+        borderTop: '1px solid #f0f0f0',
       }}>
         <button
           onClick={() => onItemClick('/upload')}
@@ -150,26 +134,29 @@ export const Navigation = ({ isOpen = false, onClose = () => {} }: NavigationPro
             gap: '8px',
             width: '100%',
             padding: '11px',
-            borderRadius: '12px',
-            border: 'none',
+            borderRadius: '10px',
+            border: '1.5px solid #e5e7eb',
             background: '#ffffff',
-            color: '#000000',
+            color: '#0a0a0a',
             fontFamily: "'Inter', sans-serif",
             fontWeight: 600,
             fontSize: '13px',
+            letterSpacing: '-0.01em',
             cursor: 'pointer',
             transition: 'all 0.15s ease',
           }}
           onMouseEnter={e => {
-            e.currentTarget.style.background = 'rgba(255,255,255,0.88)';
-            e.currentTarget.style.transform = 'scale(0.98)';
+            e.currentTarget.style.background = '#0a0a0a';
+            e.currentTarget.style.color = '#ffffff';
+            e.currentTarget.style.borderColor = '#0a0a0a';
           }}
           onMouseLeave={e => {
             e.currentTarget.style.background = '#ffffff';
-            e.currentTarget.style.transform = 'scale(1)';
+            e.currentTarget.style.color = '#0a0a0a';
+            e.currentTarget.style.borderColor = '#e5e7eb';
           }}
         >
-          <Upload size={14} />
+          <Upload size={14} strokeWidth={2} />
           Upload Wallpaper
         </button>
       </div>
@@ -194,8 +181,8 @@ export const Navigation = ({ isOpen = false, onClose = () => {} }: NavigationPro
           top: 0,
           height: '100%',
           width: '220px',
-          background: '#0a0a0a',
-          borderRight: '1px solid rgba(255,255,255,0.06)',
+          background: '#ffffff',
+          borderRight: '1px solid #f0f0f0',
           zIndex: 40,
         }}
       >
@@ -210,7 +197,7 @@ export const Navigation = ({ isOpen = false, onClose = () => {} }: NavigationPro
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(0,0,0,0.75)',
+            background: 'rgba(0,0,0,0.3)',
             backdropFilter: 'blur(4px)',
             zIndex: 60,
             animation: 'fadeIn 0.2s ease',
@@ -227,11 +214,12 @@ export const Navigation = ({ isOpen = false, onClose = () => {} }: NavigationPro
           top: 0,
           height: '100%',
           width: '260px',
-          background: '#0a0a0a',
-          borderRight: '1px solid rgba(255,255,255,0.06)',
+          background: '#ffffff',
+          borderRight: '1px solid #f0f0f0',
           zIndex: 61,
           transform: isOpen ? 'translateX(0)' : 'translateX(-100%)',
           transition: 'transform 0.28s cubic-bezier(0.32, 0.72, 0, 1)',
+          boxShadow: isOpen ? '4px 0 24px rgba(0,0,0,0.08)' : 'none',
         }}
       >
         {/* Close button */}
@@ -239,20 +227,27 @@ export const Navigation = ({ isOpen = false, onClose = () => {} }: NavigationPro
           onClick={onClose}
           style={{
             position: 'absolute',
-            top: '14px',
+            top: '16px',
             right: '14px',
             padding: '6px',
             borderRadius: '8px',
-            border: 'none',
-            background: 'rgba(255,255,255,0.06)',
+            border: '1px solid #f0f0f0',
+            background: '#ffffff',
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             zIndex: 1,
+            transition: 'all 0.15s ease',
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.background = '#f5f5f5';
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.background = '#ffffff';
           }}
         >
-          <X size={16} color="rgba(255,255,255,0.6)" />
+          <X size={15} color="#6b7280" />
         </button>
 
         <SidebarContent onItemClick={handleNav} />
