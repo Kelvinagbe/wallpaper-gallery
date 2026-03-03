@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState } from 'react';
@@ -46,22 +45,24 @@ export const LoginScreen = ({ onViewChange, redirectTo = '/' }: LoginScreenProps
     }
   };
 
+  const inp = "w-full h-10 px-3 bg-white/5 text-white placeholder:text-white/30 border border-white/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/40 focus:border-transparent text-sm";
+
   return (
     <div className="space-y-6">
       {/* Logo */}
       <div className="text-center">
-        <div className="inline-flex items-center justify-center w-10 h-10 bg-black dark:bg-white rounded-lg mb-6">
-          <svg className="w-6 h-6 text-white dark:text-black" fill="currentColor" viewBox="0 0 24 24">
+        <div className="inline-flex items-center justify-center w-10 h-10 bg-white rounded-lg mb-6">
+          <svg className="w-6 h-6 text-black" fill="currentColor" viewBox="0 0 24 24">
             <path d="M12 2L2 7v10c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-10-5z"/>
           </svg>
         </div>
-        <h1 className="text-2xl font-semibold text-black dark:text-white mb-2">Welcome back</h1>
-        <p className="text-sm text-gray-600 dark:text-gray-400">Sign in to your account to continue</p>
+        <h1 className="text-2xl font-semibold text-white mb-2">Welcome back</h1>
+        <p className="text-sm text-white/60">Sign in to your account to continue</p>
       </div>
 
       {/* Google */}
       <button onClick={handleGoogleLogin} disabled={isLoading}
-        className="w-full h-10 px-4 flex items-center justify-center gap-2 bg-white dark:bg-black text-black dark:text-white border border-gray-300 dark:border-gray-800 rounded-lg hover:border-gray-400 dark:hover:border-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium">
+        className="w-full h-10 px-4 flex items-center justify-center gap-2 bg-white/5 text-white border border-white/15 rounded-lg hover:bg-white/10 hover:border-white/25 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium">
         {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>
           <svg className="w-4 h-4" viewBox="0 0 24 24">
             <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -76,16 +77,16 @@ export const LoginScreen = ({ onViewChange, redirectTo = '/' }: LoginScreenProps
       {/* Divider */}
       <div className="relative">
         <div className="absolute inset-0 flex items-center">
-          <div className="w-full border-t border-gray-200 dark:border-gray-800" />
+          <div className="w-full border-t border-white/10" />
         </div>
         <div className="relative flex justify-center text-xs">
-          <span className="px-2 bg-white dark:bg-black text-gray-500">Or</span>
+          <span className="px-2 text-white/40">Or</span>
         </div>
       </div>
 
       {/* Error */}
       {error && (
-        <div className="p-3 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/20 rounded-lg">
+        <div className="p-3 text-sm text-red-300 bg-red-500/10 border border-red-500/20 rounded-lg">
           {error}
         </div>
       )}
@@ -93,32 +94,31 @@ export const LoginScreen = ({ onViewChange, redirectTo = '/' }: LoginScreenProps
       {/* Form */}
       <form onSubmit={handleEmailLogin} className="space-y-4">
         <div>
-          <label htmlFor="email" className="block text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">Email</label>
+          <label htmlFor="email" className="block text-sm font-medium text-white mb-2">Email</label>
           <input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)}
-            placeholder="you@example.com" required
-            className="w-full h-10 px-3 bg-white dark:bg-black text-black dark:text-white border border-gray-300 dark:border-gray-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent text-sm" />
+            placeholder="you@example.com" required className={inp} />
         </div>
         <div>
           <div className="flex items-center justify-between mb-2">
-            <label htmlFor="password" className="block text-sm font-medium text-gray-900 dark:text-gray-100">Password</label>
-            <button type="button" onClick={() => onViewChange('forgot-password')} className="text-xs text-gray-500 hover:text-black dark:hover:text-white transition-colors">
+            <label htmlFor="password" className="block text-sm font-medium text-white">Password</label>
+            <button type="button" onClick={() => onViewChange('forgot-password')}
+              className="text-xs text-white/50 hover:text-white transition-colors">
               Forgot password?
             </button>
           </div>
           <input id="password" type="password" value={password} onChange={e => setPassword(e.target.value)}
-            placeholder="••••••••" required
-            className="w-full h-10 px-3 bg-white dark:bg-black text-black dark:text-white border border-gray-300 dark:border-gray-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent text-sm" />
+            placeholder="••••••••" required className={inp} />
         </div>
         <button type="submit" disabled={isLoading}
-          className="w-full h-10 px-4 bg-black dark:bg-white text-white dark:text-black rounded-lg hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium flex items-center justify-center gap-2">
+          className="w-full h-10 px-4 bg-white text-black rounded-lg hover:bg-white/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-semibold flex items-center justify-center gap-2">
           {isLoading ? <><Loader2 className="w-4 h-4 animate-spin" />Signing in...</> : 'Sign in'}
         </button>
       </form>
 
       {/* Sign up */}
       <div className="text-center text-sm">
-        <span className="text-gray-600 dark:text-gray-400">Don't have an account? </span>
-        <button onClick={() => onViewChange('signup')} className="text-black dark:text-white hover:underline font-medium">
+        <span className="text-white/50">Don't have an account? </span>
+        <button onClick={() => onViewChange('signup')} className="text-white hover:text-white/80 font-semibold transition-colors">
           Sign up
         </button>
       </div>
