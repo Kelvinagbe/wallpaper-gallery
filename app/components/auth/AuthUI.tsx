@@ -13,11 +13,8 @@ export const AuthUI = ({ redirectTo = '/' }: Props) => {
   const [view, setView] = useState<AuthView>('login');
 
   const WALLPAPERS = [
-    'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&q=80',
-    'https://images.unsplash.com/photo-1419242902214-272b3f66ee7a?w=800&q=80',
-    'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=800&q=80',
-    'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=800&q=80',
-  ];
+    '/1.png',
+      ];
 
   const bg = WALLPAPERS[Math.floor(Math.random() * WALLPAPERS.length)];
 
