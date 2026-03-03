@@ -9,7 +9,7 @@ import { WallpaperGrid } from './components/WallpaperGrid';
 import { GlobalStyles } from './components/GlobalStyles';
 import type { Wallpaper, Filter } from './types';
 
-const ITEMS_PER_PAGE = 3;
+const ITEMS_PER_PAGE = 10;
 
 type Props = { initialWallpapers: Wallpaper[]; initialHasMore: boolean; };
 
@@ -37,7 +37,6 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
     let cancelled = false;
     setWallpapers([]); setPage(0); setHasMore(true); setIsInitialLoad(true);
     Object.assign(feedCache, { populated: false, wallpapers: [], scrollY: 0 });
-
     (async () => {
       try {
         const data = await fetchWallpapers(0, ITEMS_PER_PAGE, filter);
@@ -57,16 +56,11 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
       const data = await fetchWallpapers(page, ITEMS_PER_PAGE, filter);
       const seen = new Set(wallpapers.map(wp => wp.id));
       const newOnes = data.wallpapers.filter((wp: Wallpaper) => !seen.has(wp.id));
-
-      for (const wp of newOnes) {
-        await new Promise(res => setTimeout(res, 80));
-        setWallpapers(prev => {
-          const next = [...prev, wp];
-          Object.assign(feedCache, { wallpapers: next, page: page + 1, hasMore: data.hasMore });
-          return next;
-        });
-      }
-
+      setWallpapers(prev => {
+        const next = [...prev, ...newOnes];
+        Object.assign(feedCache, { wallpapers: next, page: page + 1, hasMore: data.hasMore });
+        return next;
+      });
       setHasMore(data.hasMore);
       setPage(p => p + 1);
     } catch (e) { console.error('Load more failed:', e); }
