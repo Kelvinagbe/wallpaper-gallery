@@ -37,7 +37,7 @@ export const Navigation = ({ isOpen = false, onClose = () => {} }: NavigationPro
           gap: '12px',
           padding: '0 20px',
           height: '60px',
-          borderBottom: '1px solid rgba(255,255,255,0.06)',
+          borderBottom: '1px solid rgba(255,255,222,20)',
           cursor: 'pointer',
           flexShrink: 0,
         }}
