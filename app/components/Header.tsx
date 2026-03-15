@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Menu, Mail, UserPlus, ArrowRight, X, ChevronDown, Check } from 'lucide-react';
+import { useState } from 'react';
+import { Menu, Mail, UserPlus, ArrowRight, X, ChevronDown } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/app/components/AuthProvider';
 import type { Filter } from '../types';
@@ -19,222 +19,240 @@ const FILTERS: { value: Filter; label: string }[] = [
   { value: 'popular', label: 'Popular' },
 ];
 
+const BTN_BASE: React.CSSProperties = {
+  padding: '7px 16px',
+  borderRadius: '0px',
+  fontSize: '13px',
+  fontFamily: "'Inter', sans-serif",
+  fontWeight: 500,
+  cursor: 'pointer',
+  transition: 'all 0.2s ease',
+  whiteSpace: 'nowrap',
+};
+
 export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
   const router = useRouter();
   const { user } = useAuth();
   const [showAuth, setShowAuth] = useState(false);
-  const [closingAuth, setClosingAuth] = useState(false);
-  const [showFilterSheet, setShowFilterSheet] = useState(false);
-  const [closingSheet, setClosingSheet] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
+  const [closing, setClosing] = useState(false);
 
-  useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 1024);
-    check();
-    window.addEventListener('resize', check);
-    return () => window.removeEventListener('resize', check);
-  }, []);
-
-  // Lock scroll when sheets open
-  useEffect(() => {
-    document.body.style.overflow = (showAuth || showFilterSheet) ? 'hidden' : '';
-    return () => { document.body.style.overflow = ''; };
-  }, [showAuth, showFilterSheet]);
-
-  const closeAuth = (cb?: () => void) => {
-    setClosingAuth(true);
-    setTimeout(() => { setShowAuth(false); setClosingAuth(false); cb?.(); }, 260);
+  const closeModal = (cb?: () => void) => {
+    setClosing(true);
+    setTimeout(() => { setShowAuth(false); setClosing(false); cb?.(); }, 250);
   };
 
-  const closeSheet = (cb?: () => void) => {
-    setClosingSheet(true);
-    setTimeout(() => { setShowFilterSheet(false); setClosingSheet(false); cb?.(); }, 280);
-  };
+  const handleNav = (path: string) => closeModal(() => router.push(path));
 
-  const handleNav = (path: string) => closeAuth(() => router.push(path));
+  const hover = (
+    enter: Partial<CSSStyleDeclaration>,
+    leave: Partial<CSSStyleDeclaration>,
+  ) => ({
+    onMouseEnter: (e: React.MouseEvent<HTMLButtonElement>) =>
+      Object.assign(e.currentTarget.style, enter),
+    onMouseLeave: (e: React.MouseEvent<HTMLButtonElement>) =>
+      Object.assign(e.currentTarget.style, leave),
+  });
 
   const activeLabel = FILTERS.find(f => f.value === filter)?.label ?? 'All';
 
   return (
     <>
       <link
-        href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Inter:wght@400;500;600&display=swap"
         rel="stylesheet"
       />
       <style>{`
-        :root {
-          --ink: #0a0a0a;
-          --ink-mid: rgba(10,10,10,0.4);
-          --ink-faint: rgba(10,10,10,0.07);
-          --border: rgba(10,10,10,0.1);
-          --white: #ffffff;
-          --font-display: 'Bebas Neue', sans-serif;
-          --font-body: 'DM Sans', sans-serif;
-        }
+        @keyframes modalIn  { from { opacity:0; transform:scale(0.95) translateY(-8px); } to { opacity:1; transform:scale(1) translateY(0); } }
+        @keyframes modalOut { from { opacity:1; transform:scale(1) translateY(0); } to { opacity:0; transform:scale(0.95) translateY(-8px); } }
+        @keyframes backdropIn  { from { opacity:0; } to { opacity:1; } }
+        @keyframes backdropOut { from { opacity:1; } to { opacity:0; } }
+        .modal-enter { animation: modalIn 0.25s cubic-bezier(0.16,1,0.3,1) forwards; }
+        .modal-exit  { animation: modalOut 0.25s cubic-bezier(0.16,1,0.3,1) forwards; }
+        .backdrop-enter { animation: backdropIn  0.25s ease forwards; }
+        .backdrop-exit  { animation: backdropOut 0.25s ease forwards; }
 
-        /* ── Filters (desktop) ── */
-        .hdr-filter-btn {
-          padding: 5px 14px;
-          background: transparent;
-          color: var(--ink-mid);
-          border: none;
-          font-family: var(--font-body);
-          font-size: 13px;
-          font-weight: 500;
-          letter-spacing: 0.01em;
-          cursor: pointer;
-          transition: color 0.15s;
+        .filter-select-wrap {
           position: relative;
+          display: inline-flex;
+          align-items: center;
         }
-        .hdr-filter-btn::after {
-          content: '';
+        .filter-select-wrap select {
+          appearance: none;
+          -webkit-appearance: none;
           position: absolute;
-          bottom: -1px; left: 50%; right: 50%;
-          height: 1.5px;
-          background: var(--ink);
-          transition: left 0.2s ease, right 0.2s ease;
-        }
-        .hdr-filter-btn.active { color: var(--ink); }
-        .hdr-filter-btn.active::after { left: 14px; right: 14px; }
-        .hdr-filter-btn:not(.active):hover { color: var(--ink); }
-
-        /* ── Pill (mobile filter trigger) ── */
-        .hdr-filter-pill {
-          display: flex; align-items: center; gap: 4px;
-          padding: 5px 10px 5px 12px;
-          background: transparent;
-          border: 1px solid var(--border);
-          color: var(--ink);
-          font-family: var(--font-body);
-          font-size: 13px;
-          font-weight: 500;
+          inset: 0;
+          width: 100%;
+          height: 100%;
+          opacity: 0;
           cursor: pointer;
-          transition: border-color 0.15s, background 0.15s;
-          white-space: nowrap;
-        }
-        .hdr-filter-pill:hover { border-color: rgba(10,10,10,0.3); background: var(--ink-faint); }
-
-        /* ── Upload / Sign-in buttons ── */
-        .hdr-btn {
-          padding: 6px 14px;
-          font-family: var(--font-body);
-          font-size: 13px;
-          font-weight: 500;
-          cursor: pointer;
-          border-radius: 0;
-          transition: all 0.15s;
-          white-space: nowrap;
-        }
-        .hdr-btn-ghost {
-          border: 1px solid var(--border);
-          background: transparent;
-          color: rgba(10,10,10,0.55);
-        }
-        .hdr-btn-ghost:hover { background: var(--ink-faint); border-color: rgba(10,10,10,0.25); color: var(--ink); }
-        .hdr-btn-solid {
           border: none;
-          background: var(--ink);
-          color: var(--white);
-          font-weight: 600;
-          letter-spacing: 0.01em;
+          background: transparent;
+          font-size: 16px; /* prevents iOS zoom */
         }
-        .hdr-btn-solid:hover { background: rgba(10,10,10,0.75); }
-
-        /* ── Backdrop ── */
-        @keyframes bdIn  { from { opacity:0 } to { opacity:1 } }
-        @keyframes bdOut { from { opacity:1 } to { opacity:0 } }
-        .bd-enter { animation: bdIn  0.22s ease forwards; }
-        .bd-exit  { animation: bdOut 0.22s ease forwards; }
-
-        /* ── Auth modal ── */
-        @keyframes modalIn  { from { opacity:0; transform:scale(0.97) translateY(-6px) } to { opacity:1; transform:scale(1) translateY(0) } }
-        @keyframes modalOut { from { opacity:1; transform:scale(1) translateY(0) } to { opacity:0; transform:scale(0.97) translateY(-6px) } }
-        .modal-enter { animation: modalIn  0.26s cubic-bezier(0.16,1,0.3,1) forwards; }
-        .modal-exit  { animation: modalOut 0.22s ease forwards; }
-
-        /* ── Bottom sheet ── */
-        @keyframes sheetIn  { from { transform:translateY(100%) } to { transform:translateY(0) } }
-        @keyframes sheetOut { from { transform:translateY(0) } to { transform:translateY(100%) } }
-        .sheet-enter { animation: sheetIn  0.28s cubic-bezier(0.16,1,0.3,1) forwards; }
-        .sheet-exit  { animation: sheetOut 0.24s ease forwards; }
-
-        /* ── Icon button ── */
-        .hdr-icon-btn {
-          padding: 6px; background: transparent; border: none;
-          cursor: pointer; display: flex; align-items: center;
-          justify-content: center; flex-shrink: 0; transition: background 0.15s;
+        .filter-select-label {
+          display: flex;
+          align-items: center;
+          gap: 3px;
+          font-family: 'Inter', sans-serif;
+          font-size: 13px;
+          font-weight: 500;
+          color: rgba(0,0,0,0.75);
+          pointer-events: none;
+          user-select: none;
+          white-space: nowrap;
         }
-        .hdr-icon-btn:hover { background: var(--ink-faint); }
       `}</style>
 
-      {/* ─────────── HEADER ─────────── */}
-      <header style={{
-        position: 'sticky', top: 0, zIndex: 50,
-        background: 'rgba(255,255,255,0.9)',
-        backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
-        borderBottom: '1px solid var(--border)',
-      }}>
-        <div style={{
-          maxWidth: '1280px', margin: '0 auto',
-          padding: '0 20px', height: '52px',
-          display: 'flex', alignItems: 'center', gap: '12px',
-        }}>
+      <header
+        style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 50,
+          background: 'rgba(255,255,255,0.85)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
+          borderBottom: '1px solid rgba(0,0,0,0.06)',
+        }}
+      >
+        <div
+          style={{
+            maxWidth: '1280px',
+            margin: '0 auto',
+            padding: '0 16px',
+            height: '56px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '16px',
+          }}
+        >
           {/* Hamburger */}
-          <button onClick={onMenuOpen} className="hdr-icon-btn lg:hidden" aria-label="Open menu">
-            <Menu size={18} color="rgba(10,10,10,0.5)" />
+          <button
+            onClick={onMenuOpen}
+            className="lg:hidden"
+            aria-label="Open menu"
+            style={{
+              padding: '6px',
+              borderRadius: '8px',
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+              transition: 'background 0.2s',
+            }}
+            {...hover(
+              { background: 'rgba(0,0,0,0.05)' },
+              { background: 'transparent' },
+            )}
+          >
+            <Menu size={20} color="rgba(0,0,0,0.5)" />
           </button>
 
           {/* Logo */}
           <span
             onClick={() => router.push('/')}
             style={{
-              fontFamily: 'var(--font-display)',
-              fontSize: '22px', letterSpacing: '0.04em',
-              color: 'var(--ink)', cursor: 'pointer', flexShrink: 0,
-              userSelect: 'none', lineHeight: 1,
+              fontFamily: "'Syne', sans-serif",
+              fontWeight: 800,
+              fontSize: '18px',
+              letterSpacing: '-0.5px',
+              cursor: 'pointer',
+              flexShrink: 0,
+              background: 'linear-gradient(135deg, #000000 0%, rgba(0,0,0,0.6) 100%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text',
             }}
           >
             WALLS
           </span>
 
-          {/* Divider */}
-          <div style={{ width: '1px', height: '20px', background: 'var(--border)', flexShrink: 0 }} />
-
           {/* Desktop filters */}
-          <nav className="hidden lg:flex" style={{ display: 'flex', alignItems: 'center', flex: 1, borderBottom: 'none' }}>
+          <div
+            className="hidden lg:flex"
+            style={{ alignItems: 'center', gap: '4px', flex: 1 }}
+          >
             {FILTERS.map(({ value, label }) => (
               <button
                 key={value}
-                className={`hdr-filter-btn${filter === value ? ' active' : ''}`}
                 onClick={() => setFilter(value)}
+                style={{
+                  ...BTN_BASE,
+                  padding: '6px 16px',
+                  background: filter === value ? '#000000' : 'transparent',
+                  color: filter === value ? '#ffffff' : 'rgba(0,0,0,0.4)',
+                  boxShadow: filter === value ? '0 0 20px rgba(0,0,0,0.1)' : 'none',
+                  border: 'none',
+                }}
+                {...hover(
+                  filter !== value
+                    ? { color: 'rgba(0,0,0,0.8)', background: 'rgba(0,0,0,0.05)' }
+                    : {},
+                  filter !== value
+                    ? { color: 'rgba(0,0,0,0.4)', background: 'transparent' }
+                    : {},
+                )}
               >
                 {label}
               </button>
             ))}
-          </nav>
+          </div>
 
-          {/* Mobile filter pill */}
-          {isMobile && (
-            <button
-              className="hdr-filter-pill lg:hidden"
-              onClick={() => setShowFilterSheet(true)}
-              style={{ flex: 1 }}
-            >
+          {/* Mobile filter — native select disguised as label+chevron */}
+          <div className="flex lg:hidden filter-select-wrap" style={{ flex: 1 }}>
+            <span className="filter-select-label">
               {activeLabel}
-              <ChevronDown size={13} strokeWidth={2} style={{ opacity: 0.5 }} />
-            </button>
-          )}
+              <ChevronDown size={12} strokeWidth={2.5} color="rgba(0,0,0,0.35)" />
+            </span>
+            <select
+              value={filter}
+              onChange={e => setFilter(e.target.value as Filter)}
+              aria-label="Filter wallpapers"
+            >
+              {FILTERS.map(({ value, label }) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          </div>
 
-          {/* Spacer (desktop) */}
+          {/* Spacer desktop */}
           <div className="hidden lg:block" style={{ flex: 1 }} />
 
           {/* Right actions */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-            <button className="hdr-btn hdr-btn-ghost" onClick={() => router.push('/upload')}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+            <button
+              onClick={() => router.push('/upload')}
+              style={{
+                ...BTN_BASE,
+                border: '1px solid rgba(0,0,0,0.12)',
+                background: 'transparent',
+                color: 'rgba(0,0,0,0.55)',
+              }}
+              {...hover(
+                { background: 'rgba(0,0,0,0.04)', color: 'rgba(0,0,0,0.9)', borderColor: 'rgba(0,0,0,0.25)' },
+                { background: 'transparent', color: 'rgba(0,0,0,0.55)', borderColor: 'rgba(0,0,0,0.12)' },
+              )}
+            >
               Upload
             </button>
+
             {!user && (
-              <button className="hdr-btn hdr-btn-solid" onClick={() => setShowAuth(true)}>
+              <button
+                onClick={() => setShowAuth(true)}
+                style={{
+                  ...BTN_BASE,
+                  border: 'none',
+                  background: '#000000',
+                  color: '#ffffff',
+                  fontWeight: 600,
+                }}
+                {...hover(
+                  { background: 'rgba(0,0,0,0.8)', transform: 'scale(0.98)' },
+                  { background: '#000000', transform: 'scale(1)' },
+                )}
+              >
                 Sign in
               </button>
             )}
@@ -242,143 +260,83 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
         </div>
       </header>
 
-      {/* ─────────── MOBILE FILTER SHEET ─────────── */}
-      {showFilterSheet && (
-        <div
-          className={closingSheet ? 'bd-exit' : 'bd-enter'}
-          onClick={() => closeSheet()}
-          style={{
-            position: 'fixed', inset: 0, zIndex: 300,
-            background: 'rgba(10,10,10,0.35)',
-            backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)',
-          }}
-        >
-          <div
-            className={closingSheet ? 'sheet-exit' : 'sheet-enter'}
-            onClick={e => e.stopPropagation()}
-            style={{
-              position: 'absolute', bottom: 0, left: 0, right: 0,
-              background: '#fff',
-              borderTop: '1px solid var(--border)',
-              paddingBottom: 'env(safe-area-inset-bottom, 16px)',
-            }}
-          >
-            {/* Handle */}
-            <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 4px' }}>
-              <div style={{ width: '32px', height: '3px', background: 'rgba(10,10,10,0.15)' }} />
-            </div>
-
-            {/* Label */}
-            <div style={{
-              padding: '12px 20px 8px',
-              fontFamily: 'var(--font-body)',
-              fontSize: '11px', fontWeight: 500,
-              letterSpacing: '0.08em', textTransform: 'uppercase',
-              color: 'rgba(10,10,10,0.35)',
-            }}>
-              Browse by
-            </div>
-
-            {/* Options */}
-            {FILTERS.map(({ value, label }) => {
-              const active = filter === value;
-              return (
-                <button
-                  key={value}
-                  onClick={() => { setFilter(value); closeSheet(); }}
-                  style={{
-                    width: '100%', padding: '16px 20px',
-                    background: active ? 'var(--ink-faint)' : 'transparent',
-                    border: 'none', borderTop: '1px solid var(--border)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    cursor: 'pointer', transition: 'background 0.12s',
-                    fontFamily: 'var(--font-body)',
-                    fontSize: '16px', fontWeight: active ? 500 : 400,
-                    color: active ? 'var(--ink)' : 'rgba(10,10,10,0.6)',
-                    textAlign: 'left',
-                  }}
-                >
-                  {label}
-                  {active && <Check size={15} strokeWidth={2.5} color="var(--ink)" />}
-                </button>
-              );
-            })}
-
-            {/* Cancel */}
-            <button
-              onClick={() => closeSheet()}
-              style={{
-                width: '100%', padding: '16px 20px',
-                background: 'transparent',
-                border: 'none', borderTop: '1px solid var(--border)',
-                fontFamily: 'var(--font-body)', fontSize: '14px',
-                fontWeight: 500, color: 'rgba(10,10,10,0.35)',
-                cursor: 'pointer', textAlign: 'center',
-              }}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ─────────── AUTH MODAL ─────────── */}
+      {/* Auth Modal */}
       {showAuth && (
         <div
-          className={closingAuth ? 'bd-exit' : 'bd-enter'}
-          onClick={() => closeAuth()}
+          className={closing ? 'backdrop-exit' : 'backdrop-enter'}
+          onClick={() => closeModal()}
           style={{
-            position: 'fixed', inset: 0, zIndex: 200,
-            background: 'rgba(10,10,10,0.35)',
-            backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px',
+            position: 'fixed',
+            inset: 0,
+            zIndex: 200,
+            background: 'rgba(0,0,0,0.3)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
           }}
         >
           <div
-            className={closingAuth ? 'modal-exit' : 'modal-enter'}
+            className={closing ? 'modal-exit' : 'modal-enter'}
             onClick={e => e.stopPropagation()}
             style={{
-              width: '100%', maxWidth: '360px',
-              background: '#fff',
-              border: '1px solid var(--border)',
-              padding: '28px 24px',
-              boxShadow: '0 32px 80px rgba(10,10,10,0.12)',
+              width: '100%',
+              maxWidth: '360px',
+              background: '#ffffff',
+              border: '1px solid rgba(0,0,0,0.08)',
+              borderRadius: '24px',
+              padding: '32px 28px',
+              boxShadow: '0 40px 80px rgba(0,0,0,0.15)',
             }}
           >
             {/* Close */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '8px' }}>
               <button
-                onClick={() => closeAuth()}
+                onClick={() => closeModal()}
                 style={{
-                  width: '26px', height: '26px',
-                  background: 'var(--ink-faint)', border: 'none',
-                  cursor: 'pointer', display: 'flex',
-                  alignItems: 'center', justifyContent: 'center',
-                  transition: 'background 0.15s',
+                  width: '28px',
+                  height: '28px',
+                  borderRadius: '50%',
+                  background: 'rgba(0,0,0,0.05)',
+                  border: 'none',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'background 0.2s',
                 }}
-                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(10,10,10,0.12)')}
-                onMouseLeave={e => (e.currentTarget.style.background = 'var(--ink-faint)')}
+                {...hover(
+                  { background: 'rgba(0,0,0,0.1)' },
+                  { background: 'rgba(0,0,0,0.05)' },
+                )}
               >
-                <X size={13} color="rgba(10,10,10,0.45)" />
+                <X size={14} color="rgba(0,0,0,0.4)" />
               </button>
             </div>
 
             {/* Title */}
-            <div style={{ marginBottom: '24px' }}>
-              <h2 style={{
-                fontFamily: 'var(--font-display)',
-                fontSize: '28px', letterSpacing: '0.04em',
-                color: 'var(--ink)', marginBottom: '6px', lineHeight: 1,
-              }}>
-                WELCOME BACK
+            <div style={{ marginBottom: '28px' }}>
+              <h2
+                style={{
+                  fontFamily: "'Syne', sans-serif",
+                  fontWeight: 800,
+                  fontSize: '22px',
+                  color: '#000000',
+                  letterSpacing: '-0.5px',
+                  marginBottom: '6px',
+                }}
+              >
+                Welcome to WALLS
               </h2>
-              <p style={{ fontSize: '13px', color: 'var(--ink-mid)', fontFamily: 'var(--font-body)', fontWeight: 300 }}>
+              <p style={{ fontSize: '13px', color: 'rgba(0,0,0,0.4)', fontFamily: "'Inter', sans-serif" }}>
                 Sign in or create an account to continue
               </p>
             </div>
 
             {/* Buttons */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {[
                 { label: 'Sign in with Email', icon: Mail, path: '/auth/login', primary: true },
                 { label: 'Create Account', icon: UserPlus, path: '/auth/signup', primary: false },
@@ -387,38 +345,48 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
                   key={path}
                   onClick={() => handleNav(path)}
                   style={{
-                    width: '100%', padding: '13px 16px',
+                    width: '100%',
+                    padding: '14px 20px',
+                    borderRadius: '0px',
                     cursor: 'pointer',
-                    fontFamily: 'var(--font-body)', fontWeight: 500, fontSize: '13px',
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    transition: 'all 0.15s',
-                    background: primary ? 'var(--ink)' : 'transparent',
-                    color: primary ? '#fff' : 'var(--ink)',
-                    border: primary ? 'none' : '1px solid var(--border)',
-                    borderRadius: 0,
+                    fontFamily: "'Inter', sans-serif",
+                    fontWeight: 600,
+                    fontSize: '14px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    transition: 'all 0.2s ease',
+                    background: primary ? '#000000' : 'rgba(0,0,0,0.03)',
+                    color: primary ? '#ffffff' : '#000000',
+                    border: primary ? 'none' : '1px solid rgba(0,0,0,0.1)',
                   }}
-                  onMouseEnter={e => {
-                    if (primary) e.currentTarget.style.background = 'rgba(10,10,10,0.78)';
-                    else { e.currentTarget.style.background = 'var(--ink-faint)'; e.currentTarget.style.borderColor = 'rgba(10,10,10,0.25)'; }
-                  }}
-                  onMouseLeave={e => {
-                    if (primary) e.currentTarget.style.background = 'var(--ink)';
-                    else { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'var(--border)'; }
-                  }}
+                  {...hover(
+                    primary
+                      ? { background: 'rgba(0,0,0,0.8)', transform: 'scale(0.99)' }
+                      : { background: 'rgba(0,0,0,0.06)', borderColor: 'rgba(0,0,0,0.2)', transform: 'scale(0.99)' },
+                    primary
+                      ? { background: '#000000', transform: 'scale(1)' }
+                      : { background: 'rgba(0,0,0,0.03)', borderColor: 'rgba(0,0,0,0.1)', transform: 'scale(1)' },
+                  )}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <Icon size={15} /><span>{label}</span>
+                    <Icon size={16} /><span>{label}</span>
                   </div>
-                  <ArrowRight size={14} />
+                  <ArrowRight size={15} />
                 </button>
               ))}
             </div>
 
-            <p style={{
-              marginTop: '18px', textAlign: 'center',
-              fontSize: '11px', color: 'rgba(10,10,10,0.22)',
-              fontFamily: 'var(--font-body)', fontWeight: 300, lineHeight: 1.6,
-            }}>
+            <p
+              style={{
+                marginTop: '20px',
+                textAlign: 'center',
+                fontSize: '11px',
+                color: 'rgba(0,0,0,0.25)',
+                fontFamily: "'Inter', sans-serif",
+                lineHeight: 1.6,
+              }}
+            >
               By continuing you agree to our Terms of Service and Privacy Policy
             </p>
           </div>
