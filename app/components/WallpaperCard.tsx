@@ -9,6 +9,7 @@ import { VerifiedBadge } from './VerifiedBadge';
 import { toggleLike, isWallpaperLiked, toggleSave, isWallpaperSaved } from '@/lib/stores/userStore';
 import { useAuth } from '@/app/components/AuthProvider';
 import { saveFeedScroll } from '@/lib/feedCache';
+import { startLoader } from '@/app/components/TopLoader';
 import type { Wallpaper } from '../types';
 
 const COLORS = [
@@ -28,27 +29,6 @@ const imgCache = (() => {
   };
 })();
 
-let _setNavVisible: ((v: boolean) => void) | null = null;
-let _navLoaderMounted = false;
-export const showNavLoader = () => _setNavVisible?.(true);
-export const hideNavLoader = () => _setNavVisible?.(false);
-
-const NavLoaderSingleton = () => {
-  const [visible, setVisible] = useState(false);
-  useEffect(() => { _setNavVisible = setVisible; return () => { _setNavVisible = null; }; }, []);
-  if (!visible) return null;
-  return createPortal(
-    <>
-      <style>{`@keyframes dotBounce{0%,80%,100%{transform:scale(.6);opacity:.4}40%{transform:scale(1);opacity:1}}.nav-dot{width:10px;height:10px;border-radius:50%;background:#111;animation:dotBounce 1.2s ease-in-out infinite}.nav-dot:nth-child(2){animation-delay:.2s}.nav-dot:nth-child(3){animation-delay:.4s}`}</style>
-      <div className="fixed inset-0 bg-white/70 backdrop-blur-sm z-[99998]" />
-      <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[99999] flex items-center gap-2.5 pointer-events-none">
-        <div className="nav-dot" /><div className="nav-dot" /><div className="nav-dot" />
-      </div>
-    </>,
-    document.body,
-  );
-};
-
 const BottomSheet = ({ isOpen, onClose, wp, saved, onSave, onDownload, onShare }: {
   isOpen: boolean; onClose: () => void; wp: Wallpaper; saved: boolean;
   onSave: () => void; onDownload: () => void; onShare: () => void;
@@ -56,7 +36,7 @@ const BottomSheet = ({ isOpen, onClose, wp, saved, onSave, onDownload, onShare }
   if (!isOpen) return null;
 
   const items = [
-    { icon: Bookmark, label: saved ? 'Remove from Saved' : 'Save to Collection', onClick: onSave, iconBg: saved ? 'bg-blue-50' : 'bg-gray-100', iconColor: saved ? 'text-blue-500 fill-blue-500' : 'text-gray-600' },
+    { icon: Bookmark, label: saved ? 'Remove from Saved' : 'Save to Collection', onClick: onSave, iconBg: 'bg-blue-50', iconColor: saved ? 'text-blue-500 fill-blue-500' : 'text-gray-600' },
     { icon: Download, label: 'Download Wallpaper', onClick: onDownload, iconBg: 'bg-gray-100', iconColor: 'text-gray-600' },
     { icon: Share2, label: 'Share Wallpaper', onClick: onShare, iconBg: 'bg-gray-100', iconColor: 'text-gray-600' },
     { icon: Flag, label: 'Report Content', onClick: () => { alert('Report coming soon'); onClose(); }, iconBg: 'bg-red-50', iconColor: 'text-red-500', labelColor: 'text-red-500', border: true },
@@ -95,15 +75,10 @@ export const WallpaperCard = ({ wp, onClick, priority = false, placeholderIndex 
   const { user } = useAuth();
   const router = useRouter();
   const isMounted = useRef(true);
-  const isOwner = useRef(false);
   const imgSrc = wp.thumbnail || wp.url;
   const ph = COLORS[placeholderIndex % COLORS.length];
 
   useEffect(() => () => { isMounted.current = false; }, []);
-  useEffect(() => {
-    if (!_navLoaderMounted) { _navLoaderMounted = true; isOwner.current = true; }
-    return () => { if (isOwner.current) _navLoaderMounted = false; };
-  }, []);
 
   const [state, setState] = useState({ loaded: imgCache.has(imgSrc), liked: false, saved: false, showMenu: false });
   const [likeCount, setLikeCount] = useState(wp.likes || 0);
@@ -160,37 +135,37 @@ export const WallpaperCard = ({ wp, onClick, priority = false, placeholderIndex 
 
   const handleCardClick = () => {
     if (onClick) return onClick();
-    saveFeedScroll(); showNavLoader();
-    setTimeout(() => router.push(`/details/${wp.id}`), 80);
+    saveFeedScroll();
+    startLoader();
+    router.push(`/details/${wp.id}`);
   };
 
   const fmt = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n / 1_000).toFixed(1)}k` : String(n);
 
   return (
     <>
-      {isOwner.current && <NavLoaderSingleton />}
       <div className="relative w-full rounded-xl overflow-hidden cursor-pointer" style={{ aspectRatio: '9/16', background: ph.bg }} onClick={handleCardClick}>
 
-        {/* Shimmer — shown while loading */}
+        {/* Shimmer */}
         {!state.loaded && (
           <div className="absolute inset-0 z-[1]">
             <div className="absolute inset-0" style={{ background: `linear-gradient(105deg,transparent 40%,${ph.shimmer}99 50%,transparent 60%)`, backgroundSize: '200% 100%', animation: 'shimmerSweep 1.8s ease-in-out infinite' }} />
           </div>
         )}
 
-        {/* Image — always mounted so it loads immediately */}
+        {/* Image */}
         <Image src={imgSrc} alt={wp.title} fill sizes="(max-width:480px) 50vw,(max-width:768px) 33vw,(max-width:1024px) 25vw,20vw"
           onLoad={() => { imgCache.add(imgSrc); if (isMounted.current) set({ loaded: true }); }}
           className="object-cover z-[2]" priority={priority} loading={priority ? 'eager' : 'lazy'}
           style={{ opacity: state.loaded ? 1 : 0, transition: 'opacity 0.4s ease' }}
         />
 
-        {/* Gradient — only show once image is loaded */}
+        {/* Gradient */}
         {state.loaded && (
           <div className="absolute inset-0 z-[3]" style={{ background: 'linear-gradient(to top,rgba(0,0,0,0.88) 0%,rgba(0,0,0,0.2) 40%,transparent 65%)' }} />
         )}
 
-        {/* Info — only show once image is loaded */}
+        {/* Info */}
         {state.loaded && (
           <div className="absolute bottom-0 left-0 right-0 z-[4] px-2 pb-2.5 pt-6">
             <p className="text-white text-[11px] font-medium leading-tight line-clamp-1 mb-1.5">{wp.title}</p>
