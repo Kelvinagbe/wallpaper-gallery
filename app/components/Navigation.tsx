@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { Home, Search, Bell, User, X, Upload } from 'lucide-react';
 import { useUploadModal } from '@/app/components/UploadModalProvider';
+import { startLoader } from '@/app/components/TopLoader';
 
 const NAV = [
   { href: '/',        icon: Home,   label: 'Home'    },
@@ -39,9 +40,13 @@ export const Navigation = ({ isOpen = false, onClose = () => {} }: NavigationPro
   }, [isOpen]);
 
   const close = () => onClose();
-  const go    = (href: string) => { router.push(href); close(); };
 
-  // close nav sheet first, then open upload modal
+  const go = (href: string) => {
+    startLoader();
+    router.push(href);
+    close();
+  };
+
   const handleUpload = () => { close(); setTimeout(openUpload, CLOSE_DURATION); };
 
   return (
@@ -137,7 +142,7 @@ export const Navigation = ({ isOpen = false, onClose = () => {} }: NavigationPro
       {/* ── DESKTOP SIDEBAR ── */}
       <aside className="desk-sidebar">
         <div
-          onClick={() => router.push('/')}
+          onClick={() => { startLoader(); router.push('/'); }}
           style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 20px', height: 64, borderBottom: '1px solid rgba(0,0,0,0.07)', cursor: 'pointer', flexShrink: 0 }}
         >
           <img src="/favicon.ico" alt="Logo" style={{ width: 28, height: 28, borderRadius: 8, objectFit: 'contain' }} />
@@ -146,7 +151,7 @@ export const Navigation = ({ isOpen = false, onClose = () => {} }: NavigationPro
 
         <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '16px 12px', flex: 1 }}>
           {NAV.map(({ href, icon: Icon, label }) => (
-            <button key={href} onClick={() => router.push(href)} className={`desk-nav-item${pathname === href ? ' active' : ''}`}>
+            <button key={href} onClick={() => { startLoader(); router.push(href); }} className={`desk-nav-item${pathname === href ? ' active' : ''}`}>
               <Icon size={17} strokeWidth={pathname === href ? 2.2 : 1.8} />
               {label}
             </button>
