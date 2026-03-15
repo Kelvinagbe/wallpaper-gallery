@@ -97,42 +97,7 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
         style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.3)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }}
       />
 
-      {/* Progress overlay */}
-      {uploading && (
-        <div style={{ position: 'absolute', inset: 0, zIndex: 10, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', background: 'rgba(255,255,255,0.7)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}>
-          <div style={{ width: '100%', maxWidth: 480, padding: '0 16px 32px' }}>
-            <div style={{ background: '#fff', borderRadius: 24, padding: '28px 24px', border: '1px solid rgba(0,0,0,0.08)', boxShadow: '0 8px 40px rgba(0,0,0,0.1)' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, marginBottom: 20 }}>
-                {isComplete
-                  ? <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#0a0a0a', display: 'flex', alignItems: 'center', justifyContent: 'center', animation: 'upl-pop .4s cubic-bezier(.34,1.56,.64,1) forwards' }}><Check size={24} color="#fff" strokeWidth={2.5} /></div>
-                  : error ? <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'rgba(239,68,68,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><AlertCircle size={26} color="#ef4444" /></div>
-                  : <Spinner />
-                }
-                <div style={{ textAlign: 'center' }}>
-                  <p style={{ fontSize: 15, fontWeight: 700, color: '#0a0a0a', marginBottom: 4 }}>
-                    {error ? 'Upload Failed' : isComplete ? 'Upload Complete' : `Uploading ${Math.round(progress)}%`}
-                  </p>
-                  {!error && !isComplete && <p style={{ fontSize: 13, color: 'rgba(0,0,0,0.4)' }}>{status}</p>}
-                  {error && <p style={{ fontSize: 12, color: 'rgba(0,0,0,0.4)', maxWidth: 240, margin: '0 auto', lineHeight: 1.5 }}>{error}</p>}
-                </div>
-              </div>
-              {!error && !isComplete && (
-                <div style={{ height: 3, background: 'rgba(0,0,0,0.07)', borderRadius: 2, marginBottom: 16, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', borderRadius: 2, background: '#0a0a0a', width: `${progress}%`, transition: 'width .4s ease' }} />
-                </div>
-              )}
-              {error && (
-                <div style={{ display: 'flex', gap: 10 }}>
-                  <button onClick={cancel} style={ghostBtn}>Cancel</button>
-                  <button onClick={() => doUpload(true)} style={{ ...solidBtn, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                    <RefreshCw size={14} />{canResume ? 'Resume' : 'Retry'}
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Progress overlay — REMOVED from here, moved inside sheet below */}
 
       {/* Sheet */}
       <div
@@ -140,6 +105,36 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
         onClick={e => e.stopPropagation()}
         style={{ position: 'relative', zIndex: 71, background: '#fff', borderRadius: '24px 24px 0 0', paddingBottom: 'max(20px, env(safe-area-inset-bottom))', boxShadow: '0 -4px 40px rgba(0,0,0,0.1)', maxHeight: '90dvh', display: 'flex', flexDirection: 'column' }}
       >
+        {/* Progress overlay — sits inside sheet, covers it entirely */}
+        {uploading && (
+          <div style={{ position: 'absolute', inset: 0, zIndex: 10, borderRadius: '24px 24px 0 0', background: 'rgba(255,255,255,0.97)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: '32px 24px', animation: 'upl-overlay-in .25s ease forwards' }}>
+            {isComplete
+              ? <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#0a0a0a', display: 'flex', alignItems: 'center', justifyContent: 'center', animation: 'upl-pop .4s cubic-bezier(.34,1.56,.64,1) forwards' }}><Check size={24} color="#fff" strokeWidth={2.5} /></div>
+              : error ? <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'rgba(239,68,68,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><AlertCircle size={26} color="#ef4444" /></div>
+              : <Spinner />
+            }
+            <div style={{ textAlign: 'center' }}>
+              <p style={{ fontSize: 16, fontWeight: 700, color: '#0a0a0a', marginBottom: 6 }}>
+                {error ? 'Upload Failed' : isComplete ? 'Upload Complete' : `Uploading ${Math.round(progress)}%`}
+              </p>
+              {!error && !isComplete && <p style={{ fontSize: 13, color: 'rgba(0,0,0,0.4)' }}>{status}</p>}
+              {error && <p style={{ fontSize: 12, color: 'rgba(0,0,0,0.4)', maxWidth: 240, margin: '0 auto', lineHeight: 1.5 }}>{error}</p>}
+            </div>
+            {!error && !isComplete && (
+              <div style={{ width: '100%', maxWidth: 280, height: 4, background: 'rgba(0,0,0,0.07)', borderRadius: 2, overflow: 'hidden' }}>
+                <div style={{ height: '100%', borderRadius: 2, background: '#0a0a0a', width: `${progress}%`, transition: 'width .4s ease' }} />
+              </div>
+            )}
+            {error && (
+              <div style={{ display: 'flex', gap: 10, width: '100%', maxWidth: 280 }}>
+                <button onClick={cancel} style={ghostBtn}>Cancel</button>
+                <button onClick={() => doUpload(true)} style={{ ...solidBtn, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                  <RefreshCw size={14} />{canResume ? 'Resume' : 'Retry'}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
         {/* Handle */}
         <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 4px', flexShrink: 0 }}>
           <div style={{ width: 36, height: 4, borderRadius: 2, background: 'rgba(0,0,0,0.1)' }} />
@@ -268,6 +263,7 @@ export const UploadModalProvider = ({ children }: { children: ReactNode }) => {
   return (
     <UploadModalCtx.Provider value={{ open, close }}>
       <style>{`
+        @keyframes upl-overlay-in  { from{opacity:0} to{opacity:1} }
         @keyframes upl-bd-in      { from{opacity:0}                  to{opacity:1} }
         @keyframes upl-bd-out     { from{opacity:1}                  to{opacity:0} }
         @keyframes upl-sheet-up   { from{transform:translateY(100%)} to{transform:translateY(0)} }
