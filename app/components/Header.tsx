@@ -5,7 +5,7 @@ import { Menu, Mail, UserPlus, ArrowRight, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/app/components/AuthProvider';
 import type { Filter } from '../types';
-
+ 
 interface HeaderProps {
   filter: Filter;
   setFilter: (filter: Filter) => void;
