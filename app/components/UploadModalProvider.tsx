@@ -42,7 +42,8 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
   const [preview,  setPreview]  = useState('');
   const [imgDims,  setImgDims]  = useState<{ w: number; h: number } | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [closing,  setClosing]  = useState(false);
+  const [closing,     setClosing]     = useState(false);
+  const [authLoading, setAuthLoading] = useState(true);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const { uploading, progress, status, error, online, speed, canResume, uploadFile, reset, cancel, getCachedData } = useUpload(user?.id);
@@ -53,6 +54,7 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
       setUser(session?.user || s?.user || null);
       const cached = getCachedData();
       if (cached) { setTitle(cached.title || ''); setDesc(cached.description || ''); }
+      setAuthLoading(false);
     })();
     // lock scroll
     document.body.style.overflow = 'hidden';
@@ -147,14 +149,17 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 20px 14px', flexShrink: 0, borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
           <div>
             <p style={{ fontSize: 16, fontWeight: 700, color: '#0a0a0a', letterSpacing: '-0.02em' }}>Upload Wallpaper</p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
-              {user ? <span style={{ fontSize: 12, color: '#10b981', fontWeight: 500 }}>{user.email}</span>
-                    : <span style={{ fontSize: 12, color: '#ef4444', fontWeight: 500 }}>Not signed in</span>}
-              <span style={{ color: 'rgba(0,0,0,0.2)' }}>·</span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 12, fontWeight: 500, color: speedColor }}>
-                <SpeedIcon size={11} />{speed === 'offline' ? 'Offline' : speed === 'slow' ? 'Slow' : 'Online'}
-              </span>
-            </div>
+            {authLoading
+              ? <div style={{ width: 120, height: 12, borderRadius: 6, background: 'rgba(0,0,0,0.07)', marginTop: 5, animation: 'upl-shimmer 1.4s ease infinite' }} />
+              : <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                  {user ? <span style={{ fontSize: 12, color: '#10b981', fontWeight: 500 }}>{user.email}</span>
+                        : <span style={{ fontSize: 12, color: '#ef4444', fontWeight: 500 }}>Not signed in</span>}
+                  <span style={{ color: 'rgba(0,0,0,0.2)' }}>·</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 12, fontWeight: 500, color: speedColor }}>
+                    <SpeedIcon size={11} />{speed === 'offline' ? 'Offline' : speed === 'slow' ? 'Slow' : 'Online'}
+                  </span>
+                </div>
+            }
           </div>
           <button onClick={close} disabled={uploading && !error} style={{ width: 30, height: 30, borderRadius: '50%', background: 'rgba(0,0,0,0.05)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', opacity: uploading && !error ? 0.3 : 1 }}>
             <X size={14} color="rgba(0,0,0,0.45)" />
@@ -163,12 +168,27 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
 
         {/* Body */}
         <div style={{ overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 14, flex: 1 }}>
-          {canResume && !uploading && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 12 }}>
-              <RefreshCw size={13} color="#10b981" />
-              <p style={{ fontSize: 12, color: '#10b981', fontWeight: 500 }}>Previous upload interrupted — tap Upload to resume</p>
+
+          {/* Auth loading skeleton */}
+          {authLoading ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ display: 'flex', gap: 14 }}>
+                <div style={{ width: 100, height: 100, borderRadius: 16, background: 'rgba(0,0,0,0.06)', flexShrink: 0, animation: 'upl-shimmer 1.4s ease infinite' }} />
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ height: 42, borderRadius: 12, background: 'rgba(0,0,0,0.06)', animation: 'upl-shimmer 1.4s ease .1s infinite' }} />
+                  <div style={{ height: 28, borderRadius: 10, background: 'rgba(0,0,0,0.04)', animation: 'upl-shimmer 1.4s ease .2s infinite' }} />
+                </div>
+              </div>
+              <div style={{ height: 60, borderRadius: 12, background: 'rgba(0,0,0,0.06)', animation: 'upl-shimmer 1.4s ease .15s infinite' }} />
             </div>
-          )}
+          ) : (
+            <>
+              {canResume && !uploading && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 12 }}>
+                  <RefreshCw size={13} color="#10b981" />
+                  <p style={{ fontSize: 12, color: '#10b981', fontWeight: 500 }}>Previous upload interrupted — tap Upload to resume</p>
+                </div>
+              )}
 
           {/* Image + title row */}
           <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
@@ -220,12 +240,14 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
 
           {/* Description */}
           <textarea value={desc} onChange={e => setDesc(e.target.value)} placeholder="Short description (optional)" rows={2} disabled={uploading} maxLength={300} style={{ ...inputStyle, resize: 'none' }} />
+            </>
+          )}
         </div>
 
         {/* Footer */}
         <div style={{ display: 'flex', gap: 10, padding: '12px 20px 0', flexShrink: 0, borderTop: '1px solid rgba(0,0,0,0.06)' }}>
           <button onClick={close} disabled={uploading && !error} style={ghostBtn}>Cancel</button>
-          <button onClick={() => doUpload(false)} disabled={!canSubmit} style={{ ...solidBtn, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, opacity: !canSubmit ? 0.35 : 1 }}>
+          <button onClick={() => doUpload(false)} disabled={!canSubmit || authLoading} style={{ ...solidBtn, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, opacity: (!canSubmit || authLoading) ? 0.35 : 1 }}>
             <Upload size={15} />{canResume ? 'Resume Upload' : 'Upload'}
           </button>
         </div>
@@ -252,6 +274,7 @@ export const UploadModalProvider = ({ children }: { children: ReactNode }) => {
         @keyframes upl-sheet-down { from{transform:translateY(0)}    to{transform:translateY(100%)} }
         @keyframes upl-spin       { to{transform:rotate(360deg)} }
         @keyframes upl-pop        { 0%{transform:scale(0)} 60%{transform:scale(1.15)} 100%{transform:scale(1)} }
+        @keyframes upl-shimmer    { 0%,100%{opacity:1} 50%{opacity:0.4} }
         .upl-bd-in      { animation: upl-bd-in      .22s ease forwards; }
         .upl-bd-out     { animation: upl-bd-out     .26s ease forwards; }
         .upl-sheet-up   { animation: upl-sheet-up   .32s cubic-bezier(.16,1,.3,1) forwards; }
