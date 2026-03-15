@@ -19,6 +19,7 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
   const [page,          setPage]          = useState(feedCache.page);
   const [filter,        setFilter]        = useState<Filter>(feedCache.filter);
   const [isInitialLoad, setIsInitialLoad] = useState(false);
+  const [sidebarOpen,   setSidebarOpen]   = useState(false);
 
   const loadingMoreRef   = useRef(false);
   const filterChangedRef = useRef(false);
@@ -81,10 +82,10 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900">
       <GlobalStyles />
-      <Navigation />
+      <Navigation isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="sidebar-offset">
-        <Header filter={filter} setFilter={handleFilterChange} onMenuOpen={() => {}} />
-        <main className="max-w-7xl mx-auto px-4 py-6 pb-24">
+        <Header filter={filter} setFilter={handleFilterChange} onMenuOpen={() => setSidebarOpen(true)} />
+        <main className="max-w-7xl mx-auto px-4 py-6 pb-8">
           <WallpaperGrid
             wallpapers={wallpapers}
             isLoading={isInitialLoad}
