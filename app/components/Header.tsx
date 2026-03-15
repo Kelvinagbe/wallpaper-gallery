@@ -97,29 +97,6 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
         .hdr-tab.active { color: #000; }
         .hdr-tab.active::after { transform: scaleX(1); }
 
-        /* mobile filter icon button */
-        .mob-filter-icon {
-          position: relative;
-          width: 36px; height: 36px;
-          display: flex; align-items: center; justify-content: center;
-          background: transparent;
-          border: 1px solid rgba(0,0,0,0.1);
-          border-radius: 8px;
-          cursor: pointer;
-          transition: background .15s, border-color .15s;
-          flex-shrink: 0;
-        }
-        .mob-filter-icon:active { background: rgba(0,0,0,0.06); }
-        /* active filter dot indicator */
-        .mob-filter-icon .dot {
-          position: absolute;
-          top: 6px; right: 6px;
-          width: 6px; height: 6px;
-          border-radius: 50%;
-          background: #000;
-          border: 1.5px solid #fff;
-        }
-
         /* bottom sheet rows */
         .sheet-row {
           width: 100%; padding: 15px 20px;
@@ -134,6 +111,37 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
         }
         .sheet-row:active { background: rgba(0,0,0,0.03); }
         .sheet-row.active { font-weight: 600; color: #000; }
+
+        /* desktop nav — hidden on mobile, shown on lg+ */
+        .hdr-desktop-nav {
+          display: none;
+          align-items: stretch;
+          height: 56px;
+          flex: 1;
+        }
+        @media (min-width: 1024px) {
+          .hdr-desktop-nav { display: flex; }
+        }
+
+        /* mobile filter icon — shown on mobile, hidden on lg+ */
+        .mob-filter-icon {
+          display: flex;
+        }
+        @media (min-width: 1024px) {
+          .mob-filter-icon { display: none !important; }
+        }
+
+        /* divider — desktop only */
+        .hdr-divider {
+          display: none;
+          width: 1px; height: 18px;
+          background: rgba(0,0,0,0.1);
+          flex-shrink: 0;
+          margin: 0 4px;
+        }
+        @media (min-width: 1024px) {
+          .hdr-divider { display: block; }
+        }
 
         /* header action buttons */
         .hdr-btn {
@@ -190,16 +198,10 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
           </span>
 
           {/* Divider — desktop only */}
-          <div
-            className="hidden lg:block"
-            style={{ width: 1, height: 18, background: 'rgba(0,0,0,0.1)', flexShrink: 0, margin: '0 4px' }}
-          />
+          <div className="hdr-divider" />
 
-          {/* Desktop filter tabs */}
-          <nav
-            className="hidden lg:flex"
-            style={{ display: 'flex', alignItems: 'stretch', height: 56, flex: 1 }}
-          >
+          {/* Desktop filter tabs — hidden on mobile via CSS media query */}
+          <nav className="hdr-desktop-nav">
             {FILTERS.map(({ value, label }) => (
               <button
                 key={value}
@@ -214,17 +216,32 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
           {/* Spacer pushes right side to the end — both mobile & desktop */}
           <div style={{ flex: 1 }} />
 
-          {/* Mobile filter icon — replaces all filter text */}
+          {/* Mobile filter icon — opens bottom sheet */}
           <button
-            className="flex lg:hidden mob-filter-icon"
+            className="mob-filter-icon"
             onClick={() => setShowSheet(true)}
             aria-label="Filter"
+            style={{
+              position: 'relative',
+              width: 36, height: 36,
+              background: 'transparent',
+              border: '1px solid rgba(0,0,0,0.1)',
+              borderRadius: 8,
+              cursor: 'pointer',
+              transition: 'background .15s',
+              flexShrink: 0,
+              alignItems: 'center', justifyContent: 'center',
+            }}
           >
             <SlidersHorizontal size={16} color="rgba(0,0,0,0.6)" strokeWidth={2} />
-            {isFiltered && <span className="dot" />}
+            {isFiltered && (
+              <span style={{
+                position: 'absolute', top: 6, right: 6,
+                width: 6, height: 6, borderRadius: '50%',
+                background: '#000', border: '1.5px solid #fff',
+              }} />
+            )}
           </button>
-
-          {/* Desktop spacer already handled by flex:1 above */}
 
           {/* Right actions */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
