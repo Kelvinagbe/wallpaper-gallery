@@ -1,8 +1,10 @@
 import './globals.css';
+import { Suspense } from 'react';
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import { AuthProvider } from '@/app/components/AuthProvider';
 import { UploadModalProvider } from '@/app/components/UploadModalProvider';
+import { TopLoader } from '@/app/components/TopLoader';
 import { createClient } from '@/lib/supabase/server';
 
 const inter = Inter({ subsets: ['latin'] });
@@ -23,6 +25,9 @@ export default async function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
+        <Suspense fallback={null}>
+          <TopLoader />
+        </Suspense>
         <AuthProvider initialSession={session}>
           <UploadModalProvider>
             {children}
