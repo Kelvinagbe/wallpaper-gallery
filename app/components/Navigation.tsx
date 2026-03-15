@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { Home, Search, Upload, Bell, User, X } from 'lucide-react';
 
@@ -10,6 +11,8 @@ const NAV = [
   { href: '/profile', icon: User,   label: 'Profile' },
 ];
 
+const CLOSE_DURATION = 260; // ms — must match sheetOut duration below
+
 interface NavigationProps {
   isOpen?: boolean;
   onClose?: () => void;
@@ -19,7 +22,25 @@ export const Navigation = ({ isOpen = false, onClose = () => {} }: NavigationPro
   const pathname = usePathname();
   const router   = useRouter();
 
-  const go = (href: string) => { router.push(href); onClose(); };
+  // `mounted` keeps the sheet in the DOM during the exit animation
+  const [mounted, setMounted]   = useState(false);
+  const [closing, setClosing]   = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setClosing(false);
+      setMounted(true);
+    } else if (mounted) {
+      // trigger exit animation then unmount
+      setClosing(true);
+      const t = setTimeout(() => { setMounted(false); setClosing(false); }, CLOSE_DURATION);
+      return () => clearTimeout(t);
+    }
+  }, [isOpen]);
+
+  const close = () => onClose(); // parent sets isOpen=false → useEffect handles animation
+
+  const go = (href: string) => { router.push(href); close(); };
 
   return (
     <>
@@ -40,7 +61,9 @@ export const Navigation = ({ isOpen = false, onClose = () => {} }: NavigationPro
           animation: sheetIn .32s cubic-bezier(.16,1,.3,1) forwards;
           will-change: transform;
         }
-        .nav-sheet.closing { animation: sheetOut .24s ease forwards; }
+        .nav-sheet.closing {
+          animation: sheetOut ${CLOSE_DURATION}ms cubic-bezier(.4,0,1,1) forwards;
+        }
 
         .nav-bd {
           position: fixed; inset: 0; z-index: 50;
@@ -49,7 +72,9 @@ export const Navigation = ({ isOpen = false, onClose = () => {} }: NavigationPro
           -webkit-backdrop-filter: blur(6px);
           animation: bdIn .22s ease forwards;
         }
-        .nav-bd.closing { animation: bdOut .22s ease forwards; }
+        .nav-bd.closing {
+          animation: bdOut ${CLOSE_DURATION}ms ease forwards;
+        }
 
         .nav-item {
           display: flex; align-items: center; gap: 14px;
@@ -146,12 +171,12 @@ export const Navigation = ({ isOpen = false, onClose = () => {} }: NavigationPro
         </div>
       </aside>
 
-      {/* ── MOBILE BOTTOM SHEET (controlled by header) ── */}
-      {isOpen && (
+      {/* ── MOBILE BOTTOM SHEET ── */}
+      {mounted && (
         <>
-          <div className="nav-bd" onClick={onClose} />
+          <div className={`nav-bd${closing ? ' closing' : ''}`} onClick={close} />
 
-          <div className="nav-sheet">
+          <div className={`nav-sheet${closing ? ' closing' : ''}`}>
             {/* Handle */}
             <div style={{ display: 'flex', justifyContent: 'center', padding: '14px 0 6px' }}>
               <div style={{ width: 36, height: 4, borderRadius: 2, background: 'rgba(0,0,0,0.1)' }} />
@@ -160,7 +185,7 @@ export const Navigation = ({ isOpen = false, onClose = () => {} }: NavigationPro
             {/* Sheet header */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 20px 14px' }}>
               <span style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 17, letterSpacing: '-0.3px', color: '#0a0a0a' }}>WALLS</span>
-              <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(0,0,0,0.06)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+              <button onClick={close} style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(0,0,0,0.06)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                 <X size={14} color="rgba(0,0,0,0.45)" />
               </button>
             </div>
