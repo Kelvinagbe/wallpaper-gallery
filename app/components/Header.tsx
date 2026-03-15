@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { Menu, Mail, UserPlus, ArrowRight, X, ChevronDown } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Menu, Mail, UserPlus, ArrowRight, X, ChevronDown, Check } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/app/components/AuthProvider';
 import type { Filter } from '../types';
@@ -22,16 +22,28 @@ const FILTERS: { value: Filter; label: string }[] = [
 export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
   const router = useRouter();
   const { user } = useAuth();
-  const [showAuth, setShowAuth]     = useState(false);
-  const [closing, setClosing]       = useState(false);
+  const [showAuth, setShowAuth]       = useState(false);
+  const [closingAuth, setClosingAuth] = useState(false);
+  const [showSheet, setShowSheet]     = useState(false);
+  const [closingSheet, setClosingSheet] = useState(false);
 
-  const closeModal = (cb?: () => void) => {
-    setClosing(true);
-    setTimeout(() => { setShowAuth(false); setClosing(false); cb?.(); }, 250);
+  /* lock body scroll when any overlay is open */
+  useEffect(() => {
+    document.body.style.overflow = (showAuth || showSheet) ? 'hidden' : '';
+    return () => { document.body.style.overflow = ''; };
+  }, [showAuth, showSheet]);
+
+  const closeAuth = (cb?: () => void) => {
+    setClosingAuth(true);
+    setTimeout(() => { setShowAuth(false); setClosingAuth(false); cb?.(); }, 250);
   };
-  const handleNav = (path: string) => closeModal(() => router.push(path));
+  const closeSheet = (cb?: () => void) => {
+    setClosingSheet(true);
+    setTimeout(() => { setShowSheet(false); setClosingSheet(false); cb?.(); }, 280);
+  };
 
-  /* inline hover helper */
+  const handleNav = (path: string) => closeAuth(() => router.push(path));
+
   const hov = (
     enter: Partial<CSSStyleDeclaration>,
     leave: Partial<CSSStyleDeclaration>,
@@ -50,35 +62,37 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
       />
 
       <style>{`
-        /* ── animations ── */
-        @keyframes bdIn    { from{opacity:0}            to{opacity:1}            }
-        @keyframes bdOut   { from{opacity:1}            to{opacity:0}            }
+        /* ── keyframes ── */
+        @keyframes bdIn    { from{opacity:0} to{opacity:1} }
+        @keyframes bdOut   { from{opacity:1} to{opacity:0} }
         @keyframes mIn     { from{opacity:0;transform:scale(.96) translateY(-6px)} to{opacity:1;transform:scale(1) translateY(0)} }
-        @keyframes mOut    { from{opacity:1;transform:scale(1)  translateY(0)}  to{opacity:0;transform:scale(.96) translateY(-6px)} }
-        .bd-in  { animation: bdIn  .22s ease forwards }
-        .bd-out { animation: bdOut .22s ease forwards }
-        .m-in   { animation: mIn   .25s cubic-bezier(.16,1,.3,1) forwards }
-        .m-out  { animation: mOut  .22s ease forwards }
+        @keyframes mOut    { from{opacity:1;transform:scale(1) translateY(0)} to{opacity:0;transform:scale(.96) translateY(-6px)} }
+        @keyframes shIn    { from{transform:translateY(100%)} to{transform:translateY(0)} }
+        @keyframes shOut   { from{transform:translateY(0)} to{transform:translateY(100%)} }
+
+        .bd-in   { animation: bdIn  .22s ease forwards }
+        .bd-out  { animation: bdOut .22s ease forwards }
+        .m-in    { animation: mIn   .25s cubic-bezier(.16,1,.3,1) forwards }
+        .m-out   { animation: mOut  .22s ease forwards }
+        .sh-in   { animation: shIn  .30s cubic-bezier(.16,1,.3,1) forwards }
+        .sh-out  { animation: shOut .26s cubic-bezier(.4,0,1,1)   forwards }
 
         /* ── desktop filter tabs ── */
         .hdr-tab {
           position: relative;
-          padding: 0 14px;
-          height: 56px;
+          padding: 0 14px; height: 56px;
           display: flex; align-items: center;
           font-family: 'Inter', sans-serif;
           font-size: 13px; font-weight: 500;
           color: rgba(0,0,0,.4);
           background: transparent; border: none;
-          cursor: pointer;
-          transition: color .15s;
+          cursor: pointer; transition: color .15s;
           white-space: nowrap;
         }
         .hdr-tab::after {
           content: '';
           position: absolute; bottom: 0; left: 14px; right: 14px;
-          height: 2px;
-          background: #000;
+          height: 2px; background: #000;
           transform: scaleX(0);
           transition: transform .2s cubic-bezier(.16,1,.3,1);
         }
@@ -86,39 +100,49 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
         .hdr-tab.active { color: #000; }
         .hdr-tab.active::after { transform: scaleX(1); }
 
-        /* ── mobile select wrapper ── */
-        .mob-select-wrap {
-          position: relative;
-          display: inline-flex; align-items: center;
-          gap: 3px;
-          cursor: pointer;
-        }
-        .mob-select-wrap select {
-          position: absolute; inset: 0;
-          width: 100%; height: 100%;
-          opacity: 0;
-          border: none; background: transparent;
-          cursor: pointer;
-          font-size: 16px; /* prevent iOS zoom */
-        }
-        .mob-select-label {
-          display: flex; align-items: center; gap: 3px;
+        /* ── mobile filter pill button ── */
+        .mob-filter-btn {
+          display: inline-flex; align-items: center; gap: 4px;
+          padding: 6px 12px 6px 14px;
+          background: rgba(0,0,0,0.04);
+          border: 1px solid rgba(0,0,0,0.09);
+          border-radius: 100px;
           font-family: 'Inter', sans-serif;
-          font-size: 14px; font-weight: 600;
-          color: #000;
-          pointer-events: none;
-          user-select: none;
+          font-size: 13px; font-weight: 500;
+          color: rgba(0,0,0,0.75);
+          cursor: pointer;
+          transition: background .15s, border-color .15s;
+          white-space: nowrap;
+        }
+        .mob-filter-btn:active {
+          background: rgba(0,0,0,0.08);
         }
 
-        /* ── shared button reset ── */
+        /* ── bottom sheet option rows ── */
+        .sheet-option {
+          width: 100%; padding: 16px 20px;
+          display: flex; align-items: center; justify-content: space-between;
+          background: transparent;
+          border: none; border-top: 1px solid rgba(0,0,0,0.06);
+          font-family: 'Inter', sans-serif;
+          font-size: 15px; font-weight: 400;
+          color: rgba(0,0,0,0.75);
+          cursor: pointer; text-align: left;
+          transition: background .12s;
+        }
+        .sheet-option:active { background: rgba(0,0,0,0.04); }
+        .sheet-option.selected {
+          font-weight: 600;
+          color: #000;
+        }
+
+        /* ── shared header button ── */
         .hdr-btn {
           padding: 7px 15px;
           font-family: 'Inter', sans-serif;
           font-size: 13px; font-weight: 500;
-          border-radius: 0;
-          cursor: pointer;
-          transition: all .18s;
-          white-space: nowrap;
+          border-radius: 0; cursor: pointer;
+          transition: all .18s; white-space: nowrap;
         }
       `}</style>
 
@@ -135,7 +159,7 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
           display: 'flex', alignItems: 'center', gap: 8,
         }}>
 
-          {/* Hamburger — mobile only */}
+          {/* Hamburger */}
           <button
             onClick={onMenuOpen}
             className="lg:hidden"
@@ -179,22 +203,15 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
             ))}
           </nav>
 
-          {/* Mobile select — shown instead of tabs */}
-          <div className="flex lg:hidden mob-select-wrap" style={{ flex: 1 }}>
-            <span className="mob-select-label">
-              {activeLabel}
-              <ChevronDown size={13} strokeWidth={2.5} color="rgba(0,0,0,0.45)" />
-            </span>
-            <select
-              value={filter}
-              onChange={e => setFilter(e.target.value as Filter)}
-              aria-label="Filter wallpapers"
-            >
-              {FILTERS.map(({ value, label }) => (
-                <option key={value} value={value}>{label}</option>
-              ))}
-            </select>
-          </div>
+          {/* Mobile filter pill — opens bottom sheet */}
+          <button
+            className="flex lg:hidden mob-filter-btn"
+            onClick={() => setShowSheet(true)}
+            aria-label="Filter wallpapers"
+          >
+            {activeLabel}
+            <ChevronDown size={13} strokeWidth={2.5} color="rgba(0,0,0,0.4)" />
+          </button>
 
           {/* Desktop spacer */}
           <div className="hidden lg:block" style={{ flex: 1 }} />
@@ -230,11 +247,85 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
         </div>
       </header>
 
+      {/* ════════ MOBILE FILTER BOTTOM SHEET ════════ */}
+      {showSheet && (
+        <div
+          className={closingSheet ? 'bd-out' : 'bd-in'}
+          onClick={() => closeSheet()}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 300,
+            background: 'rgba(0,0,0,0.25)',
+            backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)',
+          }}
+        >
+          <div
+            className={closingSheet ? 'sh-out' : 'sh-in'}
+            onClick={e => e.stopPropagation()}
+            style={{
+              position: 'absolute', bottom: 0, left: 0, right: 0,
+              background: '#fff',
+              borderRadius: '20px 20px 0 0',
+              paddingBottom: 'max(16px, env(safe-area-inset-bottom))',
+              boxShadow: '0 -8px 40px rgba(0,0,0,0.1)',
+            }}
+          >
+            {/* Handle bar */}
+            <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 6px' }}>
+              <div style={{ width: 36, height: 4, borderRadius: 2, background: 'rgba(0,0,0,0.12)' }} />
+            </div>
+
+            {/* Sheet title */}
+            <div style={{
+              padding: '8px 20px 12px',
+              fontFamily: "'Inter', sans-serif",
+              fontSize: 11, fontWeight: 600,
+              letterSpacing: '0.07em', textTransform: 'uppercase',
+              color: 'rgba(0,0,0,0.3)',
+            }}>
+              Browse by
+            </div>
+
+            {/* Options */}
+            {FILTERS.map(({ value, label }) => {
+              const active = filter === value;
+              return (
+                <button
+                  key={value}
+                  className={`sheet-option${active ? ' selected' : ''}`}
+                  onClick={() => { setFilter(value); closeSheet(); }}
+                >
+                  <span>{label}</span>
+                  {active && <Check size={16} strokeWidth={2.5} color="#000" />}
+                </button>
+              );
+            })}
+
+            {/* Cancel */}
+            <button
+              onClick={() => closeSheet()}
+              style={{
+                width: '100%', padding: '16px 20px',
+                marginTop: 8,
+                background: 'rgba(0,0,0,0.03)',
+                border: 'none', borderTop: '1px solid rgba(0,0,0,0.06)',
+                fontFamily: "'Inter', sans-serif",
+                fontSize: 14, fontWeight: 500,
+                color: 'rgba(0,0,0,0.4)',
+                cursor: 'pointer', textAlign: 'center',
+                transition: 'background .12s',
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ════════ AUTH MODAL ════════ */}
       {showAuth && (
         <div
-          className={closing ? 'bd-out' : 'bd-in'}
-          onClick={() => closeModal()}
+          className={closingAuth ? 'bd-out' : 'bd-in'}
+          onClick={() => closeAuth()}
           style={{
             position: 'fixed', inset: 0, zIndex: 200,
             background: 'rgba(0,0,0,0.28)',
@@ -243,21 +334,19 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
           }}
         >
           <div
-            className={closing ? 'm-out' : 'm-in'}
+            className={closingAuth ? 'm-out' : 'm-in'}
             onClick={e => e.stopPropagation()}
             style={{
               width: '100%', maxWidth: 360,
               background: '#fff',
               border: '1px solid rgba(0,0,0,0.08)',
-              borderRadius: 20,
-              padding: '28px 24px',
+              borderRadius: 20, padding: '28px 24px',
               boxShadow: '0 32px 80px rgba(0,0,0,0.14)',
             }}
           >
-            {/* Close */}
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
               <button
-                onClick={() => closeModal()}
+                onClick={() => closeAuth()}
                 style={{
                   width: 28, height: 28, borderRadius: '50%',
                   background: 'rgba(0,0,0,0.05)', border: 'none',
@@ -270,12 +359,8 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
               </button>
             </div>
 
-            {/* Title */}
             <div style={{ marginBottom: 24 }}>
-              <h2 style={{
-                fontFamily: "'Syne', sans-serif", fontWeight: 800,
-                fontSize: 22, color: '#000', letterSpacing: '-0.5px', marginBottom: 6,
-              }}>
+              <h2 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 22, color: '#000', letterSpacing: '-0.5px', marginBottom: 6 }}>
                 Welcome to WALLS
               </h2>
               <p style={{ fontSize: 13, color: 'rgba(0,0,0,0.4)', fontFamily: "'Inter', sans-serif" }}>
@@ -283,7 +368,6 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
               </p>
             </div>
 
-            {/* Action buttons */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {[
                 { label: 'Sign in with Email', icon: Mail,     path: '/auth/login',  primary: true  },
@@ -319,11 +403,7 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
               ))}
             </div>
 
-            <p style={{
-              marginTop: 18, textAlign: 'center',
-              fontSize: 11, color: 'rgba(0,0,0,0.22)',
-              fontFamily: "'Inter', sans-serif", lineHeight: 1.6,
-            }}>
+            <p style={{ marginTop: 18, textAlign: 'center', fontSize: 11, color: 'rgba(0,0,0,0.22)', fontFamily: "'Inter', sans-serif", lineHeight: 1.6 }}>
               By continuing you agree to our Terms of Service and Privacy Policy
             </p>
           </div>
