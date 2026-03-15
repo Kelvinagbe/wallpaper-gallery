@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Menu, Mail, UserPlus, ArrowRight, X, ChevronDown, Check } from 'lucide-react';
+import { Menu, Mail, UserPlus, ArrowRight, X, SlidersHorizontal, Check } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/app/components/AuthProvider';
 import type { Filter } from '../types';
@@ -22,12 +22,11 @@ const FILTERS: { value: Filter; label: string }[] = [
 export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
   const router = useRouter();
   const { user } = useAuth();
-  const [showAuth, setShowAuth]       = useState(false);
-  const [closingAuth, setClosingAuth] = useState(false);
-  const [showSheet, setShowSheet]     = useState(false);
+  const [showAuth, setShowAuth]         = useState(false);
+  const [closingAuth, setClosingAuth]   = useState(false);
+  const [showSheet, setShowSheet]       = useState(false);
   const [closingSheet, setClosingSheet] = useState(false);
 
-  /* lock body scroll when any overlay is open */
   useEffect(() => {
     document.body.style.overflow = (showAuth || showSheet) ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
@@ -52,7 +51,7 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
     onMouseLeave: (e: React.MouseEvent<HTMLButtonElement>) => Object.assign(e.currentTarget.style, leave),
   });
 
-  const activeLabel = FILTERS.find(f => f.value === filter)?.label ?? 'All';
+  const isFiltered = filter !== 'all';
 
   return (
     <>
@@ -60,24 +59,22 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
         href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Inter:wght@400;500;600&display=swap"
         rel="stylesheet"
       />
-
       <style>{`
-        /* ── keyframes ── */
-        @keyframes bdIn    { from{opacity:0} to{opacity:1} }
-        @keyframes bdOut   { from{opacity:1} to{opacity:0} }
-        @keyframes mIn     { from{opacity:0;transform:scale(.96) translateY(-6px)} to{opacity:1;transform:scale(1) translateY(0)} }
-        @keyframes mOut    { from{opacity:1;transform:scale(1) translateY(0)} to{opacity:0;transform:scale(.96) translateY(-6px)} }
-        @keyframes shIn    { from{transform:translateY(100%)} to{transform:translateY(0)} }
-        @keyframes shOut   { from{transform:translateY(0)} to{transform:translateY(100%)} }
+        @keyframes bdIn  { from{opacity:0} to{opacity:1} }
+        @keyframes bdOut { from{opacity:1} to{opacity:0} }
+        @keyframes mIn   { from{opacity:0;transform:scale(.96) translateY(-6px)} to{opacity:1;transform:scale(1) translateY(0)} }
+        @keyframes mOut  { from{opacity:1;transform:scale(1) translateY(0)} to{opacity:0;transform:scale(.96) translateY(-6px)} }
+        @keyframes shIn  { from{transform:translateY(100%)} to{transform:translateY(0)} }
+        @keyframes shOut { from{transform:translateY(0)} to{transform:translateY(100%)} }
 
-        .bd-in   { animation: bdIn  .22s ease forwards }
-        .bd-out  { animation: bdOut .22s ease forwards }
-        .m-in    { animation: mIn   .25s cubic-bezier(.16,1,.3,1) forwards }
-        .m-out   { animation: mOut  .22s ease forwards }
-        .sh-in   { animation: shIn  .30s cubic-bezier(.16,1,.3,1) forwards }
-        .sh-out  { animation: shOut .26s cubic-bezier(.4,0,1,1)   forwards }
+        .bd-in  { animation: bdIn  .22s ease forwards }
+        .bd-out { animation: bdOut .22s ease forwards }
+        .m-in   { animation: mIn   .25s cubic-bezier(.16,1,.3,1) forwards }
+        .m-out  { animation: mOut  .22s ease forwards }
+        .sh-in  { animation: shIn  .30s cubic-bezier(.16,1,.3,1) forwards }
+        .sh-out { animation: shOut .26s cubic-bezier(.4,0,1,1) forwards }
 
-        /* ── desktop filter tabs ── */
+        /* desktop tabs */
         .hdr-tab {
           position: relative;
           padding: 0 14px; height: 56px;
@@ -96,47 +93,49 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
           transform: scaleX(0);
           transition: transform .2s cubic-bezier(.16,1,.3,1);
         }
-        .hdr-tab:hover  { color: rgba(0,0,0,.75); }
+        .hdr-tab:hover { color: rgba(0,0,0,.75); }
         .hdr-tab.active { color: #000; }
         .hdr-tab.active::after { transform: scaleX(1); }
 
-        /* ── mobile filter pill button ── */
-        .mob-filter-btn {
-          display: inline-flex; align-items: center; gap: 4px;
-          padding: 6px 12px 6px 14px;
-          background: rgba(0,0,0,0.04);
-          border: 1px solid rgba(0,0,0,0.09);
-          border-radius: 100px;
-          font-family: 'Inter', sans-serif;
-          font-size: 13px; font-weight: 500;
-          color: rgba(0,0,0,0.75);
+        /* mobile filter icon button */
+        .mob-filter-icon {
+          position: relative;
+          width: 36px; height: 36px;
+          display: flex; align-items: center; justify-content: center;
+          background: transparent;
+          border: 1px solid rgba(0,0,0,0.1);
+          border-radius: 8px;
           cursor: pointer;
           transition: background .15s, border-color .15s;
-          white-space: nowrap;
+          flex-shrink: 0;
         }
-        .mob-filter-btn:active {
-          background: rgba(0,0,0,0.08);
+        .mob-filter-icon:active { background: rgba(0,0,0,0.06); }
+        /* active filter dot indicator */
+        .mob-filter-icon .dot {
+          position: absolute;
+          top: 6px; right: 6px;
+          width: 6px; height: 6px;
+          border-radius: 50%;
+          background: #000;
+          border: 1.5px solid #fff;
         }
 
-        /* ── bottom sheet option rows ── */
-        .sheet-option {
-          width: 100%; padding: 16px 20px;
+        /* bottom sheet rows */
+        .sheet-row {
+          width: 100%; padding: 15px 20px;
           display: flex; align-items: center; justify-content: space-between;
           background: transparent;
           border: none; border-top: 1px solid rgba(0,0,0,0.06);
           font-family: 'Inter', sans-serif;
           font-size: 15px; font-weight: 400;
-          color: rgba(0,0,0,0.75);
+          color: rgba(0,0,0,0.7);
           cursor: pointer; text-align: left;
           transition: background .12s;
         }
-        .sheet-option:active { background: rgba(0,0,0,0.04); }
-        .sheet-option.selected {
-          font-weight: 600;
-          color: #000;
-        }
+        .sheet-row:active { background: rgba(0,0,0,0.03); }
+        .sheet-row.active { font-weight: 600; color: #000; }
 
-        /* ── shared header button ── */
+        /* header action buttons */
         .hdr-btn {
           padding: 7px 15px;
           font-family: 'Inter', sans-serif;
@@ -146,7 +145,7 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
         }
       `}</style>
 
-      {/* ════════ HEADER ════════ */}
+      {/* ── HEADER ── */}
       <header style={{
         position: 'sticky', top: 0, zIndex: 50,
         background: 'rgba(255,255,255,0.88)',
@@ -159,12 +158,18 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
           display: 'flex', alignItems: 'center', gap: 8,
         }}>
 
-          {/* Hamburger */}
+          {/* Hamburger — mobile only */}
           <button
             onClick={onMenuOpen}
             className="lg:hidden"
             aria-label="Open menu"
-            style={{ padding: 6, background: 'transparent', border: 'none', cursor: 'pointer', borderRadius: 6, display: 'flex', alignItems: 'center', flexShrink: 0, transition: 'background .18s' }}
+            style={{
+              width: 36, height: 36, padding: 0,
+              background: 'transparent', border: 'none',
+              cursor: 'pointer', borderRadius: 8,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0, transition: 'background .15s',
+            }}
             {...hov({ background: 'rgba(0,0,0,0.05)' }, { background: 'transparent' })}
           >
             <Menu size={20} color="rgba(0,0,0,0.5)" />
@@ -184,10 +189,13 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
             WALLS
           </span>
 
-          {/* Divider */}
-          <div style={{ width: 1, height: 18, background: 'rgba(0,0,0,0.1)', flexShrink: 0, margin: '0 4px' }} />
+          {/* Divider — desktop only */}
+          <div
+            className="hidden lg:block"
+            style={{ width: 1, height: 18, background: 'rgba(0,0,0,0.1)', flexShrink: 0, margin: '0 4px' }}
+          />
 
-          {/* Desktop tabs */}
+          {/* Desktop filter tabs */}
           <nav
             className="hidden lg:flex"
             style={{ display: 'flex', alignItems: 'stretch', height: 56, flex: 1 }}
@@ -203,18 +211,20 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
             ))}
           </nav>
 
-          {/* Mobile filter pill — opens bottom sheet */}
+          {/* Spacer pushes right side to the end — both mobile & desktop */}
+          <div style={{ flex: 1 }} />
+
+          {/* Mobile filter icon — replaces all filter text */}
           <button
-            className="flex lg:hidden mob-filter-btn"
+            className="flex lg:hidden mob-filter-icon"
             onClick={() => setShowSheet(true)}
-            aria-label="Filter wallpapers"
+            aria-label="Filter"
           >
-            {activeLabel}
-            <ChevronDown size={13} strokeWidth={2.5} color="rgba(0,0,0,0.4)" />
+            <SlidersHorizontal size={16} color="rgba(0,0,0,0.6)" strokeWidth={2} />
+            {isFiltered && <span className="dot" />}
           </button>
 
-          {/* Desktop spacer */}
-          <div className="hidden lg:block" style={{ flex: 1 }} />
+          {/* Desktop spacer already handled by flex:1 above */}
 
           {/* Right actions */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
@@ -247,7 +257,7 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
         </div>
       </header>
 
-      {/* ════════ MOBILE FILTER BOTTOM SHEET ════════ */}
+      {/* ── MOBILE FILTER BOTTOM SHEET ── */}
       {showSheet && (
         <div
           className={closingSheet ? 'bd-out' : 'bd-in'}
@@ -269,14 +279,14 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
               boxShadow: '0 -8px 40px rgba(0,0,0,0.1)',
             }}
           >
-            {/* Handle bar */}
-            <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 6px' }}>
-              <div style={{ width: 36, height: 4, borderRadius: 2, background: 'rgba(0,0,0,0.12)' }} />
+            {/* Handle */}
+            <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 4px' }}>
+              <div style={{ width: 36, height: 4, borderRadius: 2, background: 'rgba(0,0,0,0.1)' }} />
             </div>
 
-            {/* Sheet title */}
+            {/* Label */}
             <div style={{
-              padding: '8px 20px 12px',
+              padding: '10px 20px 10px',
               fontFamily: "'Inter', sans-serif",
               fontSize: 11, fontWeight: 600,
               letterSpacing: '0.07em', textTransform: 'uppercase',
@@ -285,13 +295,12 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
               Browse by
             </div>
 
-            {/* Options */}
             {FILTERS.map(({ value, label }) => {
               const active = filter === value;
               return (
                 <button
                   key={value}
-                  className={`sheet-option${active ? ' selected' : ''}`}
+                  className={`sheet-row${active ? ' active' : ''}`}
                   onClick={() => { setFilter(value); closeSheet(); }}
                 >
                   <span>{label}</span>
@@ -300,19 +309,16 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
               );
             })}
 
-            {/* Cancel */}
             <button
               onClick={() => closeSheet()}
               style={{
-                width: '100%', padding: '16px 20px',
-                marginTop: 8,
+                width: '100%', padding: '15px 20px', marginTop: 6,
                 background: 'rgba(0,0,0,0.03)',
                 border: 'none', borderTop: '1px solid rgba(0,0,0,0.06)',
                 fontFamily: "'Inter', sans-serif",
                 fontSize: 14, fontWeight: 500,
-                color: 'rgba(0,0,0,0.4)',
+                color: 'rgba(0,0,0,0.35)',
                 cursor: 'pointer', textAlign: 'center',
-                transition: 'background .12s',
               }}
             >
               Cancel
@@ -321,7 +327,7 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
         </div>
       )}
 
-      {/* ════════ AUTH MODAL ════════ */}
+      {/* ── AUTH MODAL ── */}
       {showAuth && (
         <div
           className={closingAuth ? 'bd-out' : 'bd-in'}
