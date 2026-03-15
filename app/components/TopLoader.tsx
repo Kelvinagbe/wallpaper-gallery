@@ -73,7 +73,7 @@ export const TopLoader = () => {
   if (!mounted || !visible) return null;
 
   return createPortal(
-    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, height: 3, zIndex: 99999, pointerEvents: 'none' }}>
+    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, height: 5, zIndex: 99999, pointerEvents: 'none' }}>
       <div style={{
         height: '100%',
         width: `${progress}%`,
