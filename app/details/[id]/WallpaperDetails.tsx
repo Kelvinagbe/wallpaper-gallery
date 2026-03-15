@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useRef, useEffect, useMemo } from 'react';
@@ -16,7 +15,6 @@ import type { Wallpaper } from '@/app/types';
 const cache = new Map<string, { liked: boolean; following: boolean; likeCount: number; timestamp: number }>();
 const CACHE_TTL = 30_000;
 const fmt = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
-const SH = 'shimmer-light';
 
 const imgCache = (() => {
   const mem = new Set<string>();
@@ -32,7 +30,7 @@ const timeAgoStr = (date: string) => {
   return d < 60 ? 'Just now' : d < 3600 ? `${Math.floor(d / 60)}m ago` : d < 86400 ? `${Math.floor(d / 3600)}h ago` : d < 604800 ? `${Math.floor(d / 86400)}d ago` : `${Math.floor(d / 604800)}w ago`;
 };
 
-// ─── CopyLinkModal ────────────────────────────────────────────────────────────
+// ─── CopyLinkModal ─────────────────────────────────────────────────────────────
 const CopyLinkModal = ({ isOpen, onClose, link }: { isOpen: boolean; onClose: () => void; link: string }) => {
   const [copied, setCopied] = useState(false);
   if (!isOpen) return null;
@@ -42,56 +40,64 @@ const CopyLinkModal = ({ isOpen, onClose, link }: { isOpen: boolean; onClose: ()
     setTimeout(() => { setCopied(false); setTimeout(onClose, 400); }, 1500);
   };
   return createPortal(
-    <div className="fixed inset-0 z-[200] flex items-end" style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(8px)' }} onClick={onClose}>
-      <div className="w-full rounded-t-3xl p-6 space-y-4 bg-white" onClick={e => e.stopPropagation()}>
-        <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto" />
-        <h3 className="text-lg font-bold text-gray-900 text-center">Share Link</h3>
-        <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-gray-100">
-          <LinkIcon className="w-4 h-4 text-gray-400 flex-shrink-0" />
-          <p className="text-sm text-gray-600 flex-1 truncate">{link}</p>
+    <div
+      style={{ position: 'fixed', inset: 0, zIndex: 200, display: 'flex', alignItems: 'flex-end', background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(10px)' }}
+      onClick={onClose}
+    >
+      <div
+        style={{ width: '100%', background: '#fff', borderRadius: '24px 24px 0 0', padding: '24px 20px 32px', display: 'flex', flexDirection: 'column', gap: 12 }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div style={{ width: 36, height: 4, borderRadius: 2, background: 'rgba(0,0,0,0.1)', margin: '0 auto 4px' }} />
+        <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 17, fontWeight: 700, color: '#0a0a0a', textAlign: 'center' }}>Share Link</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 14, background: 'rgba(0,0,0,0.04)', border: '1px solid rgba(0,0,0,0.07)' }}>
+          <LinkIcon size={14} color="rgba(0,0,0,0.3)" style={{ flexShrink: 0 }} />
+          <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: 'rgba(0,0,0,0.5)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{link}</span>
         </div>
-        <button onClick={copy} className="w-full py-4 rounded-2xl font-semibold text-sm text-white transition-all active:scale-[0.98]" style={{ background: copied ? '#10b981' : '#111' }}>
-          {copied ? <span className="flex items-center justify-center gap-2"><Check className="w-4 h-4" />Copied!</span> : 'Copy Link'}
+        <button onClick={copy} style={{ width: '100%', padding: '15px', borderRadius: 14, border: 'none', fontFamily: "'DM Sans', sans-serif", fontSize: 14, fontWeight: 600, color: '#fff', background: copied ? '#10b981' : '#0a0a0a', cursor: 'pointer', transition: 'background .2s' }}>
+          {copied ? '✓ Copied!' : 'Copy Link'}
         </button>
-        <button onClick={onClose} className="w-full py-3.5 rounded-2xl font-medium text-sm text-gray-500 bg-gray-100 active:scale-[0.98]">Cancel</button>
+        <button onClick={onClose} style={{ width: '100%', padding: '14px', borderRadius: 14, border: 'none', fontFamily: "'DM Sans', sans-serif", fontSize: 14, fontWeight: 500, color: 'rgba(0,0,0,0.4)', background: 'rgba(0,0,0,0.04)', cursor: 'pointer' }}>
+          Cancel
+        </button>
       </div>
     </div>,
     document.body,
   );
 };
 
-// ─── FloatingHearts ───────────────────────────────────────────────────────────
+// ─── FloatingHearts ────────────────────────────────────────────────────────────
 const FloatingHearts = ({ hearts }: { hearts: Array<{ id: number; x: number; y: number; angle: number; distance: number }> }) => {
   if (typeof window === 'undefined' || !hearts.length) return null;
   return createPortal(<>
     <style>{`@keyframes floatHeart{0%{transform:translate(0,0) scale(0);opacity:0}10%{opacity:1;transform:scale(1) rotate(var(--rotate))}50%{transform:translate(var(--tx),var(--ty)) scale(1.3) rotate(var(--rotate));opacity:.95}100%{transform:translate(calc(var(--tx)*1.5),calc(var(--ty)*1.8)) scale(.2) rotate(var(--rotate));opacity:0}}.heart-float{animation:floatHeart 1.2s cubic-bezier(.25,.46,.45,.94) forwards;pointer-events:none;position:fixed;z-index:9999;filter:drop-shadow(0 4px 12px rgba(244,63,94,.5))}`}</style>
     {hearts.map((h, i) => {
       const rad = (h.angle * Math.PI) / 180;
-      return <Heart key={h.id} className="heart-float text-rose-500 fill-rose-500" style={{ left: `${h.x}px`, top: `${h.y}px`, width: 28, height: 28, '--tx': `${Math.cos(rad) * h.distance}px`, '--ty': `${Math.sin(rad) * h.distance - 50}px`, '--rotate': `${(Math.random() - .5) * 45}deg`, animationDelay: `${i * .08}s` } as React.CSSProperties} />;
+      return <Heart key={h.id} className="heart-float" style={{ left: `${h.x}px`, top: `${h.y}px`, width: 28, height: 28, color: '#f43f5e', fill: '#f43f5e', '--tx': `${Math.cos(rad) * h.distance}px`, '--ty': `${Math.sin(rad) * h.distance - 50}px`, '--rotate': `${(Math.random() - .5) * 45}deg`, animationDelay: `${i * .08}s` } as React.CSSProperties} />;
     })}
   </>, document.body);
 };
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
+// ─── Main ──────────────────────────────────────────────────────────────────────
 export default function WallpaperDetail({ initialWallpaper }: { initialWallpaper: Wallpaper }) {
   const router = useRouter();
   const { session } = useAuth();
   const supabase = useMemo(() => createClient(), []);
   const wp = initialWallpaper;
 
-  const [likes,     setLikes]     = useState(wp.likes);
-  const [hearts,    setHearts]    = useState<Array<{ id: number; x: number; y: number; angle: number; distance: number }>>([]);
-  const [full,      setFull]      = useState(false);
+  const [likes, setLikes]       = useState(wp.likes);
+  const [hearts, setHearts]     = useState<Array<{ id: number; x: number; y: number; angle: number; distance: number }>>([]);
+  const [full, setFull]         = useState(false);
   const [imgLoaded, setImgLoaded] = useState(imgCache.has(wp.url));
-  const [timeAgo,   setTimeAgo]   = useState(() => wp.createdAt ? timeAgoStr(wp.createdAt) : 'Just now');
+  const [timeAgo, setTimeAgo]   = useState(() => wp.createdAt ? timeAgoStr(wp.createdAt) : 'Just now');
   const [st, setSt] = useState({
     liked: false, following: false,
     downloading: false, downloaded: false, dataLoading: true,
     showLogin: false, loginAction: '', copyOpen: false,
   });
 
-  const likeRef    = useRef<HTMLButtonElement>(null);
-  const viewedRef  = useRef(false);
+  const likeRef   = useRef<HTMLButtonElement>(null);
+  const viewedRef = useRef(false);
   const set = (patch: Partial<typeof st>) => setSt(s => ({ ...s, ...patch }));
 
   useEffect(() => {
@@ -181,116 +187,295 @@ export default function WallpaperDetail({ initialWallpaper }: { initialWallpaper
     ? navigator.share({ title: wp.title, url: window.location.href }).catch(() => set({ copyOpen: true }))
     : set({ copyOpen: true });
 
-  const overlayBtn = 'w-14 h-14 rounded-full flex items-center justify-center transition-all duration-200 active:scale-90';
-
   return (
-    <div className="min-h-screen bg-white">
+    <div style={{ minHeight: '100dvh', background: '#f7f7f5', fontFamily: "'DM Sans', sans-serif" }}>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,300&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet" />
       <style>{`
-        @keyframes shimmer-light{0%{background-position:-200% 0}100%{background-position:200% 0}}
-        .shimmer-light{background:linear-gradient(90deg,#f3f4f6 25%,#e9eaec 50%,#f3f4f6 75%);background-size:200% 100%;animation:shimmer-light 1.5s infinite;}
-        @keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
-        .fade-up{animation:fadeUp 0.4s ease forwards;}
-        .no-save{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
+        @keyframes shimmer { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
+        .shimmer { background: linear-gradient(90deg,#ebebeb 25%,#e0e0de 50%,#ebebeb 75%); background-size:200% 100%; animation: shimmer 1.6s infinite; }
+        @keyframes fadeSlide { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
+        .fade-slide { animation: fadeSlide 0.5s cubic-bezier(.16,1,.3,1) forwards; }
+        .no-save { -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+        .action-btn { transition: transform .15s, opacity .15s; }
+        .action-btn:active { transform: scale(0.92); opacity: .8; }
+        /* fullscreen mode */
+        .wp-fullscreen { position: fixed !important; inset: 0 !important; margin: 0 !important; border-radius: 0 !important; z-index: 100; }
       `}</style>
 
       <FloatingHearts hearts={hearts} />
       <LoginPromptModal isOpen={st.showLogin} onClose={() => set({ showLogin: false })} action={st.loginAction} />
       <CopyLinkModal isOpen={st.copyOpen} onClose={() => set({ copyOpen: false })} link={typeof window !== 'undefined' ? window.location.href : ''} />
 
-      {/* Header */}
-      <header className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 pt-5 pb-3">
-        <button onClick={() => full ? setFull(false) : router.back()} className={overlayBtn} style={{ background: 'rgba(0,0,0,0.25)', backdropFilter: 'blur(6px)' }} aria-label="Go back">
-          <ChevronLeft className="w-7 h-7 text-white" strokeWidth={2.5} />
+      {/* ── Top nav bar ── */}
+      <div style={{
+        position: 'fixed', top: 0, left: 0, right: 0, zIndex: 60,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '14px 16px',
+        // only visible in full mode; normally transparent so page bg shows
+        pointerEvents: 'none',
+      }}>
+        <button
+          onClick={() => full ? setFull(false) : router.back()}
+          aria-label="Back"
+          style={{
+            pointerEvents: 'all',
+            width: 40, height: 40, borderRadius: '50%',
+            background: full ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.9)',
+            backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+            border: full ? 'none' : '1px solid rgba(0,0,0,0.08)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer', boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
+            transition: 'all .2s',
+          }}
+          className="action-btn"
+        >
+          <ChevronLeft size={20} color={full ? '#fff' : '#0a0a0a'} strokeWidth={2.5} />
         </button>
-        <button onClick={() => setFull(v => !v)} className={overlayBtn} style={{ background: 'rgba(0,0,0,0.25)', backdropFilter: 'blur(6px)' }} aria-label="Toggle fullscreen">
-          {full ? <Minimize2 className="w-6 h-6 text-white" strokeWidth={2.5} /> : <Maximize2 className="w-6 h-6 text-white" strokeWidth={2.5} />}
+
+        {/* Fullscreen toggle — only show on the image area */}
+        <button
+          onClick={() => setFull(v => !v)}
+          aria-label="Toggle fullscreen"
+          style={{
+            pointerEvents: 'all',
+            width: 40, height: 40, borderRadius: '50%',
+            background: full ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.9)',
+            backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+            border: full ? 'none' : '1px solid rgba(0,0,0,0.08)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer', boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
+            transition: 'all .2s',
+          }}
+          className="action-btn"
+        >
+          {full
+            ? <Minimize2 size={17} color="#fff" strokeWidth={2.5} />
+            : <Maximize2 size={17} color="#0a0a0a" strokeWidth={2.5} />
+          }
         </button>
-      </header>
-
-      {/* Image — protected */}
-      <div
-        className="relative w-full overflow-hidden transition-all duration-300 no-save"
-        style={{ height: full ? '100dvh' : '72vh', borderRadius: full ? 0 : '0 0 32px 32px', background: '#f3f4f6' }}
-        onContextMenu={e => e.preventDefault()}
-      >
-        {!imgLoaded && <div className={`absolute inset-0 ${SH}`} />}
-
-        <Image
-          src={wp.url} alt={wp.title} fill priority
-          draggable={false}
-          className="object-cover transition-opacity duration-300 no-save"
-          style={{ opacity: imgLoaded ? 1 : 0, pointerEvents: 'none', userSelect: 'none', WebkitUserSelect: 'none' }}
-          sizes="(max-width:768px) 100vw, 600px"
-          onLoad={() => { imgCache.add(wp.url); setImgLoaded(true); }}
-        />
-
-        {/* Transparent blocker — prevents long-press save, sits above image but below buttons */}
-        <div className="absolute inset-0 z-[2]" onContextMenu={e => e.preventDefault()} />
-
-        {/* Like button — above blocker */}
-        {imgLoaded && (
-          <div className="absolute bottom-5 right-5 z-[3] flex flex-col items-center gap-1.5">
-            <button ref={likeRef} onClick={handleLike} className={overlayBtn} style={{ background: st.liked ? '#f43f5e' : 'rgba(0,0,0,0.25)', backdropFilter: 'blur(6px)' }} aria-label="Like">
-              <Heart className="w-6 h-6" style={{ color: '#fff', fill: st.liked ? '#fff' : 'none' }} />
-            </button>
-            {likes > 0 && <span className="text-white text-xs font-semibold drop-shadow">{fmt(likes)}</span>}
-          </div>
-        )}
       </div>
 
-      {/* Info */}
-      {!full && (
-        <div className="px-5 pt-6 pb-32 fade-up">
-          <h2 className="font-bold text-xl mb-1 text-gray-900" style={{ letterSpacing: '-0.02em' }}>{wp.title}</h2>
-          {wp.description && <p className="text-sm text-gray-500 leading-relaxed mb-5">{wp.description}</p>}
+      {/* ── Wallpaper card ── */}
+      <div style={{ padding: full ? 0 : '68px 16px 0' }}>
+        <div
+          className={full ? 'wp-fullscreen' : ''}
+          style={{
+            position: 'relative',
+            width: '100%',
+            aspectRatio: full ? undefined : '9/16',
+            height: full ? '100dvh' : undefined,
+            borderRadius: full ? 0 : 20,
+            overflow: 'hidden',
+            background: '#e8e8e6',
+          }}
+          onContextMenu={e => e.preventDefault()}
+        >
+          {/* shimmer */}
+          {!imgLoaded && <div className="shimmer" style={{ position: 'absolute', inset: 0 }} />}
 
-          <div className="h-px bg-gray-100 mb-5" />
+          {/* image */}
+          <Image
+            src={wp.url} alt={wp.title} fill priority
+            draggable={false}
+            className="no-save"
+            style={{
+              objectFit: 'cover',
+              opacity: imgLoaded ? 1 : 0,
+              transition: 'opacity .4s ease',
+              pointerEvents: 'none',
+              userSelect: 'none',
+            }}
+            sizes="(max-width:768px) 100vw, 600px"
+            onLoad={() => { imgCache.add(wp.url); setImgLoaded(true); }}
+          />
+
+          {/* transparent blocker */}
+          <div className="no-save" style={{ position: 'absolute', inset: 0, zIndex: 2 }} onContextMenu={e => e.preventDefault()} />
+
+          {/* Like button — bottom right of card */}
+          {imgLoaded && (
+            <div style={{ position: 'absolute', bottom: 16, right: 16, zIndex: 3, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+              <button
+                ref={likeRef}
+                onClick={handleLike}
+                aria-label="Like"
+                className="action-btn"
+                style={{
+                  width: 48, height: 48, borderRadius: '50%',
+                  background: st.liked ? '#f43f5e' : 'rgba(0,0,0,0.28)',
+                  backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+                  border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  cursor: 'pointer', transition: 'background .2s, transform .15s',
+                }}
+              >
+                <Heart size={20} color="#fff" fill={st.liked ? '#fff' : 'none'} strokeWidth={2} />
+              </button>
+              {likes > 0 && (
+                <span style={{ fontSize: 11, fontWeight: 600, color: '#fff', textShadow: '0 1px 4px rgba(0,0,0,0.5)', letterSpacing: '0.01em' }}>
+                  {fmt(likes)}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* gradient overlay at bottom when fullscreen */}
+          {full && (
+            <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 120, background: 'linear-gradient(to top, rgba(0,0,0,0.5) 0%, transparent 100%)', zIndex: 2, pointerEvents: 'none' }} />
+          )}
+        </div>
+      </div>
+
+      {/* ── Info section ── */}
+      {!full && (
+        <div className="fade-slide" style={{ padding: '20px 16px 140px' }}>
+
+          {/* Title + description */}
+          <div style={{ marginBottom: 20 }}>
+            <h1 style={{
+              fontFamily: "'DM Serif Display', serif",
+              fontSize: 24, fontWeight: 400,
+              color: '#0a0a0a', letterSpacing: '-0.02em',
+              lineHeight: 1.2, marginBottom: 6,
+            }}>
+              {wp.title}
+            </h1>
+            {wp.description && (
+              <p style={{ fontSize: 14, color: 'rgba(0,0,0,0.45)', lineHeight: 1.6, fontWeight: 300 }}>
+                {wp.description}
+              </p>
+            )}
+          </div>
+
+          {/* Divider */}
+          <div style={{ height: 1, background: 'rgba(0,0,0,0.07)', marginBottom: 20 }} />
 
           {/* User row */}
-          <div className="flex items-center gap-3 mb-6">
-            <button onClick={() => router.push(`/user/${wp.userId}`)} className="flex items-center gap-3 flex-1 text-left">
-              <div className="relative w-11 h-11 rounded-full overflow-hidden flex-shrink-0 border-2 border-gray-100">
-                <Image src={wp.userAvatar} alt={wp.uploadedBy} fill className="object-cover" sizes="44px" />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+            <button
+              onClick={() => router.push(`/user/${wp.userId}`)}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'left' }}
+            >
+              <div style={{ position: 'relative', width: 40, height: 40, borderRadius: '50%', overflow: 'hidden', flexShrink: 0, border: '1.5px solid rgba(0,0,0,0.07)' }}>
+                <Image src={wp.userAvatar} alt={wp.uploadedBy} fill style={{ objectFit: 'cover' }} sizes="40px" />
               </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <span className="font-semibold text-[15px] text-gray-900">{wp.uploadedBy}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: '#0a0a0a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {wp.uploadedBy}
+                  </span>
                   {wp.verified && <VerifiedBadge size="sm" />}
                 </div>
-                <span className="text-[13px] text-gray-400">{timeAgo}</span>
+                <span style={{ fontSize: 12, color: 'rgba(0,0,0,0.35)', fontWeight: 400 }}>{timeAgo}</span>
               </div>
             </button>
+
+          {/* Follow button */}
             {st.dataLoading
-              ? <div className={`w-20 h-9 rounded-full ${SH}`} />
-              : <button onClick={handleFollow} className="px-5 py-2 rounded-full text-sm font-semibold flex-shrink-0 transition-all active:scale-95"
-                  style={st.following ? { border: '1.5px solid #e5e7eb', color: '#6b7280' } : { background: '#111', color: '#fff' }}>
+              ? <div className="shimmer" style={{ width: 80, height: 34, borderRadius: 8, flexShrink: 0 }} />
+              : (
+                <button
+                  onClick={handleFollow}
+                  className="action-btn"
+                  style={{
+                    flexShrink: 0,
+                    padding: '8px 18px',
+                    borderRadius: 8,
+                    border: st.following ? '1.5px solid rgba(0,0,0,0.12)' : 'none',
+                    background: st.following ? 'transparent' : '#0a0a0a',
+                    color: st.following ? 'rgba(0,0,0,0.45)' : '#fff',
+                    fontSize: 13, fontWeight: 600,
+                    cursor: 'pointer', transition: 'all .2s',
+                    fontFamily: "'DM Sans', sans-serif",
+                  }}
+                >
                   {st.following ? 'Following' : 'Follow'}
                 </button>
+              )
             }
           </div>
 
-          {/* Share + Copy */}
-          <div className="flex gap-3">
-            <button onClick={handleShare} className="flex-1 py-3.5 rounded-2xl flex items-center justify-center gap-2 font-semibold text-sm bg-gray-100 text-gray-700 transition-all active:scale-[0.98]">
-              <Share2 className="w-4 h-4" />Share
+          {/* Divider */}
+          <div style={{ height: 1, background: 'rgba(0,0,0,0.07)', marginBottom: 20 }} />
+
+          {/* Share row */}
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button
+              onClick={handleShare}
+              className="action-btn"
+              style={{
+                flex: 1, padding: '13px 0',
+                borderRadius: 12,
+                background: 'rgba(0,0,0,0.04)',
+                border: '1px solid rgba(0,0,0,0.07)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: 13, fontWeight: 600,
+                color: 'rgba(0,0,0,0.6)', cursor: 'pointer',
+              }}
+            >
+              <Share2 size={15} />
+              Share
             </button>
-            <button onClick={() => set({ copyOpen: true })} className="flex-1 py-3.5 rounded-2xl flex items-center justify-center gap-2 font-semibold text-sm bg-gray-100 text-gray-700 transition-all active:scale-[0.98]">
-              <LinkIcon className="w-4 h-4" />Copy Link
+            <button
+              onClick={() => set({ copyOpen: true })}
+              className="action-btn"
+              style={{
+                flex: 1, padding: '13px 0',
+                borderRadius: 12,
+                background: 'rgba(0,0,0,0.04)',
+                border: '1px solid rgba(0,0,0,0.07)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: 13, fontWeight: 600,
+                color: 'rgba(0,0,0,0.6)', cursor: 'pointer',
+              }}
+            >
+              <LinkIcon size={15} />
+              Copy Link
             </button>
           </div>
         </div>
       )}
 
-      {/* Download */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 px-5 pb-8">
-        <button onClick={handleDownload} disabled={st.downloading}
-          className="w-full py-4 rounded-2xl font-bold text-base flex items-center justify-center gap-2.5 text-white transition-all active:scale-[0.98]"
-          style={{ background: st.downloaded ? '#10b981' : '#111', opacity: st.downloading ? 0.75 : 1, boxShadow: st.downloaded ? '0 8px 30px rgba(16,185,129,0.35)' : '0 8px 30px rgba(0,0,0,0.2)' }}>
-          {st.downloading ? <Loader2 className="w-5 h-5 animate-spin" />
-            : st.downloaded ? <><Check className="w-5 h-5" />Downloaded</>
-            : <><Download className="w-5 h-5" />Download Wallpaper</>}
+      {/* ── Download button — fixed bottom ── */}
+      <div style={{
+        position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 50,
+        padding: '12px 16px max(20px, env(safe-area-inset-bottom))',
+        background: 'linear-gradient(to top, rgba(247,247,245,1) 60%, rgba(247,247,245,0) 100%)',
+      }}>
+        <button
+          onClick={handleDownload}
+          disabled={st.downloading}
+          className="action-btn"
+          style={{
+            width: '100%', padding: '15px 0',
+            borderRadius: 14, border: 'none',
+            fontFamily: "'DM Sans', sans-serif",
+            fontSize: 15, fontWeight: 700,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9,
+            color: '#fff',
+            background: st.downloaded
+              ? '#10b981'
+              : 'linear-gradient(135deg, #1a1a1a 0%, #0a0a0a 100%)',
+            opacity: st.downloading ? 0.7 : 1,
+            cursor: st.downloading ? 'not-allowed' : 'pointer',
+            boxShadow: st.downloaded
+              ? '0 8px 24px rgba(16,185,129,0.3)'
+              : '0 8px 24px rgba(0,0,0,0.18)',
+            transition: 'background .3s, box-shadow .3s, opacity .2s',
+            letterSpacing: '-0.01em',
+          }}
+        >
+          {st.downloading
+            ? <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
+            : st.downloaded
+              ? <><Check size={18} /> Downloaded</>
+              : <><Download size={18} /> Download Wallpaper</>
+          }
         </button>
       </div>
+
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
