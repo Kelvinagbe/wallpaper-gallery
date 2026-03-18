@@ -123,10 +123,10 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
     img.src = url;
   }, []);
 
-  const doUpload = async (resume: boolean) => {
-    const result = await uploadFile(file!, title, desc, resume);
-    if (result.success) setTimeout(() => { resetAll(); close(); }, 1000);
-  };
+const doUpload = async (resume: boolean) => {
+  const result = await uploadFile(file!, title, desc, resume, category);
+  if (result.success) setTimeout(() => { resetAll(); close(); }, 1000);
+};
 
   // derived
   const speedColor = speed === 'offline' ? '#ef4444' : speed === 'slow' ? '#f59e0b' : '#10b981';
