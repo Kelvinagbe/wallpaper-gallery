@@ -4,7 +4,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { Upload, X, Check, AlertCircle, Loader, Lock, Eye, EyeOff, RefreshCw, ChevronDown, Image as ImageIcon } from 'lucide-react';
 
-const ADMIN_PASSWORD = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || 'admin123'; 
+const ADMIN_PASSWORD = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || 'admin123';
 const BLOB_URL       = 'https://ovrica.name.ng/api/blob-upload';
 const SAVE_URL       = '/api/save-wallpaper';
 const GEMINI_URL     = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite-preview-06-17:generateContent';
@@ -247,14 +247,20 @@ export default function BulkUploadPage() {
                   )}
                 </div>
 
-              {/* Meta */}
+               {/* Meta */}
                 <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {img.status === 'idle' ? (
                     <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.25)', textAlign: 'center', padding: '8px 0' }}>Waiting for analysis...</p>
                   ) : img.status === 'error' && !img.title ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <AlertCircle size={13} color="#ef4444" />
-                      <p style={{ fontSize: 12, color: '#ef4444' }}>{img.error || 'Analysis failed'}</p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '4px 0' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <AlertCircle size={13} color="#ef4444" style={{ flexShrink: 0 }} />
+                        <p style={{ fontSize: 11, color: '#ef4444', fontWeight: 600 }}>Analysis failed</p>
+                      </div>
+                      <p style={{ fontSize: 10, color: 'rgba(239,68,68,0.7)', lineHeight: 1.4, wordBreak: 'break-all' }}>{img.error || 'Unknown error'}</p>
+                      <button onClick={() => updateImage(img.id, { status: 'idle', error: undefined })} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 7, border: '1px solid rgba(239,68,68,0.3)', background: 'transparent', color: '#ef4444', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', marginTop: 2 }}>
+                        <RefreshCw size={10} />Re-analyze
+                      </button>
                     </div>
                   ) : (
                     <>
