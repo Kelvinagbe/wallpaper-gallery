@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
     console.log('💾 Saving wallpaper to database...');
 
     const body = await request.json();
-    const { user_id, title, description, image_url, thumbnail_url } = body;
+    const { user_id, title, description, image_url, thumbnail_url, category } = body;
 
     // Validate required fields
     if (!user_id || !title || !image_url) {
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log('📋 Data to save:', { user_id, title, image_url });
+    console.log('📋 Data to save:', { user_id, title, image_url, category });
 
     // Create Supabase client with SERVICE ROLE KEY (bypasses RLS)
     const supabase = createClient(
@@ -49,15 +49,15 @@ export async function POST(request: NextRequest) {
       .from('wallpapers')
       .insert({
         user_id,
-        title: title.trim(),
-        description: description?.trim() || null,
+        title:         title.trim(),
+        description:   description?.trim() || null,
         image_url,
         thumbnail_url: thumbnail_url || image_url,
-        category: 'Other',
-        tags: [],
-        is_public: true,
-        views: 0,
-        downloads: 0,
+        category:      category?.trim() || 'Other',
+        tags:          [],
+        is_public:     true,
+        views:         0,
+        downloads:     0,
       })
       .select()
       .single();
@@ -67,8 +67,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { 
           success: false,
-          error: error.message,
-          code: error.code,
+          error:   error.message,
+          code:    error.code,
           details: error.details 
         },
         { status: 500, headers: corsHeaders }
@@ -79,10 +79,7 @@ export async function POST(request: NextRequest) {
     console.log('📋 Record:', data);
 
     return NextResponse.json(
-      { 
-        success: true, 
-        data 
-      },
+      { success: true, data },
       { headers: corsHeaders }
     );
 
