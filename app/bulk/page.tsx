@@ -35,6 +35,42 @@ const analyzeWithGroq = async (preview: string, category: string, apiKey: string
   return { title: p.title || '', description: p.description || '', category: CATEGORIES.includes(p.category) ? p.category : 'Other' };
 };
 
+// ─── Compression ─────────────────────────────────────────────────────────────
+const MAX_W = 1920, MAX_H = 1080, THUMB_W = 400;
+
+const targetKB = (size: number) =>
+  size < 500 * 1024 ? 150 : size < 2 * 1024 * 1024 ? 180 : 200;
+
+const startQuality = (size: number) =>
+  size < 500 * 1024 ? 0.85 : size < 2 * 1024 * 1024 ? 0.80 : size < 5 * 1024 * 1024 ? 0.75 : 0.65;
+
+const toBlob = (img: HTMLImageElement, w: number, h: number, q: number): Promise<Blob> =>
+  new Promise((res, rej) => {
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    c.getContext('2d')!.drawImage(img, 0, 0, w, h);
+    c.toBlob(b => b ? res(b) : rej(new Error('toBlob failed')), 'image/jpeg', q);
+  });
+
+const loadImg = (url: string): Promise<HTMLImageElement> =>
+  new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+
+const compressImage = async (file: File): Promise<{ main: Blob; thumb: Blob }> => {
+  const url  = URL.createObjectURL(file);
+  try {
+    const img   = await loadImg(url);
+    const ratio = Math.min(MAX_W / img.width, MAX_H / img.height, 1);
+    const w = Math.round(img.width * ratio), h = Math.round(img.height * ratio);
+    const target = targetKB(file.size) * 1024;
+    let q = startQuality(file.size);
+    let main = await toBlob(img, w, h, q);
+    while (main.size > target && q > 0.5) { q = Math.max(q - 0.08, 0.5); main = await toBlob(img, w, h, q); }
+    const th = Math.round((THUMB_W / img.width) * img.height);
+    const thumb = await toBlob(img, THUMB_W, th, 0.75);
+    return { main, thumb };
+  } finally { URL.revokeObjectURL(url); }
+};
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function BulkUploadPage() {
   const [authed,        setAuthed]        = useState(false);
@@ -109,12 +145,26 @@ export default function BulkUploadPage() {
     for (const img of todo) {
       updateImage(img.id, { status: 'uploading' });
       try {
-        const fd = new FormData();
-        fd.append('file', img.file, img.file.name); fd.append('userId', ADMIN_UID || 'admin'); fd.append('folder', 'wallpapers');
-        const blob = await (await fetch(BLOB_URL, { method: 'POST', body: fd, mode: 'cors', credentials: 'omit' })).json();
-        const imageUrl = blob.imageUrl || blob.url;
-        if (!blob.success || !imageUrl) throw new Error('No URL: ' + JSON.stringify(blob));
-        const db = await (await fetch(SAVE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: ADMIN_UID || 'admin', title: img.title || img.file.name, description: img.description || null, category: img.category || 'Other', image_url: imageUrl, thumbnail_url: imageUrl }) })).json();
+        // Compress main + generate thumbnail
+        addLog(`⚙️ Compressing ${img.file.name} (${(img.file.size/1024).toFixed(0)}KB)...`);
+        const { main, thumb } = await compressImage(img.file);
+        addLog(`✅ ${img.file.name} → main:${(main.size/1024).toFixed(0)}KB thumb:${(thumb.size/1024).toFixed(0)}KB`);
+
+        // Upload main image
+        const fd1 = new FormData();
+        fd1.append('file', main, img.file.name); fd1.append('userId', ADMIN_UID || 'admin'); fd1.append('folder', 'wallpapers');
+        const blobMain = await (await fetch(BLOB_URL, { method: 'POST', body: fd1, mode: 'cors', credentials: 'omit' })).json();
+        const imageUrl = blobMain.imageUrl || blobMain.url;
+        if (!blobMain.success || !imageUrl) throw new Error('Main upload failed: ' + JSON.stringify(blobMain));
+
+        // Upload thumbnail
+        const fd2 = new FormData();
+        fd2.append('file', thumb, `thumb_${img.file.name}`); fd2.append('userId', ADMIN_UID || 'admin'); fd2.append('folder', 'wallpapers/thumbnails');
+        const blobThumb = await (await fetch(BLOB_URL, { method: 'POST', body: fd2, mode: 'cors', credentials: 'omit' })).json();
+        const thumbUrl  = (blobThumb.success && (blobThumb.imageUrl || blobThumb.url)) || imageUrl;
+
+        // Save to DB
+        const db = await (await fetch(SAVE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: ADMIN_UID || 'admin', title: img.title || img.file.name, description: img.description || null, category: img.category || 'Other', image_url: imageUrl, thumbnail_url: thumbUrl }) })).json();
         addLog(`${img.file.name} → ${db.success ? '✅ saved' : '❌ ' + db.error}`);
         if (!db.success) throw new Error(db.error || 'DB failed');
         updateImage(img.id, { status: 'done' }); count++; setUploadedCount(count);
@@ -231,7 +281,7 @@ export default function BulkUploadPage() {
           </div>
         )}
 
-        {/* Grid */}
+           {/* Grid */}
         {images.length > 0 ? (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10 }}>
             {images.map(img => (
@@ -261,7 +311,6 @@ export default function BulkUploadPage() {
                   )}
                 </div>
 
-               
                 {/* Meta */}
                 <div style={{ padding: 9, display: 'flex', flexDirection: 'column', gap: 5 }}>
                   {img.status === 'idle' ? (
