@@ -7,7 +7,7 @@ import { Upload, X, Check, AlertCircle, Loader, Lock, Eye, EyeOff, RefreshCw, Ch
 const ADMIN_PASSWORD = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || 'admin123';
 const BLOB_URL       = 'https://ovrica.name.ng/api/blob-upload';
 const SAVE_URL       = '/api/save-wallpaper';
-const GEMINI_URL     = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
+const GEMINI_URL     = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite-preview-06-17:generateContent';
 const CATEGORIES     = ['Nature','Cars','Anime','City','Abstract','Space','Animals','Architecture','Gaming','Minimal','Dark','Gradient','Other'];
 const ADMIN_UID      = process.env.NEXT_PUBLIC_ADMIN_USER_ID || '';
 
@@ -247,7 +247,7 @@ export default function BulkUploadPage() {
                   )}
                 </div>
 
-               {/* Meta */}
+              {/* Meta */}
                 <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {img.status === 'idle' ? (
                     <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.25)', textAlign: 'center', padding: '8px 0' }}>Waiting for analysis...</p>
