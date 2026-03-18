@@ -4,7 +4,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { Upload, X, Check, AlertCircle, Loader, Lock, Eye, EyeOff, RefreshCw, ChevronDown, Image as ImageIcon } from 'lucide-react';
 
-const ADMIN_PASSWORD = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || 'admin123';
+const ADMIN_PASSWORD = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || 'admin123'; 
 const BLOB_URL       = 'https://ovrica.name.ng/api/blob-upload';
 const SAVE_URL       = '/api/save-wallpaper';
 const GEMINI_URL     = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite-preview-06-17:generateContent';
