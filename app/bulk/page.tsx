@@ -11,7 +11,7 @@ import { Upload, X, Check, AlertCircle, Loader, Lock, Eye, EyeOff, RefreshCw, Ch
 const ADMIN_PASSWORD  = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || 'admin123'; // set in .env.local
 const BLOB_URL        = 'https://ovrica.name.ng/api/blob-upload';
 const SAVE_URL        = '/api/save-wallpaper';
-const GEMINI_API_URL  = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite-preview-06-17:generateContent';
+const GEMINI_API_URL  = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
 const CATEGORIES      = ['Nature','Cars','Anime','City','Abstract','Space','Animals','Architecture','Gaming','Minimal','Dark','Gradient','Other'];
 const ADMIN_USER_ID   = process.env.NEXT_PUBLIC_ADMIN_USER_ID || ''; // your user_id from Supabase
 
@@ -43,14 +43,13 @@ const analyzeWithGemini = async (file: File, category: string): Promise<{ title:
   const base64 = await toBase64(file);
   const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
 
-  const prompt = `You are analyzing a wallpaper image. Generate metadata for it.
-Return ONLY a JSON object with these exact fields, no markdown, no explanation:
-{
-  "title": "Short catchy wallpaper title (3-6 words, no quotes)",
-  "description": "One sentence description of the wallpaper (max 120 chars)",
-  "category": "Best matching category from: ${CATEGORIES.join(', ')}"
-}
-${category !== 'Auto' ? `Prefer category: "${category}" unless it clearly doesn't match.` : ''}`;
+  const prompt = `Look at this wallpaper image carefully and respond with ONLY a raw JSON object. No markdown. No explanation. No code blocks. Just the JSON.
+
+{"title":"3 to 5 word wallpaper title","description":"One sentence max 100 chars describing what is shown","category":"pick ONE from: Nature, Cars, Anime, City, Abstract, Space, Animals, Architecture, Gaming, Minimal, Dark, Gradient, Other"}
+
+${category !== 'Auto' ? `Use category "${category}" if it fits, otherwise pick the best match.` : 'Pick the best matching category.'}
+
+Respond with only the JSON, nothing else.`;
 
   const res = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
     method:  'POST',
@@ -62,15 +61,30 @@ ${category !== 'Auto' ? `Prefer category: "${category}" unless it clearly doesn'
           { text: prompt },
         ],
       }],
-      generationConfig: { temperature: 0.4, maxOutputTokens: 200 },
+      generationConfig: { temperature: 0.3, maxOutputTokens: 300 },
     }),
   });
 
-  if (!res.ok) throw new Error(`Gemini API error: ${res.status}`);
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(`Gemini error ${res.status}: ${errData?.error?.message || res.statusText}`);
+  }
   const data = await res.json();
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-  const clean = text.replace(/```json|```/g, '').trim();
-  return JSON.parse(clean);
+
+  // Extract JSON — handle markdown fences, extra whitespace, trailing text
+  const jsonMatch = text.match(/\{[\s\S]*?\}/);
+  if (!jsonMatch) throw new Error(`Could not parse Gemini response: ${text.slice(0, 100)}`);
+  const parsed = JSON.parse(jsonMatch[0]);
+
+  // Validate fields exist
+  if (!parsed.title || !parsed.description || !parsed.category) {
+    throw new Error('Gemini returned incomplete data');
+  }
+
+  // Ensure category is one of our valid ones
+  const validCat = CATEGORIES.includes(parsed.category) ? parsed.category : 'Other';
+  return { title: parsed.title, description: parsed.description, category: validCat };
 };
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
@@ -354,7 +368,7 @@ export default function BulkUploadPage() {
                     </div>
                   )}
 
-                  {/* Remove button */}
+                {/* Remove button */}
                   {img.status !== 'uploading' && img.status !== 'done' && (
                     <button
                       onClick={() => removeImage(img.id)}
