@@ -9,7 +9,7 @@ import { fetchProfile, fetchUserWallpapers, getUserCounts, checkIsFollowing, fol
 import type { Wallpaper } from '@/app/types';
 
 const fmt = (n: number) => n >= 1_000_000 ? `${(n/1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n/1_000).toFixed(1)}k` : String(n);
-const PAGE_SIZE = 12;
+const PAGE_SIZE = 19;
 
 export default function UserProfilePage() {
   const router      = useRouter();
