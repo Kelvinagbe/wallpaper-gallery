@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronLeft, Settings, Share2, Heart, Bookmark, Clock, LogOut, Shield } from 'lucide-react';
+import { Settings, Share2, Heart, Bookmark, Clock, LogOut, Shield, Grid, ChevronRight } from 'lucide-react';
 import { useAuth } from '@/app/components/AuthProvider';
 import { SettingsModal } from '@/app/components/profile/SettingsModal';
 import { ContentListModal } from '@/app/components/profile/ContentListModal';
@@ -13,37 +13,29 @@ import { Navigation } from '@/app/components/Navigation';
 import { getLiked, getSaved, getRecent, signOut } from '@/lib/stores/userStore';
 import type { Wallpaper } from '@/app/types';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
 interface Props {
   initialStats:      { followers: number; following: number; posts: number };
   initialWallpapers: Wallpaper[];
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const fmt = (n: number) =>
-  n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` :
-  n >= 1_000     ? `${(n / 1_000).toFixed(1)}k`     : String(n);
-
-const Skeleton = ({ className = '' }: { className?: string }) => (
-  <div className={`skeleton-shimmer rounded ${className}`} />
-);
-
-// ─── Counts cache ─────────────────────────────────────────────────────────────
+const fmt = (n: number) => n >= 1_000_000 ? `${(n/1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n/1_000).toFixed(1)}k` : String(n);
 
 const countsCache = { data: null as { liked: number; saved: number; recent: number } | null, ts: 0 };
-const CACHE_TTL = 2 * 60 * 1000;
+const CACHE_TTL   = 2 * 60 * 1000;
 
-// ─── Component ────────────────────────────────────────────────────────────────
+const Shimmer = ({ w, h, r = 8 }: { w: string | number; h: string | number; r?: number }) => (
+  <div style={{ width: w, height: h, borderRadius: r, flexShrink: 0,
+    background: 'linear-gradient(90deg,#ececec 25%,#e0e0e0 50%,#ececec 75%)',
+    backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease infinite' }} />
+);
 
 export default function ProfileClient({ initialStats, initialWallpapers }: Props) {
   const router = useRouter();
   const { profile, isLoading: authLoading, refreshProfile } = useAuth();
 
-  const [counts,       setCounts]       = useState(countsCache.data || { liked: 0, saved: 0, recent: 0 });
-  const [stats]                         = useState(initialStats);
-  const [myWallpapers]                  = useState<Wallpaper[]>(initialWallpapers);
+  const [counts,        setCounts]        = useState(countsCache.data || { liked: 0, saved: 0, recent: 0 });
+  const [stats]                           = useState(initialStats);
+  const [myWallpapers]                    = useState<Wallpaper[]>(initialWallpapers);
   const [countsLoading, setCountsLoading] = useState(!countsCache.data);
   const [modals, setModals] = useState({
     logout: false, settings: false, settingsClosing: false,
@@ -51,15 +43,9 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
     content: null as 'liked' | 'saved' | 'recent' | null,
   });
 
-  // ─── Load counts ────────────────────────────────────────────────────────────
-
   useEffect(() => {
     if (authLoading || !profile) return;
-    if (countsCache.data && Date.now() - countsCache.ts < CACHE_TTL) {
-      setCounts(countsCache.data);
-      setCountsLoading(false);
-      return;
-    }
+    if (countsCache.data && Date.now() - countsCache.ts < CACHE_TTL) { setCounts(countsCache.data); setCountsLoading(false); return; }
     (async () => {
       try {
         const [l, s, r] = await Promise.all([getLiked(), getSaved(), getRecent()]);
@@ -69,8 +55,6 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
       } finally { setCountsLoading(false); }
     })();
   }, [profile, authLoading]);
-
-  // ─── Handlers ───────────────────────────────────────────────────────────────
 
   const refreshCounts = async () => {
     const [l, s, r] = await Promise.all([getLiked(), getSaved(), getRecent()]);
@@ -91,203 +75,201 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
   };
 
   const handleShare = async () => {
-    if (navigator.share) {
-      await navigator.share({ title: 'Gallery App', text: 'Check out this amazing wallpaper gallery!', url: window.location.href }).catch(() => {});
-    } else {
-      navigator.clipboard.writeText(window.location.href).then(() => alert('Link copied!')).catch(() => {});
-    }
+    if (navigator.share) await navigator.share({ title: 'Gallery App', url: window.location.href }).catch(() => {});
+    else navigator.clipboard.writeText(window.location.href).catch(() => {});
   };
 
   const open = (key: string, val?: any) => setModals(m => ({ ...m, [key]: val ?? true }));
 
-  // ─── Menu ────────────────────────────────────────────────────────────────────
-
-  const menuSections = [
-    { title: 'My Content', items: [
-      { icon: Heart,    label: 'Liked Wallpapers',  count: counts.liked,  color: 'text-red-400',    onClick: () => open('content', 'liked')  },
-      { icon: Bookmark, label: 'Saved Collections', count: counts.saved,  color: 'text-blue-400',   onClick: () => open('content', 'saved')  },
-      { icon: Clock,    label: 'Recently Viewed',   count: counts.recent, color: 'text-purple-400', onClick: () => open('content', 'recent') },
-    ]},
-    { title: 'Settings', items: [
-      { icon: Settings, label: 'Account Settings',   color: 'text-gray-500', onClick: () => open('settings') },
-      { icon: Shield,   label: 'Privacy & Security', color: 'text-gray-500', onClick: () => open('privacy')  },
-    ]},
-    { title: 'More', items: [
-      { icon: Share2, label: 'Share App', color: 'text-gray-500', onClick: handleShare },
-    ]},
-  ];
+  if (!authLoading && !profile) return null;
 
   const displayStats = [
-    { label: 'Posts',     value: fmt(stats.posts     || myWallpapers.length) },
+    { label: 'Posts',     value: fmt(stats.posts || myWallpapers.length) },
     { label: 'Followers', value: fmt(stats.followers) },
     { label: 'Following', value: fmt(stats.following) },
   ];
 
-  if (!authLoading && !profile) return null;
-
-  // ─── Render ──────────────────────────────────────────────────────────────────
+  const menuSections = [
+    { title: 'My Content', items: [
+      { icon: Heart,    label: 'Liked Wallpapers',  count: counts.liked,  onClick: () => open('content', 'liked')  },
+      { icon: Bookmark, label: 'Saved Collections', count: counts.saved,  onClick: () => open('content', 'saved')  },
+      { icon: Clock,    label: 'Recently Viewed',   count: counts.recent, onClick: () => open('content', 'recent') },
+    ]},
+    { title: 'Account', items: [
+      { icon: Settings, label: 'Account Settings',   onClick: () => open('settings') },
+      { icon: Shield,   label: 'Privacy & Security', onClick: () => open('privacy')  },
+      { icon: Share2,   label: 'Share App',          onClick: handleShare             },
+    ]},
+  ];
 
   return (
-    <div className="min-h-screen bg-white text-gray-900 pb-20">
+    <div style={{ minHeight: '100dvh', background: '#fff', fontFamily: 'system-ui, sans-serif', color: '#0a0a0a', paddingBottom: 80 }}>
+      <style>{`
+        @keyframes shimmer { 0%,100%{background-position:200% 0} 50%{background-position:-200% 0} }
+        @keyframes fadeUp  { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+        .fade-up { animation: fadeUp .35s cubic-bezier(.16,1,.3,1) forwards; }
+        .wp-card:active { transform: scale(0.97); }
+        .wp-card { transition: transform .12s; }
+        .menu-item:active { transform: scale(0.98); background: rgba(0,0,0,0.04) !important; }
+        .menu-item { transition: all .12s; }
+      `}</style>
 
-      {/* Header */}
-      <div className="sticky top-0 z-10 bg-white/95 backdrop-blur-xl border-b border-gray-100">
-        <div className="flex items-center justify-between p-4 max-w-2xl mx-auto">
-          <button onClick={() => router.back()} className="p-2 hover:bg-gray-100 rounded-full active:scale-95 transition-all">
-            <ChevronLeft className="w-6 h-6 text-gray-900" />
-          </button>
-          <h1 className="text-lg font-semibold text-gray-900">Profile</h1>
-          <button onClick={() => open('settings')} className="p-2 hover:bg-gray-100 rounded-full active:scale-95 transition-all">
-            <Settings className="w-6 h-6 text-gray-900" />
-          </button>
-        </div>
+      {/* ── Header ── */}
+      <div style={{ position: 'sticky', top: 0, zIndex: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+        <p style={{ fontSize: 15, fontWeight: 700 }}>Profile</p>
+        <button onClick={() => open('settings')} style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(0,0,0,0.05)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <Settings size={16} color="#0a0a0a" />
+        </button>
       </div>
 
-      <div className="max-w-2xl mx-auto w-full p-4">
-        {profile && <>
+      <div style={{ maxWidth: 600, margin: '0 auto' }}>
 
-          {/* Avatar + info */}
-          <div className="text-center mb-8 pt-4">
-            <div className="relative inline-block mb-4">
-              {authLoading
-                ? <Skeleton className="w-28 h-28 rounded-full" />
-                : <>
-                    <img src={profile.avatar} alt={profile.name} className="w-28 h-28 rounded-full border-4 border-gray-100 object-cover" />
-                    <button onClick={() => open('settings')} className="absolute bottom-0 right-0 p-2 bg-gray-900 text-white rounded-full shadow-lg hover:bg-gray-700 active:scale-95 transition-all">
-                      <Settings className="w-4 h-4" />
-                    </button>
-                  </>
-              }
+        {/* ── Avatar + info ── */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '28px 20px 20px' }}>
+          {authLoading ? (
+            <>
+              <Shimmer w={110} h={110} r={55} />
+              <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                <Shimmer w={160} h={22} />
+                <Shimmer w={100} h={14} />
+                <Shimmer w={220} h={13} />
+              </div>
+            </>
+          ) : profile && (
+            <div className="fade-up" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
+              {/* Avatar with settings badge */}
+              <div style={{ position: 'relative', marginBottom: 14 }}>
+                <img src={profile.avatar} alt={profile.name} style={{ width: 110, height: 110, borderRadius: '50%', objectFit: 'cover', border: '3px solid #fff', boxShadow: '0 2px 20px rgba(0,0,0,0.12)', display: 'block' }} />
+                <button onClick={() => open('settings')} style={{ position: 'absolute', bottom: 2, right: 2, width: 28, height: 28, borderRadius: '50%', background: '#0a0a0a', border: '2px solid #fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                  <Settings size={13} color="#fff" />
+                </button>
+              </div>
+
+              {/* Name + verified */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                <h2 style={{ fontSize: 22, fontWeight: 700, margin: 0, letterSpacing: '-0.02em' }}>{profile.name}</h2>
+                {profile.verified && <VerifiedBadge size="md" />}
+              </div>
+              {profile.username && <p style={{ fontSize: 13, color: 'rgba(0,0,0,0.38)', margin: '0 0 8px' }}>@{profile.username}</p>}
+              {profile.bio      && <p style={{ fontSize: 14, color: 'rgba(0,0,0,0.5)', lineHeight: 1.55, maxWidth: 280, margin: '0 0 20px' }}>{profile.bio}</p>}
+
+              {/* Stats */}
+              <div style={{ display: 'flex', width: '100%', maxWidth: 360, borderRadius: 18, border: '1px solid rgba(0,0,0,0.07)', overflow: 'hidden', marginBottom: 18, background: '#fafafa' }}>
+                {displayStats.map(({ label, value }, i, arr) => (
+                  <div key={label} style={{ flex: 1, padding: '14px 0', textAlign: 'center', borderRight: i < arr.length - 1 ? '1px solid rgba(0,0,0,0.07)' : 'none' }}>
+                    <p style={{ fontSize: 19, fontWeight: 700, margin: 0, letterSpacing: '-0.02em' }}>{value}</p>
+                    <p style={{ fontSize: 11, color: 'rgba(0,0,0,0.38)', margin: '2px 0 0', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Edit + Share */}
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={() => open('settings')} style={{ padding: '10px 28px', borderRadius: 26, border: 'none', background: '#0a0a0a', color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  Edit Profile
+                </button>
+                <button onClick={handleShare} style={{ padding: '10px 20px', borderRadius: 26, border: '1px solid rgba(0,0,0,0.1)', background: 'transparent', color: 'rgba(0,0,0,0.6)', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Share2 size={14} />Share
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Posts divider ── */}
+        {myWallpapers.length > 0 && (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 20px', borderTop: '1px solid rgba(0,0,0,0.07)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <Grid size={13} color="rgba(0,0,0,0.35)" />
+                <p style={{ fontSize: 12, fontWeight: 600, color: 'rgba(0,0,0,0.38)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: 0 }}>{fmt(stats.posts || myWallpapers.length)} Posts</p>
+              </div>
+              <button onClick={() => open('allPosts')} style={{ fontSize: 12, fontWeight: 600, color: 'rgba(0,0,0,0.4)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>View all</button>
             </div>
 
-            <div className="flex items-center justify-center gap-2 mb-1">
-              {authLoading
-                ? <Skeleton className="h-8 w-40" />
-                : <>
-                    <h2 className="text-2xl font-bold text-gray-900">{profile.name}</h2>
-                    {profile.verified && <VerifiedBadge size="lg" />}
-                  </>
-              }
-            </div>
-
-            <p className="text-gray-400 mb-2">{profile.username || '@user'}</p>
-            <p className="text-sm text-gray-500 mb-6 max-w-xs mx-auto">{profile.bio}</p>
-
-            {/* Stats */}
-            <div className="flex items-center justify-center gap-8 mb-6">
-              {displayStats.map(({ label, value }) => (
-                <div key={label} className="text-center">
-                  <p className="text-2xl font-bold text-gray-900">{value}</p>
-                  <p className="text-sm text-gray-400">{label}</p>
-                </div>
+            {/* ── Grid — no gap, no radius ── */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 1 }}>
+              {myWallpapers.slice(0, 9).map(wp => (
+                <button key={wp.id} className="wp-card" onClick={() => router.push(`/details/${wp.id}`)}
+                  style={{ position: 'relative', aspectRatio: '3/4', border: 'none', padding: 0, cursor: 'pointer', background: '#e8e8e8', display: 'block', overflow: 'hidden' }}>
+                  <img src={wp.thumbnail || wp.url} alt={wp.title} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                </button>
               ))}
             </div>
+          </>
+        )}
 
-            <div className="flex gap-3 justify-center">
-              <button onClick={() => open('settings')} className="flex-1 max-w-[200px] px-6 py-2.5 bg-gray-900 text-white rounded-full font-semibold hover:bg-gray-700 active:scale-95 transition-all">
-                Edit Profile
-              </button>
-              <button onClick={handleShare} className="px-6 py-2.5 bg-gray-100 hover:bg-gray-200 rounded-full font-semibold active:scale-95 transition-all border border-gray-200 text-gray-700">
-                Share
-              </button>
-            </div>
-          </div>
-
-          {/* My Recent Posts */}
-          {myWallpapers.length > 0 && (
-            <div className="mb-8">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-gray-900">My Recent Posts</h3>
-                <button onClick={() => open('allPosts')} className="text-sm text-gray-400 hover:text-gray-900 transition-colors">View All</button>
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                {myWallpapers.map(wp => (
-                  <button key={wp.id} onClick={() => router.push(`/details/${wp.id}`)} className="relative aspect-[3/4] rounded-xl overflow-hidden hover:opacity-80 active:scale-95 transition-all">
-                    <img src={wp.thumbnail || wp.url} alt={wp.title} className="w-full h-full object-cover" />
+        {/* ── Menu sections ── */}
+        <div style={{ padding: '24px 16px 8px', display: 'flex', flexDirection: 'column', gap: 24 }}>
+          {menuSections.map(section => (
+            <div key={section.title}>
+              <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(0,0,0,0.35)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 8px 4px' }}>{section.title}</p>
+              <div style={{ background: '#fafafa', borderRadius: 16, border: '1px solid rgba(0,0,0,0.06)', overflow: 'hidden' }}>
+                {section.items.map((item, i) => (
+                  <button key={item.label} className="menu-item" onClick={item.onClick}
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', background: 'transparent', border: 'none', borderBottom: i < section.items.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
+                    <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(0,0,0,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <item.icon size={17} color="rgba(0,0,0,0.55)" />
+                    </div>
+                    <p style={{ flex: 1, fontSize: 14, fontWeight: 500, color: '#0a0a0a', margin: 0 }}>{item.label}</p>
+                    {'count' in item && (
+                      countsLoading
+                        ? <Shimmer w={28} h={16} r={4} />
+                        : (item as any).count > 0
+                          ? <span style={{ fontSize: 13, color: 'rgba(0,0,0,0.35)', fontWeight: 500 }}>{(item as any).count}</span>
+                          : null
+                    )}
+                    <ChevronRight size={15} color="rgba(0,0,0,0.25)" />
                   </button>
                 ))}
               </div>
             </div>
-          )}
+          ))}
+        </div>
 
-          {/* Menu sections */}
-          <div className="space-y-6">
-            {menuSections.map(section => (
-              <div key={section.title}>
-                <h3 className="text-xs font-semibold text-gray-400 mb-3 px-2">{section.title.toUpperCase()}</h3>
-                <div className="space-y-1">
-                  {section.items.map(item => (
-                    <button key={item.label} onClick={item.onClick} className="w-full flex items-center gap-4 p-4 bg-gray-50 hover:bg-gray-100 rounded-xl active:scale-[0.98] transition-all group">
-                      <div className="p-2 rounded-lg bg-gray-100 group-hover:bg-gray-200 transition-colors">
-                        <item.icon className={`w-5 h-5 ${item.color}`} />
-                      </div>
-                      <div className="flex-1 text-left">
-                        <p className="font-medium text-gray-900">{item.label}</p>
-                      </div>
-                      {'count' in item && (
-                        countsLoading
-                          ? <Skeleton className="h-5 w-8" />
-                          : (item as any).count > 0
-                            ? <span className="text-sm text-gray-400 font-medium">{(item as any).count}</span>
-                            : null
-                      )}
-                      <ChevronLeft className="w-5 h-5 rotate-180 text-gray-300 group-hover:text-gray-500 transition-colors" />
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Logout */}
-          <button onClick={() => open('logout')} className="w-full flex items-center justify-center gap-3 p-4 mt-8 mb-4 bg-red-50 hover:bg-red-100 rounded-xl active:scale-[0.98] transition-all border border-red-100">
-            <LogOut className="w-5 h-5 text-red-500" />
-            <span className="font-semibold text-red-500">Log Out</span>
+        {/* ── Logout ── */}
+        <div style={{ padding: '8px 16px 24px' }}>
+          <button onClick={() => open('logout')} className="menu-item"
+            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, padding: '14px', borderRadius: 16, border: '1px solid rgba(239,68,68,0.15)', background: 'rgba(239,68,68,0.04)', cursor: 'pointer', fontFamily: 'inherit' }}>
+            <LogOut size={16} color="#ef4444" />
+            <span style={{ fontSize: 14, fontWeight: 600, color: '#ef4444' }}>Log Out</span>
           </button>
-
-          <div className="text-center text-xs text-gray-300 py-6">
-            <p>Gallery App v1.0.0</p>
-            <p className="mt-1">Made with ❤️ for wallpaper lovers</p>
-          </div>
-        </>}
+          <p style={{ textAlign: 'center', fontSize: 11, color: 'rgba(0,0,0,0.2)', marginTop: 20 }}>WALLS v1.0.0 · Made with ❤️ for wallpaper lovers</p>
+        </div>
       </div>
 
       <Navigation />
 
-      {/* Logout confirm */}
+      {/* ── Logout confirm ── */}
       {modals.logout && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[60] flex items-center justify-center p-4" onClick={() => setModals(m => ({ ...m, logout: false }))}>
-          <div className="bg-white rounded-2xl p-6 max-w-sm w-full border border-gray-100 shadow-xl" onClick={e => e.stopPropagation()}>
-            <div className="text-center mb-6">
-              <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                <LogOut className="w-8 h-8 text-red-500" />
-              </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-2">Log Out?</h3>
-              <p className="text-gray-400 text-sm">Are you sure you want to log out?</p>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={() => setModals(m => ({ ...m, logout: false }))}>
+          <div style={{ background: '#fff', borderRadius: 24, padding: 28, maxWidth: 320, width: '100%', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+            <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'rgba(239,68,68,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+              <LogOut size={24} color="#ef4444" />
             </div>
-            <div className="flex gap-3">
-              <button onClick={() => setModals(m => ({ ...m, logout: false }))} className="flex-1 px-4 py-3 bg-gray-100 hover:bg-gray-200 rounded-xl font-semibold text-gray-700 active:scale-95 transition-all">Cancel</button>
-              <button onClick={handleLogout} className="flex-1 px-4 py-3 bg-red-500 hover:bg-red-600 rounded-xl font-semibold text-white active:scale-95 transition-all">Log Out</button>
+            <p style={{ fontSize: 18, fontWeight: 700, marginBottom: 6 }}>Log Out?</p>
+            <p style={{ fontSize: 14, color: 'rgba(0,0,0,0.4)', marginBottom: 24 }}>Are you sure you want to log out?</p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => setModals(m => ({ ...m, logout: false }))} style={{ flex: 1, padding: '13px 0', borderRadius: 14, border: '1px solid rgba(0,0,0,0.1)', background: 'transparent', fontSize: 14, fontWeight: 600, color: 'rgba(0,0,0,0.5)', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+              <button onClick={handleLogout} style={{ flex: 1, padding: '13px 0', borderRadius: 14, border: 'none', background: '#ef4444', fontSize: 14, fontWeight: 600, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>Log Out</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Settings */}
+      {/* ── Modals ── */}
       {(modals.settings || modals.settingsClosing) && (
         <div className={modals.settingsClosing ? 'mc' : ''}>
           <SettingsModal onClose={() => closeModal('settings')} onProfileUpdate={async () => { await refreshProfile(); refreshCounts(); }} />
         </div>
       )}
 
-      {/* Privacy */}
       {(modals.privacy || modals.privacyClosing) && (
         <div className={modals.privacyClosing ? 'mc' : ''}>
           <PrivacyModal onClose={() => closeModal('privacy')} />
         </div>
       )}
 
-      {/* All posts */}
       {modals.allPosts && profile && (
         <ViewAllPostsModal
           onClose={() => setModals(m => ({ ...m, allPosts: false }))}
@@ -297,7 +279,6 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
         />
       )}
 
-      {/* Content list */}
       {modals.content && (
         <ContentListModal
           type={modals.content}
