@@ -9,9 +9,7 @@ import { fetchProfile, fetchUserWallpapers, getUserCounts, checkIsFollowing, fol
 import type { Wallpaper } from '@/app/types';
 
 const fmt = (n: number) => n >= 1_000_000 ? `${(n/1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n/1_000).toFixed(1)}k` : String(n);
-const Shimmer = ({ w, h, r = 12 }: { w: string|number; h: string|number; r?: number }) => (
-  <div style={{ width: w, height: h, borderRadius: r, background: 'linear-gradient(90deg,#efefef 25%,#e5e5e5 50%,#efefef 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s infinite' }} />
-);
+const PAGE_SIZE = 12;
 
 export default function UserProfilePage() {
   const router      = useRouter();
@@ -23,9 +21,11 @@ export default function UserProfilePage() {
   const [stats,         setStats]         = useState({ followers: 0, following: 0, posts: 0 });
   const [isFollowing,   setIsFollowing]   = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
-  const [loading,       setLoading]       = useState(true);
+  const [pageLoading,   setPageLoading]   = useState(true);
   const [posts,         setPosts]         = useState<Wallpaper[]>([]);
   const [postsLoading,  setPostsLoading]  = useState(true);
+  const [page,          setPage]          = useState(0);
+  const [hasMore,       setHasMore]       = useState(false);
 
   const isOwn = session?.user.id === userId;
 
@@ -33,23 +33,32 @@ export default function UserProfilePage() {
     if (!userId) return;
     (async () => {
       try {
-        const [p, s] = await Promise.all([fetchProfile(userId), getUserCounts(userId)]);
-        if (!p) { router.replace('/'); return; }
-        setProfile(p); setStats(s);
+        const [userProfile, userStats] = await Promise.all([fetchProfile(userId), getUserCounts(userId)]);
+        if (!userProfile) { router.replace('/'); return; }
+        setProfile(userProfile);
+        setStats(userStats);
         if (session && !isOwn) setIsFollowing(await checkIsFollowing(session.user.id, userId));
       } catch { router.replace('/'); }
-      finally { setLoading(false); }
+      finally { setPageLoading(false); }
     })();
   }, [userId, session]);
 
   useEffect(() => {
     if (!userId) return;
     setPostsLoading(true);
-    fetchUserWallpapers(userId, 0, 30)
-      .then(({ wallpapers, total }) => { setPosts(wallpapers); setStats(s => ({ ...s, posts: total })); })
+    fetchUserWallpapers(userId, 0, PAGE_SIZE)
+      .then(({ wallpapers, hasMore: more }) => { setPosts(wallpapers); setHasMore(more); setPage(0); })
       .catch(console.error)
       .finally(() => setPostsLoading(false));
   }, [userId]);
+
+  const loadMore = async () => {
+    const next = page + 1;
+    const { wallpapers, hasMore: more } = await fetchUserWallpapers(userId, next, PAGE_SIZE);
+    setPosts(p => [...p, ...wallpapers]);
+    setHasMore(more);
+    setPage(next);
+  };
 
   const handleFollow = async () => {
     if (!session || followLoading) return;
@@ -57,117 +66,156 @@ export default function UserProfilePage() {
     try {
       if (isFollowing) { await unfollowUser(session.user.id, userId); setIsFollowing(false); setStats(s => ({ ...s, followers: s.followers - 1 })); }
       else             { await followUser(session.user.id, userId);   setIsFollowing(true);  setStats(s => ({ ...s, followers: s.followers + 1 })); }
-    } catch(e) { console.error(e); }
+    } catch (e) { console.error(e); }
     finally { setFollowLoading(false); }
   };
 
+  // ── Shimmer ──────────────────────────────────────────────────────────────────
+  const Shimmer = ({ w, h, r = 8 }: { w: string | number; h: string | number; r?: number }) => (
+    <div style={{ width: w, height: h, borderRadius: r, flexShrink: 0,
+      background: 'linear-gradient(90deg,#ececec 25%,#e0e0e0 50%,#ececec 75%)',
+      backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease infinite' }} />
+  );
+
   return (
-    <div style={{ minHeight: '100dvh', background: '#fafafa', fontFamily: "'DM Sans', sans-serif", color: '#0a0a0a' }}>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <div style={{ minHeight: '100dvh', background: '#fff', fontFamily: 'system-ui, sans-serif', color: '#0a0a0a' }}>
       <style>{`
-        @keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
-        @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
-        .fade-up{animation:fadeUp .4s cubic-bezier(.16,1,.3,1) forwards;}
-        .press{transition:transform .15s;} .press:active{transform:scale(0.95);}
+        @keyframes shimmer { 0%,100%{background-position:200% 0} 50%{background-position:-200% 0} }
+        @keyframes fadeUp  { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+        .fade-up { animation: fadeUp .35s cubic-bezier(.16,1,.3,1) forwards; }
+        .wp-card:active { transform: scale(0.97); }
+        .wp-card { transition: transform .12s; }
       `}</style>
 
-      {/* Header */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 20, background: 'rgba(250,250,250,0.92)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', borderBottom: '1px solid rgba(0,0,0,0.05)', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-        <button onClick={() => router.back()} className="press" style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(0,0,0,0.05)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
+      {/* ── Fixed header ── */}
+      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 30, display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+        <button onClick={() => router.back()} style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(0,0,0,0.05)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
           <ChevronLeft size={18} color="#0a0a0a" strokeWidth={2.5} />
         </button>
-        {!loading && profile && <span style={{ fontSize: 15, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{profile.name}</span>}
+        {!pageLoading && profile && (
+          <p style={{ fontSize: 15, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{profile.name}</p>
+        )}
       </div>
 
-      <div style={{ maxWidth: 480, margin: '0 auto', padding: '0 16px 48px' }}>
-
-        {/* Skeleton */}
-        {loading ? (
-          <div style={{ paddingTop: 32, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-            <Shimmer w={88} h={88} r={44} />
-            <Shimmer w={140} h={22} />
+      {pageLoading ? (
+        // ── Skeleton ────────────────────────────────────────────────────────────
+        <div style={{ paddingTop: 70, maxWidth: 600, margin: '0 auto' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '28px 20px 20px', gap: 10 }}>
+            <Shimmer w={110} h={110} r={55} />
+            <Shimmer w={150} h={20} />
             <Shimmer w={100} h={14} />
-            <Shimmer w={200} h={14} />
-            <div style={{ display: 'flex', gap: 24, marginTop: 4 }}>
-              {[1,2,3].map(i => <div key={i} style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:5 }}><Shimmer w={40} h={20} /><Shimmer w={55} h={11} /></div>)}
-            </div>
-            <Shimmer w={110} h={40} r={22} />
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6, width: '100%', marginTop: 8 }}>
-              {[...Array(9)].map((_,i) => <Shimmer key={i} w="100%" h={140} />)}
+            <Shimmer w={200} h={13} />
+            <div style={{ display: 'flex', gap: 0, width: '100%', marginTop: 8, borderRadius: 16, overflow: 'hidden', border: '1px solid #f0f0f0' }}>
+              {[1,2,3].map(i => <div key={i} style={{ flex: 1, padding: 16, borderRight: i < 3 ? '1px solid #f0f0f0' : 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}><Shimmer w={40} h={18} /><Shimmer w={55} h={11} /></div>)}
             </div>
           </div>
-        ) : profile ? (
-          <div className="fade-up">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 1 }}>
+            {[...Array(9)].map((_,i) => <Shimmer key={i} w="100%" h={160} r={0} />)}
+          </div>
+        </div>
+      ) : profile ? (
+        <div className="fade-up">
 
-            {/* Profile info */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 28, paddingBottom: 24, textAlign: 'center' }}>
+          {/* ── Profile info ── */}
+          <div style={{ maxWidth: 600, margin: '0 auto', padding: '70px 20px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
 
-              {/* Avatar */}
-              <img src={profile.avatar} alt={profile.name}
-                style={{ width: 88, height: 88, borderRadius: '50%', objectFit: 'cover', border: '3px solid #fff', boxShadow: '0 2px 20px rgba(0,0,0,0.1)', marginBottom: 14 }} />
+            {/* Avatar — large, 110px like Instagram mobile */}
+            <img
+              src={profile.avatar}
+              alt={profile.name}
+              style={{ width: 110, height: 110, borderRadius: '50%', objectFit: 'cover', border: '3px solid #fff', boxShadow: '0 2px 20px rgba(0,0,0,0.12)', marginBottom: 14, flexShrink: 0 }}
+            />
 
-              {/* Name + verified badge side by side */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
-                <span style={{ fontSize: 21, fontWeight: 700, letterSpacing: '-0.03em' }}>{profile.name}</span>
-                {profile.verified && <VerifiedBadge size="md" />}
-              </div>
-
-              {profile.username && <p style={{ fontSize: 13, color: 'rgba(0,0,0,0.38)', marginBottom: profile.bio ? 10 : 18 }}>@{profile.username}</p>}
-              {profile.bio      && <p style={{ fontSize: 14, color: 'rgba(0,0,0,0.5)', lineHeight: 1.65, maxWidth: 280, marginBottom: 20 }}>{profile.bio}</p>}
-
-              {/* Stats pill */}
-              <div style={{ display: 'flex', background: '#fff', borderRadius: 20, border: '1px solid rgba(0,0,0,0.06)', overflow: 'hidden', marginBottom: 20, width: '100%', maxWidth: 320, boxShadow: '0 1px 8px rgba(0,0,0,0.04)' }}>
-                {[{ label:'Posts', val:stats.posts }, { label:'Followers', val:stats.followers }, { label:'Following', val:stats.following }].map(({ label, val }, i, arr) => (
-                  <div key={label} style={{ flex: 1, padding: '14px 6px', textAlign: 'center', borderRight: i < arr.length-1 ? '1px solid rgba(0,0,0,0.06)' : 'none' }}>
-                    <p style={{ fontSize: 18, fontWeight: 700, color: '#0a0a0a', lineHeight: 1, letterSpacing: '-0.02em' }}>{fmt(val)}</p>
-                    <p style={{ fontSize: 11, color: 'rgba(0,0,0,0.38)', marginTop: 3, fontWeight: 500 }}>{label}</p>
-                  </div>
-                ))}
-              </div>
-
-              {/* Follow button */}
-              {session && !isOwn && (
-                <button onClick={handleFollow} disabled={followLoading} className="press"
-                  style={{ padding: '11px 36px', borderRadius: 26, border: isFollowing ? '1.5px solid rgba(0,0,0,0.1)' : 'none', background: isFollowing ? 'transparent' : '#0a0a0a', color: isFollowing ? 'rgba(0,0,0,0.45)' : '#fff', fontSize: 14, fontWeight: 600, cursor: followLoading ? 'default' : 'pointer', opacity: followLoading ? 0.55 : 1, transition: 'all .2s', fontFamily: 'inherit', letterSpacing: '-0.01em' }}>
-                  {isFollowing ? 'Following' : 'Follow'}
-                </button>
-              )}
+            {/* Name + verified */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+              <h2 style={{ fontSize: 22, fontWeight: 700, margin: 0, letterSpacing: '-0.02em' }}>{profile.name}</h2>
+              {profile.verified && <VerifiedBadge size="md" />}
             </div>
 
-            {/* Posts label */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingBottom: 12, borderBottom: '1px solid rgba(0,0,0,0.06)', marginBottom: 10 }}>
-              <Grid size={13} color="rgba(0,0,0,0.35)" />
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'rgba(0,0,0,0.4)', letterSpacing: '0.02em', textTransform: 'uppercase' }}>Posts · {fmt(stats.posts)}</span>
+            {profile.username && (
+              <p style={{ fontSize: 13, color: 'rgba(0,0,0,0.38)', marginBottom: 8, margin: '0 0 8px' }}>@{profile.username}</p>
+            )}
+
+            {profile.bio && (
+              <p style={{ fontSize: 14, color: 'rgba(0,0,0,0.55)', lineHeight: 1.55, maxWidth: 280, margin: '0 0 16px' }}>{profile.bio}</p>
+            )}
+
+            {/* Stats */}
+            <div style={{ display: 'flex', width: '100%', maxWidth: 360, borderRadius: 18, border: '1px solid rgba(0,0,0,0.07)', overflow: 'hidden', marginBottom: 16, background: '#fafafa' }}>
+              {[
+                { label: 'Posts',     val: stats.posts     },
+                { label: 'Followers', val: stats.followers },
+                { label: 'Following', val: stats.following },
+              ].map(({ label, val }, i, arr) => (
+                <div key={label} style={{ flex: 1, padding: '14px 0', textAlign: 'center', borderRight: i < arr.length - 1 ? '1px solid rgba(0,0,0,0.07)' : 'none' }}>
+                  <p style={{ fontSize: 19, fontWeight: 700, margin: 0, letterSpacing: '-0.02em' }}>{fmt(val)}</p>
+                  <p style={{ fontSize: 11, color: 'rgba(0,0,0,0.38)', margin: '2px 0 0', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</p>
+                </div>
+              ))}
             </div>
 
-            {/* Grid */}
-            {postsLoading ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6 }}>
-                {[...Array(9)].map((_,i) => <Shimmer key={i} w="100%" h={140} />)}
-              </div>
-            ) : posts.length > 0 ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6 }}>
+            {/* Follow button */}
+            {session && !isOwn && (
+              <button
+                onClick={handleFollow}
+                disabled={followLoading}
+                style={{ padding: '10px 40px', borderRadius: 26, border: isFollowing ? '1.5px solid rgba(0,0,0,0.12)' : 'none', background: isFollowing ? 'transparent' : '#0a0a0a', color: isFollowing ? 'rgba(0,0,0,0.45)' : '#fff', fontSize: 14, fontWeight: 600, cursor: followLoading ? 'default' : 'pointer', opacity: followLoading ? 0.55 : 1, fontFamily: 'inherit', transition: 'all .18s', marginBottom: 4 }}>
+                {isFollowing ? 'Following' : 'Follow'}
+              </button>
+            )}
+          </div>
+
+          {/* ── Posts divider ── */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '10px 20px 10px', maxWidth: 600, margin: '0 auto', borderTop: '1px solid rgba(0,0,0,0.07)' }}>
+            <Grid size={13} color="rgba(0,0,0,0.35)" />
+            <p style={{ fontSize: 12, fontWeight: 600, color: 'rgba(0,0,0,0.38)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: 0 }}>{fmt(stats.posts)} Posts</p>
+          </div>
+
+          {/* ── Grid — no gap, no radius, edge to edge ── */}
+          {postsLoading ? (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 1 }}>
+              {[...Array(9)].map((_,i) => (
+                <div key={i} style={{ aspectRatio: '3/4', background: 'linear-gradient(90deg,#ececec 25%,#e0e0e0 50%,#ececec 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease infinite' }} />
+              ))}
+            </div>
+          ) : posts.length > 0 ? (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 1 }}>
                 {posts.map(wp => (
-                  <button key={wp.id} onClick={() => router.push(`/details/${wp.id}`)} className="press"
-                    style={{ position: 'relative', aspectRatio: '9/16', borderRadius: 12, overflow: 'hidden', border: 'none', padding: 0, cursor: 'pointer', background: '#efefef', display: 'block' }}>
-                    <img src={wp.thumbnail || wp.url} alt={wp.title}
-                      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} loading="lazy" />
-                    <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.52) 0%, transparent 55%)' }} />
-                    <p style={{ position: 'absolute', bottom: 6, left: 6, right: 6, fontSize: 10, color: '#fff', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textShadow: '0 1px 4px rgba(0,0,0,0.5)', margin: 0 }}>{wp.title}</p>
+                  <button
+                    key={wp.id}
+                    className="wp-card"
+                    onClick={() => router.push(`/details/${wp.id}`)}
+                    style={{ position: 'relative', aspectRatio: '3/4', border: 'none', padding: 0, cursor: 'pointer', background: '#e8e8e8', display: 'block', overflow: 'hidden' }}
+                  >
+                    <img
+                      src={wp.thumbnail || wp.url}
+                      alt={wp.title}
+                      loading="lazy"
+                      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                    />
                   </button>
                 ))}
               </div>
-            ) : (
-              <div style={{ textAlign: 'center', paddingTop: 64 }}>
-                <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#efefef', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
-                  <Grid size={22} color="rgba(0,0,0,0.2)" />
+
+              {hasMore && (
+                <div style={{ display: 'flex', justifyContent: 'center', padding: '20px 0 32px' }}>
+                  <button onClick={loadMore} style={{ padding: '10px 28px', borderRadius: 24, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', color: 'rgba(0,0,0,0.55)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                    Load more
+                  </button>
                 </div>
-                <p style={{ fontSize: 14, color: 'rgba(0,0,0,0.35)' }}>No posts yet</p>
+              )}
+            </>
+          ) : (
+            <div style={{ textAlign: 'center', padding: '56px 0' }}>
+              <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#f5f5f5', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
+                <Grid size={22} color="rgba(0,0,0,0.18)" />
               </div>
-            )}
-          </div>
-        ) : null}
-      </div>
+              <p style={{ fontSize: 14, color: 'rgba(0,0,0,0.3)', margin: 0 }}>No posts yet</p>
+            </div>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
