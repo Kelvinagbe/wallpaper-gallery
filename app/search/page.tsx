@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, X, ChevronLeft, Clock, TrendingUp, User } from 'lucide-react';
+import { X, ChevronLeft, Clock, TrendingUp, User } from 'lucide-react';
 import { WallpaperCard } from '@/app/components/WallpaperCard';
+import { VerifiedBadge } from '@/app/components/VerifiedBadge';
 import { searchWallpapers, searchProfiles } from '@/lib/stores/wallpaperStore';
 import type { Wallpaper, UserProfile } from '@/app/types';
 
@@ -97,7 +98,6 @@ export default function SearchPage() {
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: 'rgba(0,0,0,0.04)', borderRadius: 14, border: '1px solid transparent', transition: 'border-color .15s' }}
             onFocus={e => (e.currentTarget.style.borderColor = 'rgba(0,0,0,0.15)')}
             onBlur={e  => (e.currentTarget.style.borderColor = 'transparent')}>
-            <Search size={15} color="rgba(0,0,0,0.35)" style={{ flexShrink: 0 }} />
             <input
               ref={inputRef}
               type="text"
@@ -197,14 +197,13 @@ export default function SearchPage() {
                     style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '13px 16px', background: 'transparent', border: 'none', borderBottom: i < people.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
                     <img src={user.avatar} alt={user.name} style={{ width: 46, height: 46, borderRadius: '50%', objectFit: 'cover', border: '1.5px solid rgba(0,0,0,0.07)', flexShrink: 0 }} />
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ fontSize: 14, fontWeight: 600, color: '#0a0a0a', margin: '0 0 2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</p>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 2 }}>
+                        <p style={{ fontSize: 14, fontWeight: 600, color: '#0a0a0a', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</p>
+                        {user.verified && <VerifiedBadge size="sm" />}
+                      </div>
                       <p style={{ fontSize: 12, color: 'rgba(0,0,0,0.38)', margin: 0 }}>{user.username}</p>
                     </div>
-                    {user.verified && (
-                      <div style={{ width: 18, height: 18, borderRadius: '50%', background: '#3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        <span style={{ fontSize: 10, color: '#fff', fontWeight: 700 }}>✓</span>
-                      </div>
-                    )}
+
                   </button>
                 ))}
               </div>
@@ -214,7 +213,7 @@ export default function SearchPage() {
         ) : (
           <div className="fade-up" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 0', gap: 10, textAlign: 'center' }}>
             <div style={{ width: 52, height: 52, borderRadius: 16, background: 'rgba(0,0,0,0.04)', border: '1px solid rgba(0,0,0,0.07)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Search size={20} color="rgba(0,0,0,0.2)" strokeWidth={1.5} />
+              <span style={{ fontSize: 20, opacity: 0.2 }}>🔍</span>
             </div>
             <p style={{ fontSize: 15, fontWeight: 600, color: '#0a0a0a', margin: 0 }}>No results found</p>
             <p style={{ fontSize: 13, color: 'rgba(0,0,0,0.38)', margin: 0 }}>
