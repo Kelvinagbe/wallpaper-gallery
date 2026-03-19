@@ -11,7 +11,7 @@ export default async function Page() {
 
   const [stats, postsData] = await Promise.all([
     getUserCounts(user.id),
-    fetchUserWallpapers(user.id, 0, 6),
+    fetchUserWallpapers(user.id, 0, 40),
   ]);
 
   return (
