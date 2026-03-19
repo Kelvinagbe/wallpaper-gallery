@@ -2,15 +2,15 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Settings, Share2, Heart, Bookmark, Clock, LogOut, Shield, Grid, ChevronRight, ChevronLeft } from 'lucide-react';
+import { Settings, Share2, LogOut, Shield, Grid, ChevronRight, ChevronLeft } from 'lucide-react';
 import { useAuth } from '@/app/components/AuthProvider';
 import { SettingsModal } from '@/app/components/profile/SettingsModal';
-import { ContentListModal } from '@/app/components/profile/ContentListModal';
+
 import { PrivacyModal } from '@/app/components/profile/PrivacyModal';
 import { ViewAllPostsModal } from '@/app/components/profile/ViewAllPostsModal';
 import { VerifiedBadge } from '@/app/components/VerifiedBadge';
 import { Navigation } from '@/app/components/Navigation';
-import { getLiked, getSaved, getRecent, signOut } from '@/lib/stores/userStore';
+import { signOut } from '@/lib/stores/userStore';
 import type { Wallpaper } from '@/app/types';
 
 interface Props {
@@ -20,8 +20,7 @@ interface Props {
 
 const fmt = (n: number) => n >= 1_000_000 ? `${(n/1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n/1_000).toFixed(1)}k` : String(n);
 
-const countsCache = { data: null as { liked: number; saved: number; recent: number } | null, ts: 0 };
-const CACHE_TTL   = 2 * 60 * 1000;
+
 
 const Shimmer = ({ w, h, r = 8 }: { w: string | number; h: string | number; r?: number }) => (
   <div style={{ width: w, height: h, borderRadius: r, flexShrink: 0,
@@ -33,35 +32,19 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
   const router = useRouter();
   const { profile, isLoading: authLoading, refreshProfile } = useAuth();
 
-  const [counts,        setCounts]        = useState(countsCache.data || { liked: 0, saved: 0, recent: 0 });
+
   const [stats]                           = useState(initialStats);
   const [myWallpapers]                    = useState<Wallpaper[]>(initialWallpapers);
-  const [countsLoading, setCountsLoading] = useState(!countsCache.data);
+
   const [modals, setModals] = useState({
     logout: false, settings: false, settingsClosing: false,
     privacy: false, privacyClosing: false, allPosts: false,
-    content: null as 'liked' | 'saved' | 'recent' | null,
+    content: null as 'liked' | 'saved' | 'recent' | null, // kept for type compat
   });
 
-  useEffect(() => {
-    if (authLoading || !profile) return;
-    if (countsCache.data && Date.now() - countsCache.ts < CACHE_TTL) { setCounts(countsCache.data); setCountsLoading(false); return; }
-    (async () => {
-      try {
-        const [l, s, r] = await Promise.all([getLiked(), getSaved(), getRecent()]);
-        const data = { liked: l.total, saved: s.total, recent: r.total };
-        countsCache.data = data; countsCache.ts = Date.now();
-        setCounts(data);
-      } finally { setCountsLoading(false); }
-    })();
-  }, [profile, authLoading]);
 
-  const refreshCounts = async () => {
-    const [l, s, r] = await Promise.all([getLiked(), getSaved(), getRecent()]);
-    const data = { liked: l.total, saved: s.total, recent: r.total };
-    countsCache.data = data; countsCache.ts = Date.now();
-    setCounts(data);
-  };
+
+  const refreshCounts = async () => {};
 
   const closeModal = (key: string) => {
     setModals(m => ({ ...m, [`${key}Closing`]: true }));
@@ -90,11 +73,6 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
   ];
 
   const menuSections = [
-    { title: 'My Content', items: [
-      { icon: Heart,    label: 'Liked Wallpapers',  count: counts.liked,  onClick: () => open('content', 'liked')  },
-      { icon: Bookmark, label: 'Saved Collections', count: counts.saved,  onClick: () => open('content', 'saved')  },
-      { icon: Clock,    label: 'Recently Viewed',   count: counts.recent, onClick: () => open('content', 'recent') },
-    ]},
     { title: 'Account', items: [
       { icon: Settings, label: 'Account Settings',   onClick: () => open('settings') },
       { icon: Shield,   label: 'Privacy & Security', onClick: () => open('privacy')  },
@@ -217,13 +195,7 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
                       <item.icon size={17} color="rgba(0,0,0,0.55)" />
                     </div>
                     <p style={{ flex: 1, fontSize: 14, fontWeight: 500, color: '#0a0a0a', margin: 0 }}>{item.label}</p>
-                    {'count' in item && (
-                      countsLoading
-                        ? <Shimmer w={28} h={16} r={4} />
-                        : (item as any).count > 0
-                          ? <span style={{ fontSize: 13, color: 'rgba(0,0,0,0.35)', fontWeight: 500 }}>{(item as any).count}</span>
-                          : null
-                    )}
+
                     <ChevronRight size={15} color="rgba(0,0,0,0.25)" />
                   </button>
                 ))}
@@ -284,13 +256,7 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
         />
       )}
 
-      {modals.content && (
-        <ContentListModal
-          type={modals.content}
-          onClose={() => { setModals(m => ({ ...m, content: null })); refreshCounts(); }}
-          onWallpaperClick={wp => { setModals(m => ({ ...m, content: null })); router.push(`/details/${wp.id}`); }}
-        />
-      )}
+
     </div>
   );
 }
