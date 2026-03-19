@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { ChevronLeft, Heart, Download, Share2, Check, Link as LinkIcon, Loader2, Maximize2, Minimize2, Eye } from 'lucide-react';
+import { ChevronLeft, Heart, Download, Share2, Check, Link as LinkIcon, Loader2, Maximize2, Minimize2, Eye, UserCircle } from 'lucide-react';
 import { VerifiedBadge } from '@/app/components/VerifiedBadge';
 import { LoginPromptModal } from '@/app/components/LoginPromptModal';
 import { createClient } from '@/lib/supabase/client';
@@ -85,7 +85,7 @@ export default function WallpaperDetail({ initialWallpaper }: { initialWallpaper
   const [full,      setFull]      = useState(false);
   const [imgLoaded, setImgLoaded] = useState(imgCache.has(wp.url));
   const [timeAgo,   setTimeAgo]   = useState(() => wp.createdAt ? timeAgoStr(wp.createdAt) : 'Just now');
-  const [st, setSt] = useState({ liked: false, following: false, downloading: false, downloaded: false, dataLoading: true, showLogin: false, loginAction: '', copyOpen: false });
+  const [st, setSt] = useState({ liked: false, following: false, downloading: false, downloaded: false, dataLoading: true, showLogin: false, loginAction: '', copyOpen: false, pfpSetting: false, pfpSet: false });
 
   const likeRef = useRef<HTMLButtonElement>(null);
   const set     = (patch: Partial<typeof st>) => setSt(s => ({ ...s, ...patch }));
@@ -186,6 +186,24 @@ export default function WallpaperDetail({ initialWallpaper }: { initialWallpaper
     } catch { set({ downloading: false }); }
   };
 
+  const handleSetPfp = async () => {
+    if (!session || st.pfpSetting || st.pfpSet) return;
+    set({ pfpSetting: true });
+    navigator.vibrate?.(50);
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ avatar_url: wp.thumbnail })
+        .eq('id', session.user.id);
+      if (error) throw error;
+      set({ pfpSetting: false, pfpSet: true });
+      navigator.vibrate?.(100);
+    } catch (e) {
+      console.error('Set pfp error:', e);
+      set({ pfpSetting: false });
+    }
+  };
+
   const handleShare = () => navigator.share
     ? navigator.share({ title: wp.title, url: window.location.href }).catch(() => set({ copyOpen: true }))
     : set({ copyOpen: true });
@@ -280,7 +298,7 @@ export default function WallpaperDetail({ initialWallpaper }: { initialWallpaper
 
           <div style={{ height: 1, background: 'rgba(0,0,0,0.07)', marginBottom: 16 }} />
 
-     {/* User row */}
+         {/* User row */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
             <button onClick={() => router.push(`/user/${wp.userId}`)} style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'left' }}>
               <div style={{ position: 'relative', width: 40, height: 40, borderRadius: '50%', overflow: 'hidden', flexShrink: 0, border: '1.5px solid rgba(0,0,0,0.07)' }}>
@@ -320,6 +338,19 @@ export default function WallpaperDetail({ initialWallpaper }: { initialWallpaper
               </button>
             ))}
           </div>
+
+          {/* Use as profile picture — only for authenticated users */}
+          {session && (
+            <button onClick={handleSetPfp} disabled={st.pfpSetting || st.pfpSet} className="action-btn"
+              style={{ width: '100%', marginTop: 10, padding: '13px 0', borderRadius: 12, border: `1px solid ${st.pfpSet ? 'rgba(16,185,129,0.3)' : 'rgba(0,0,0,0.07)'}`, background: st.pfpSet ? 'rgba(16,185,129,0.06)' : 'rgba(0,0,0,0.04)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, fontFamily: "'DM Sans', sans-serif", fontSize: 13, fontWeight: 600, color: st.pfpSet ? '#10b981' : 'rgba(0,0,0,0.6)', cursor: st.pfpSetting || st.pfpSet ? 'default' : 'pointer', opacity: st.pfpSetting ? 0.6 : 1, transition: 'all .2s' }}>
+              {st.pfpSetting
+                ? <><Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} />Setting...</>
+                : st.pfpSet
+                  ? <><Check size={15} />Profile Picture Set</>
+                  : <><UserCircle size={15} />Use as Profile Picture</>
+              }
+            </button>
+          )}
         </div>
       )}
 
