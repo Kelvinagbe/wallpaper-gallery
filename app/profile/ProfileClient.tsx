@@ -53,7 +53,6 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
 
   const handleLogout = async () => {
     await signOut();
-    countsCache.data = null; countsCache.ts = 0;
     router.replace('/');
   };
 
