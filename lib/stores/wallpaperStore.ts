@@ -9,7 +9,7 @@ const getSupabase = () => {
   return supabaseInstance;
 };
 
-const DEFAULT_PAGE_SIZE = 5;
+const DEFAULT_PAGE_SIZE = 15;
 
 // ─── Transforms ───────────────────────────────────────────────────────────────
 const transformWallpaper = (wp: any): Wallpaper => ({
