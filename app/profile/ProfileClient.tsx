@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { Settings, Share2, LogOut, Shield, Grid, ChevronRight, ChevronLeft } from 'lucide-react';
 import { useAuth } from '@/app/components/AuthProvider';
 import { SettingsModal } from '@/app/components/profile/SettingsModal';
-
 import { PrivacyModal } from '@/app/components/profile/PrivacyModal';
 import { ViewAllPostsModal } from '@/app/components/profile/ViewAllPostsModal';
 import { VerifiedBadge } from '@/app/components/VerifiedBadge';
