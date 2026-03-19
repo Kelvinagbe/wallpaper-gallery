@@ -169,7 +169,7 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
     const result = await uploadFile(file!, title, desc, resume, category);
     if (result.success) {
       setTodayCount(c => c + 1);
-      setTimeout(() => { resetAll(); close(); }, 1000);
+      setTimeout(() => { resetAll(); close(); }, 2000);
     } else if (result.violation && result.error) {
       // Set violation immediately so overlay renders right away
       setViolation({ reason: result.error, details: result.details });
@@ -223,22 +223,20 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
         )}
 
         {/* Progress overlay — hidden for violation errors so banner shows */}
-        {uploading && !violation && (
+        {uploading && !violation && !isComplete && (
           <div style={{ position: 'absolute', inset: 0, zIndex: 10, borderRadius: '24px 24px 0 0', background: 'rgba(255,255,255,0.97)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: '32px 24px', animation: 'upl-overlay-in .25s ease forwards' }}>
-            {isComplete
-              ? <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#0a0a0a', display: 'flex', alignItems: 'center', justifyContent: 'center', animation: 'upl-pop .4s cubic-bezier(.34,1.56,.64,1) forwards' }}><Check size={24} color="#fff" strokeWidth={2.5} /></div>
-              : error
-                ? <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'rgba(239,68,68,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><AlertCircle size={26} color="#ef4444" /></div>
-                : <Spinner />
+            {error
+              ? <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'rgba(239,68,68,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><AlertCircle size={26} color="#ef4444" /></div>
+              : <Spinner />
             }
             <div style={{ textAlign: 'center' }}>
               <p style={{ fontSize: 16, fontWeight: 700, color: '#0a0a0a', marginBottom: 6 }}>
-                {error ? 'Upload Failed' : isComplete ? 'Upload Complete' : `Uploading ${Math.round(progress)}%`}
+                {error ? 'Upload Failed' : `Uploading ${Math.round(progress)}%`}
               </p>
-              {!error && !isComplete && <p style={{ fontSize: 13, color: 'rgba(0,0,0,0.4)' }}>{status}</p>}
+              {!error && <p style={{ fontSize: 13, color: 'rgba(0,0,0,0.4)' }}>{status}</p>}
               {error && <p style={{ fontSize: 12, color: 'rgba(0,0,0,0.4)', maxWidth: 240, margin: '0 auto', lineHeight: 1.5 }}>{error}</p>}
             </div>
-            {!error && !isComplete && (
+            {!error && (
               <div style={{ width: '100%', maxWidth: 280, height: 4, background: 'rgba(0,0,0,0.07)', borderRadius: 2, overflow: 'hidden' }}>
                 <div style={{ height: '100%', borderRadius: 2, background: '#0a0a0a', width: `${progress}%`, transition: 'width .4s ease' }} />
               </div>
@@ -251,6 +249,24 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
                 </button>
               </div>
             )}
+          </div>
+        )}
+
+        {/* ── Success overlay ── */}
+        {isComplete && !violation && (
+          <div style={{ position: 'absolute', inset: 0, zIndex: 15, borderRadius: '24px 24px 0 0', background: '#fff', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, padding: '32px 24px', textAlign: 'center', animation: 'upl-overlay-in .3s ease forwards' }}>
+            <div style={{ width: 72, height: 72, borderRadius: '50%', background: '#0a0a0a', display: 'flex', alignItems: 'center', justifyContent: 'center', animation: 'upl-pop .5s cubic-bezier(.34,1.56,.64,1) forwards' }}>
+              <Check size={32} color="#fff" strokeWidth={2.5} />
+            </div>
+            <div>
+              <p style={{ fontSize: 20, fontWeight: 700, color: '#0a0a0a', letterSpacing: '-0.02em', marginBottom: 6 }}>Upload Complete!</p>
+              <p style={{ fontSize: 14, color: 'rgba(0,0,0,0.45)', lineHeight: 1.6, margin: 0 }}>Your wallpaper has been uploaded successfully and will be visible to everyone.</p>
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+              {[...Array(3)].map((_, i) => (
+                <div key={i} style={{ width: 6, height: 6, borderRadius: '50%', background: i === 0 ? '#0a0a0a' : 'rgba(0,0,0,0.15)', animation: `upl-pop .4s cubic-bezier(.34,1.56,.64,1) ${i * 100}ms forwards` }} />
+              ))}
+            </div>
           </div>
         )}
 
@@ -313,6 +329,7 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
           </button>
         </div>
 
+      
         {/* Body */}
         <div style={{ overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 14, flex: 1 }}>
 
@@ -341,7 +358,7 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
                 </div>
               )}
 
-            {/* Resume banner */}
+              {/* Resume banner */}
               {canResume && !uploading && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 12 }}>
                   <RefreshCw size={13} color="#10b981" />
