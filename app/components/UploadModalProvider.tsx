@@ -6,7 +6,7 @@ import {
 } from 'react';
 import {
   X, Upload, Image as ImageIcon, Check,
-  Wifi, WifiOff, RefreshCw, AlertCircle, ChevronDown,
+  Wifi, WifiOff, RefreshCw, AlertCircle, ChevronDown, ShieldAlert,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/app/components/AuthProvider';
@@ -55,6 +55,48 @@ const getTodayUploadCount = async (supabase: ReturnType<typeof createClient>, us
   return count ?? 0;
 };
 
+// ─── Suspension check ────────────────────────────────────────────────────────
+interface SuspensionStatus {
+  suspended:     boolean;
+  suspendedUntil?: Date;
+  violations:    number;
+}
+
+const checkSuspension = async (
+  supabase: ReturnType<typeof createClient>, userId: string
+): Promise<SuspensionStatus> => {
+  const { data } = await supabase
+    .from('profiles')
+    .select('violations, suspended_until')
+    .eq('id', userId)
+    .single();
+  if (!data) return { suspended: false, violations: 0 };
+  const suspendedUntil = data.suspended_until ? new Date(data.suspended_until) : null;
+  const suspended      = !!suspendedUntil && suspendedUntil > new Date();
+  return { suspended, suspendedUntil: suspendedUntil ?? undefined, violations: data.violations ?? 0 };
+};
+
+// ─── Countdown hook ───────────────────────────────────────────────────────────
+const useCountdown = (until: Date | undefined) => {
+  const [timeLeft, setTimeLeft] = useState('');
+  useEffect(() => {
+    if (!until) return;
+    const update = () => {
+      const diff = until.getTime() - Date.now();
+      if (diff <= 0) { setTimeLeft('Suspension lifted'); return; }
+      const d = Math.floor(diff / 86_400_000);
+      const h = Math.floor((diff % 86_400_000) / 3_600_000);
+      const m = Math.floor((diff % 3_600_000) / 60_000);
+      const s = Math.floor((diff % 60_000) / 1_000);
+      setTimeLeft(`${d}d ${h}h ${m}m ${s}s`);
+    };
+    update();
+    const t = setInterval(update, 1_000);
+    return () => clearInterval(t);
+  }, [until]);
+  return timeLeft;
+};
+
 // ─── Upload Modal ──────────────────────────────────────────────────────────────
 const UploadModal = ({ onClose }: { onClose: () => void }) => {
   const { session } = useAuth();
@@ -71,7 +113,9 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
   const [dragging,    setDragging]    = useState(false);
   const [closing,     setClosing]     = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
-  const [todayCount,  setTodayCount]  = useState(0);
+  const [todayCount,   setTodayCount]   = useState(0);
+  const [suspension,   setSuspension]   = useState<SuspensionStatus>({ suspended: false, violations: 0 });
+  const [violation,    setViolation]    = useState<{ reason: string; details?: string } | null>(null);
 
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -83,8 +127,12 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
       const u = session?.user || s?.user || null;
       setUser(u);
       if (u) {
-        const count = await getTodayUploadCount(supabase, u.id);
+        const [count, susp] = await Promise.all([
+          getTodayUploadCount(supabase, u.id),
+          checkSuspension(supabase, u.id),
+        ]);
         setTodayCount(count);
+        setSuspension(susp);
       }
       const cached = getCachedData();
       if (cached) { setTitle(cached.title || ''); setDesc(cached.description || ''); setCategory(cached.category || ''); }
@@ -117,18 +165,28 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
   }, []);
 
   const doUpload = async (resume: boolean) => {
+    setViolation(null);
     const result = await uploadFile(file!, title, desc, resume, category);
     if (result.success) {
       setTodayCount(c => c + 1);
       setTimeout(() => { resetAll(); close(); }, 1000);
+    } else if (result.error) {
+      // Check if it was a moderation violation — re-fetch suspension status
+      const susp = await checkSuspension(supabase, user?.id);
+      setSuspension(susp);
+      // Show violation banner if error came from moderation
+      if ((result as any).violation) {
+        setViolation({ reason: result.error, details: (result as any).details });
+      }
     }
   };
 
+  const countdown    = useCountdown(suspension.suspendedUntil);
   const speedColor   = speed === 'offline' ? '#ef4444' : speed === 'slow' ? '#f59e0b' : '#10b981';
   const SpeedIcon    = speed === 'offline' ? WifiOff : Wifi;
   const limitReached = todayCount >= DAILY_LIMIT;
   const remaining    = Math.max(0, DAILY_LIMIT - todayCount);
-  const canSubmit    = !!file && !!title.trim() && !uploading && !!user && !!online && !limitReached;
+  const canSubmit    = !!file && !!title.trim() && !uploading && !!user && !!online && !limitReached && !suspension.suspended;
   const isComplete   = progress >= 100 && !error;
 
   return (
@@ -141,6 +199,31 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
       {/* Sheet */}
       <div className={closing ? 'upl-sheet-down' : 'upl-sheet-up'} onClick={e => e.stopPropagation()}
         style={{ position: 'relative', zIndex: 71, background: '#fff', borderRadius: '24px 24px 0 0', paddingBottom: 'max(20px, env(safe-area-inset-bottom))', boxShadow: '0 -4px 40px rgba(0,0,0,0.1)', maxHeight: '90dvh', display: 'flex', flexDirection: 'column' }}>
+
+        {/* ── Suspension screen ── */}
+        {suspension.suspended && !uploading && (
+          <div style={{ position: 'absolute', inset: 0, zIndex: 10, borderRadius: '24px 24px 0 0', background: '#fff', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: '32px 24px', textAlign: 'center' }}>
+            <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'rgba(239,68,68,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <ShieldAlert size={30} color="#ef4444" />
+            </div>
+            <div>
+              <p style={{ fontSize: 17, fontWeight: 700, color: '#0a0a0a', marginBottom: 6 }}>Upload Suspended</p>
+              <p style={{ fontSize: 13, color: 'rgba(0,0,0,0.5)', lineHeight: 1.6, maxWidth: 260, margin: '0 auto 16px' }}>
+                Your upload access has been temporarily suspended due to repeated Community Guidelines violations.
+              </p>
+              <div style={{ padding: '14px 20px', background: 'rgba(239,68,68,0.05)', border: '1px solid rgba(239,68,68,0.15)', borderRadius: 14, marginBottom: 8 }}>
+                <p style={{ fontSize: 11, fontWeight: 600, color: 'rgba(0,0,0,0.4)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Suspension lifts in</p>
+                <p style={{ fontSize: 24, fontWeight: 700, color: '#ef4444', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>{countdown}</p>
+              </div>
+              <p style={{ fontSize: 11, color: 'rgba(0,0,0,0.3)', lineHeight: 1.5 }}>
+                Violations: {suspension.violations}/3 · Please review our Community Guidelines before uploading again.
+              </p>
+            </div>
+            <button onClick={close} style={{ padding: '12px 32px', borderRadius: 12, border: '1px solid rgba(0,0,0,0.1)', background: 'transparent', fontSize: 14, fontWeight: 600, color: 'rgba(0,0,0,0.5)', cursor: 'pointer', fontFamily: 'inherit' }}>
+              Close
+            </button>
+          </div>
+        )}
 
         {/* Progress overlay */}
         {uploading && (
@@ -237,6 +320,22 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
                 </div>
               )}
 
+              {/* Violation banner */}
+              {violation && !uploading && (
+                <div style={{ padding: '14px 16px', background: 'rgba(239,68,68,0.05)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 14 }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                    <ShieldAlert size={16} color="#ef4444" style={{ flexShrink: 0, marginTop: 1 }} />
+                    <div style={{ flex: 1 }}>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: '#ef4444', margin: '0 0 4px' }}>{violation.reason}</p>
+                      {violation.details && <p style={{ fontSize: 12, color: 'rgba(239,68,68,0.75)', lineHeight: 1.5, margin: 0 }}>{violation.details}</p>}
+                      <p style={{ fontSize: 11, color: 'rgba(0,0,0,0.4)', margin: '8px 0 0' }}>
+                        Violations: {suspension.violations}/3 — {3 - suspension.violations > 0 ? `${3 - suspension.violations} more will result in a 7-day suspension.` : 'You have been suspended.'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Resume banner */}
               {canResume && !uploading && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 12 }}>
@@ -245,6 +344,7 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
                 </div>
               )}
 
+             
               {/* Image + title row */}
               <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
                 <div
@@ -309,7 +409,7 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
                 </div>
               </div>
 
-             {/* Description */}
+              {/* Description */}
               <textarea value={desc} onChange={e => setDesc(e.target.value)} placeholder="Short description (optional)" rows={2} disabled={uploading || limitReached} maxLength={300} style={{ ...S.input, resize: 'none', opacity: limitReached ? 0.4 : 1 }} />
             </>
           )}
