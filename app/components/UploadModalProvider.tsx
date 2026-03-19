@@ -170,14 +170,11 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
     if (result.success) {
       setTodayCount(c => c + 1);
       setTimeout(() => { resetAll(); close(); }, 1000);
-    } else if (result.error) {
-      if (result.violation) {
-        // Re-fetch suspension status so violations counter + suspension state is fresh
-        const susp = await checkSuspension(supabase, user?.id);
-        setSuspension(susp);
-        // Show violation banner with reason + details
-        setViolation({ reason: result.error, details: result.details });
-      }
+    } else if (result.violation && result.error) {
+      // Set violation immediately so overlay renders right away
+      setViolation({ reason: result.error, details: result.details });
+      // Then fetch fresh suspension status in background
+      checkSuspension(supabase, user?.id).then(susp => setSuspension(susp));
     }
   };
 
@@ -259,7 +256,7 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
 
         {/* ── Violation overlay — shows on top when image is rejected ── */}
         {violation && (
-          <div style={{ position: 'absolute', inset: 0, zIndex: 10, borderRadius: '24px 24px 0 0', background: 'rgba(255,255,255,0.98)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: '32px 24px', textAlign: 'center', animation: 'upl-overlay-in .25s ease forwards' }}>
+          <div style={{ position: 'absolute', inset: 0, zIndex: 20, borderRadius: '24px 24px 0 0', background: 'rgba(255,255,255,0.98)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: '32px 24px', textAlign: 'center', animation: 'upl-overlay-in .25s ease forwards' }}>
             <div style={{ width: 60, height: 60, borderRadius: '50%', background: 'rgba(239,68,68,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <ShieldAlert size={28} color="#ef4444" />
             </div>
