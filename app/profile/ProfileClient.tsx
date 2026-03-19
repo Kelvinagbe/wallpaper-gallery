@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Settings, Share2, Heart, Bookmark, Clock, LogOut, Shield, Grid, ChevronRight } from 'lucide-react';
+import { Settings, Share2, Heart, Bookmark, Clock, LogOut, Shield, Grid, ChevronRight, ChevronLeft } from 'lucide-react';
 import { useAuth } from '@/app/components/AuthProvider';
 import { SettingsModal } from '@/app/components/profile/SettingsModal';
 import { ContentListModal } from '@/app/components/profile/ContentListModal';
@@ -116,7 +116,12 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
 
       {/* ── Header ── */}
       <div style={{ position: 'sticky', top: 0, zIndex: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-        <p style={{ fontSize: 15, fontWeight: 700 }}>Profile</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button onClick={() => router.back()} style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(0,0,0,0.05)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+            <ChevronLeft size={18} color="#0a0a0a" strokeWidth={2.5} />
+          </button>
+          <p style={{ fontSize: 15, fontWeight: 700 }}>Profile</p>
+        </div>
         <button onClick={() => open('settings')} style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(0,0,0,0.05)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
           <Settings size={16} color="#0a0a0a" />
         </button>
