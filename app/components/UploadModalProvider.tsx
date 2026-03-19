@@ -171,12 +171,12 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
       setTodayCount(c => c + 1);
       setTimeout(() => { resetAll(); close(); }, 1000);
     } else if (result.error) {
-      // Check if it was a moderation violation — re-fetch suspension status
-      const susp = await checkSuspension(supabase, user?.id);
-      setSuspension(susp);
-      // Show violation banner if error came from moderation
-      if ((result as any).violation) {
-        setViolation({ reason: result.error, details: (result as any).details });
+      if (result.violation) {
+        // Re-fetch suspension status so violations counter + suspension state is fresh
+        const susp = await checkSuspension(supabase, user?.id);
+        setSuspension(susp);
+        // Show violation banner with reason + details
+        setViolation({ reason: result.error, details: result.details });
       }
     }
   };
@@ -344,8 +344,7 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
                 </div>
               )}
 
-             
-              {/* Image + title row */}
+             {/* Image + title row */}
               <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
                 <div
                   onClick={() => !preview && !uploading && !limitReached && fileRef.current?.click()}
