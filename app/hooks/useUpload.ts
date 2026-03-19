@@ -26,11 +26,19 @@ const THUMB_W    = 400;
 const TIMEOUT_MS = 120_000;
 
 // ─── Sightengine moderation ───────────────────────────────────────────────────
-const moderateImage = async (file: File): Promise<{ safe: boolean; reason?: string }> => {
+interface ModerationResult {
+  safe:        boolean;
+  reason?:     string;    // user-facing message
+  violation?:  string;    // short label for API e.g. 'nudity'
+  details?:    string;    // extra context for the banner
+}
+
+const COMMUNITY_GUIDELINES_URL = '/community-guidelines'; // update to your real URL
+
+const moderateImage = async (file: File): Promise<ModerationResult> => {
   const apiUser   = process.env.NEXT_PUBLIC_SIGHTENGINE_USER;
   const apiSecret = process.env.NEXT_PUBLIC_SIGHTENGINE_SECRET;
 
-  // skip moderation if keys not configured
   if (!apiUser || !apiSecret) return { safe: true };
 
   try {
@@ -43,29 +51,41 @@ const moderateImage = async (file: File): Promise<{ safe: boolean; reason?: stri
     const res  = await fetch('https://api.sightengine.com/1.0/check.json', { method: 'POST', body: fd });
     const data = await res.json();
 
-    if (!res.ok || data.status === 'failure') return { safe: true }; // fail open on API error
+    if (!res.ok || data.status === 'failure') return { safe: true };
 
-    // nudity check — reject if any explicit nudity detected above threshold
-    const nudity  = data.nudity;
-    const isNude  = nudity && (
-      (nudity.sexual_activity  > 0.5) ||
-      (nudity.sexual_display   > 0.5) ||
-      (nudity.erotica          > 0.5) ||
-      (nudity.very_suggestive  > 0.7)
-    );
-    if (isNude) return { safe: false, reason: 'This image contains explicit or sexual content and cannot be uploaded.' };
+    // ── Nudity ──────────────────────────────────────────────────────────────
+    const nudity = data.nudity;
+    if (nudity && (
+      nudity.sexual_activity > 0.5 ||
+      nudity.sexual_display  > 0.5 ||
+      nudity.erotica         > 0.5 ||
+      nudity.very_suggestive > 0.7
+    )) return {
+      safe:      false,
+      violation: 'nudity',
+      reason:    '🚫 Nudity or sexual content detected',
+      details:   'This image violates our Community Guidelines on explicit content. Repeated violations will result in a temporary upload suspension.',
+    };
 
-    // offensive check
-    const offensive = data.offensive?.prob ?? 0;
-    if (offensive > 0.7) return { safe: false, reason: 'This image contains offensive content and cannot be uploaded.' };
+    // ── Offensive ───────────────────────────────────────────────────────────
+    if ((data.offensive?.prob ?? 0) > 0.7) return {
+      safe:      false,
+      violation: 'offensive',
+      reason:    '🚫 Offensive content detected',
+      details:   'This image violates our Community Guidelines on hate speech or offensive imagery. Repeated violations will result in a temporary upload suspension.',
+    };
 
-    // gore check
-    const gore = data.gore?.prob ?? 0;
-    if (gore > 0.7) return { safe: false, reason: 'This image contains graphic violence and cannot be uploaded.' };
+    // ── Gore ────────────────────────────────────────────────────────────────
+    if ((data.gore?.prob ?? 0) > 0.7) return {
+      safe:      false,
+      violation: 'gore',
+      reason:    '🚫 Graphic violence detected',
+      details:   'This image violates our Community Guidelines on graphic or violent content. Repeated violations will result in a temporary upload suspension.',
+    };
 
     return { safe: true };
   } catch {
-    return { safe: true }; // fail open — don't block upload on network errors
+    return { safe: true }; // fail open
   }
 };
 
@@ -214,7 +234,19 @@ export const useUpload = (userId: string | null) => {
         setStatus('Checking content...');
         const modResult = await moderateImage(file);
         if (!modResult.safe) {
-          throw new Error(modResult.reason || 'Image failed content moderation');
+          // Report violation to server — increments counter, may trigger suspension
+          try {
+            await fetch('/api/report-violation', {
+              method:  'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body:    JSON.stringify({ user_id: userId, reason: modResult.violation || 'policy' }),
+            });
+          } catch { /* ignore — don't block the error message */ }
+          // Throw with full details so modal can show the banner
+          const err = new Error(modResult.reason || 'Image failed content moderation');
+          (err as any).details   = modResult.details;
+          (err as any).violation = true;
+          throw err;
         }
         log('✅ Content check passed', 'success');
         setProgress(5);
