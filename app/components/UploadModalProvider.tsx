@@ -200,8 +200,8 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
       <div className={closing ? 'upl-sheet-down' : 'upl-sheet-up'} onClick={e => e.stopPropagation()}
         style={{ position: 'relative', zIndex: 71, background: '#fff', borderRadius: '24px 24px 0 0', paddingBottom: 'max(20px, env(safe-area-inset-bottom))', boxShadow: '0 -4px 40px rgba(0,0,0,0.1)', maxHeight: '90dvh', display: 'flex', flexDirection: 'column' }}>
 
-        {/* ── Suspension screen ── */}
-        {suspension.suspended && !uploading && (
+        {/* ── Suspension screen — shows immediately after 3rd violation too ── */}
+        {suspension.suspended && !violation && (
           <div style={{ position: 'absolute', inset: 0, zIndex: 10, borderRadius: '24px 24px 0 0', background: '#fff', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: '32px 24px', textAlign: 'center' }}>
             <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'rgba(239,68,68,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <ShieldAlert size={30} color="#ef4444" />
@@ -225,8 +225,8 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
           </div>
         )}
 
-        {/* Progress overlay */}
-        {uploading && (
+        {/* Progress overlay — hidden for violation errors so banner shows */}
+        {uploading && !violation && (
           <div style={{ position: 'absolute', inset: 0, zIndex: 10, borderRadius: '24px 24px 0 0', background: 'rgba(255,255,255,0.97)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: '32px 24px', animation: 'upl-overlay-in .25s ease forwards' }}>
             {isComplete
               ? <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#0a0a0a', display: 'flex', alignItems: 'center', justifyContent: 'center', animation: 'upl-pop .4s cubic-bezier(.34,1.56,.64,1) forwards' }}><Check size={24} color="#fff" strokeWidth={2.5} /></div>
@@ -254,6 +254,30 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
                 </button>
               </div>
             )}
+          </div>
+        )}
+
+        {/* ── Violation overlay — shows on top when image is rejected ── */}
+        {violation && (
+          <div style={{ position: 'absolute', inset: 0, zIndex: 10, borderRadius: '24px 24px 0 0', background: 'rgba(255,255,255,0.98)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: '32px 24px', textAlign: 'center', animation: 'upl-overlay-in .25s ease forwards' }}>
+            <div style={{ width: 60, height: 60, borderRadius: '50%', background: 'rgba(239,68,68,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <ShieldAlert size={28} color="#ef4444" />
+            </div>
+            <div style={{ maxWidth: 280 }}>
+              <p style={{ fontSize: 16, fontWeight: 700, color: '#0a0a0a', marginBottom: 8 }}>{violation.reason}</p>
+              {violation.details && <p style={{ fontSize: 13, color: 'rgba(0,0,0,0.5)', lineHeight: 1.6, marginBottom: 12 }}>{violation.details}</p>}
+              <div style={{ padding: '10px 16px', background: 'rgba(239,68,68,0.05)', border: '1px solid rgba(239,68,68,0.15)', borderRadius: 12, marginBottom: 4 }}>
+                <p style={{ fontSize: 12, fontWeight: 600, color: '#ef4444', margin: 0 }}>
+                  Violations: {suspension.violations}/3
+                  {suspension.violations < 3
+                    ? ` — ${3 - suspension.violations} more will result in a 7-day suspension.`
+                    : ' — You have been suspended for 7 days.'}
+                </p>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 10, width: '100%', maxWidth: 280 }}>
+              <button onClick={() => setViolation(null)} style={{ ...S.ghostBtn }}>Dismiss</button>
+            </div>
           </div>
         )}
 
@@ -320,23 +344,7 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
                 </div>
               )}
 
-              {/* Violation banner */}
-              {violation && !uploading && (
-                <div style={{ padding: '14px 16px', background: 'rgba(239,68,68,0.05)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 14 }}>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                    <ShieldAlert size={16} color="#ef4444" style={{ flexShrink: 0, marginTop: 1 }} />
-                    <div style={{ flex: 1 }}>
-                      <p style={{ fontSize: 13, fontWeight: 700, color: '#ef4444', margin: '0 0 4px' }}>{violation.reason}</p>
-                      {violation.details && <p style={{ fontSize: 12, color: 'rgba(239,68,68,0.75)', lineHeight: 1.5, margin: 0 }}>{violation.details}</p>}
-                      <p style={{ fontSize: 11, color: 'rgba(0,0,0,0.4)', margin: '8px 0 0' }}>
-                        Violations: {suspension.violations}/3 — {3 - suspension.violations > 0 ? `${3 - suspension.violations} more will result in a 7-day suspension.` : 'You have been suspended.'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Resume banner */}
+            {/* Resume banner */}
               {canResume && !uploading && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 12 }}>
                   <RefreshCw size={13} color="#10b981" />
@@ -344,7 +352,7 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
                 </div>
               )}
 
-             {/* Image + title row */}
+              {/* Image + title row */}
               <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
                 <div
                   onClick={() => !preview && !uploading && !limitReached && fileRef.current?.click()}
