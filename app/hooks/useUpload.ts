@@ -205,7 +205,7 @@ export const useUpload = (userId: string | null) => {
   // ── Upload ────────────────────────────────────────────────────────────────────
   const uploadFile = useCallback(async (
     file: File, title: string, description: string, isRetry = false, category = '',
-  ): Promise<{ success: boolean; error?: string }> => {
+  ): Promise<{ success: boolean; error?: string; violation?: boolean; details?: string }> => {
     if (!userId)                        return { success: false, error: 'Must be logged in' };
     if (!online || speed === 'offline') return { success: false, error: 'No internet connection' };
 
@@ -381,7 +381,9 @@ export const useUpload = (userId: string | null) => {
         log('📌 Can resume from cache', 'info');
       }
 
-      return { success: false, error: msg };
+      const isViolation = !!(e as any).violation;
+      const details     = (e as any).details as string | undefined;
+      return { success: false, error: msg, violation: isViolation, details };
     } finally {
       setUploading(false);
     }
