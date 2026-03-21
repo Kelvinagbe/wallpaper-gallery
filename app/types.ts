@@ -21,6 +21,7 @@ export type Wallpaper = {
     username?: string;
     avatar?: string;
     verified?: boolean;
+ type?: 'mobile' | 'pc';
   };
 };
 
