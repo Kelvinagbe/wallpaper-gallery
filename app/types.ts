@@ -15,15 +15,15 @@ export type Wallpaper = {
   verified?: boolean;
   createdAt?: string;  
   category?: string;
-};
 
-export type uploader = {
+uploader?: {
     id: string;
     name: string;
     username?: string;
     avatar?: string;
     verified?: boolean;
-  };
+};
+
 
 export type UserProfile = {
   id: string;
