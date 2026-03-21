@@ -3,346 +3,198 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { 
-  fetchWallpapers, 
-  fetchTrendingWallpapers, 
-  fetchWallpapersByCategory 
+import {
+  fetchWallpapers,
+  fetchTrendingWallpapers,
+  fetchWallpapersByCategory,
 } from '@/lib/stores/wallpaperStore';
 import type { Wallpaper } from '@/app/types';
-import type { 
-  RealtimeChannel, 
-  RealtimePostgresChangesPayload 
-} from '@supabase/supabase-js';
+import type { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 
-// Cache structure
-type CacheEntry = {
-  data: Wallpaper[];
-  timestamp: number;
-  hasMore?: boolean;
-  total?: number;
+// ── Cache ────────────────────────────────────────────────────────
+type CacheEntry = { data: Wallpaper[]; timestamp: number; hasMore?: boolean; total?: number; };
+const cache = new Map<string, CacheEntry>();
+const CACHE_TTL = 2 * 60 * 1000; // 2 min
+const isFresh = (entry: CacheEntry) => Date.now() - entry.timestamp < CACHE_TTL;
+
+// ── Supabase singleton — avoids new client on every render ───────
+const supabase = createClient();
+
+// ── Shared realtime helper ───────────────────────────────────────
+const useRealtimeWallpapers = (
+  channelName: string,
+  filter: Record<string, string> | undefined,
+  onInsert: (w: Wallpaper) => void,
+  onUpdate: (w: Wallpaper) => void,
+  onDelete: (id: string) => void,
+  invalidate: () => void,
+) => {
+  const ref = useRef<RealtimeChannel | null>(null);
+
+  useEffect(() => {
+    const ch = supabase.channel(channelName).on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'wallpapers', ...(filter ?? {}) },
+      (payload: RealtimePostgresChangesPayload<Wallpaper>) => {
+        if (payload.eventType === 'INSERT') { onInsert(payload.new as Wallpaper); invalidate(); }
+        if (payload.eventType === 'UPDATE') onUpdate(payload.new as Wallpaper);
+        if (payload.eventType === 'DELETE') { onDelete((payload.old as Wallpaper).id); invalidate(); }
+      },
+    ).subscribe();
+
+    ref.current = ch;
+    return () => { supabase.removeChannel(ch); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channelName]);
 };
 
-const cache = new Map<string, CacheEntry>();
-const CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
-
-/**
- * Hook to fetch wallpapers with real-time updates, caching, and loading states
- */
+// ────────────────────────────────────────────────────────────────
+// useWallpapers
+// ────────────────────────────────────────────────────────────────
 export const useWallpapers = (page = 0, pageSize = 24) => {
   const [wallpapers, setWallpapers] = useState<Wallpaper[]>([]);
-  const [hasMore, setHasMore] = useState(false);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const channelRef = useRef<RealtimeChannel | null>(null);
-  const supabase = createClient();
+  const [hasMore,    setHasMore]    = useState(false);
+  const [total,      setTotal]      = useState(0);
+  const [loading,    setLoading]    = useState(true);
+  const [error,      setError]      = useState<string | null>(null);
 
-  const cacheKey = `wallpapers-${page}-${pageSize}`;
+  const key = `wallpapers-${page}-${pageSize}`;
 
-  const loadWallpapers = useCallback(async (skipCache = false) => {
-    try {
-      setLoading(true);
-
-      // Check cache first
-      if (!skipCache) {
-        const cached = cache.get(cacheKey);
-        const now = Date.now();
-        if (cached && (now - cached.timestamp) < CACHE_DURATION) {
-          setWallpapers(cached.data);
-          setHasMore(cached.hasMore ?? false);
-          setTotal(cached.total ?? 0);
-          setLoading(false);
-          return;
-        }
-      }
-
-      // Fetch fresh data
-      const data = await fetchWallpapers(page, pageSize);
-      
-      // Update cache
-      cache.set(cacheKey, {
-        data: data.wallpapers,
-        timestamp: Date.now(),
-        hasMore: data.hasMore,
-        total: data.total,
-      });
-
-      setWallpapers(data.wallpapers);
-      setHasMore(data.hasMore);
-      setTotal(data.total);
-      setError(null);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load wallpapers');
-      console.error('Error loading wallpapers:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [page, pageSize, cacheKey]);
-
-  useEffect(() => {
-    loadWallpapers();
-
-    // Set up real-time subscription
-    channelRef.current = supabase
-      .channel(`wallpapers-${page}`)
-      .on(
-        'postgres_changes',
-        { 
-          event: '*', 
-          schema: 'public', 
-          table: 'wallpapers' 
-        },
-        (payload: RealtimePostgresChangesPayload<Wallpaper>) => {
-          if (payload.eventType === 'INSERT') {
-            const newWallpaper = payload.new as Wallpaper;
-            // Only add if it's on the first page
-            if (page === 0) {
-              setWallpapers((prev) => [newWallpaper, ...prev.slice(0, pageSize - 1)]);
-              setTotal((prev) => prev + 1);
-            }
-            // Invalidate cache
-            cache.delete(cacheKey);
-          } else if (payload.eventType === 'UPDATE') {
-            setWallpapers((prev) =>
-              prev.map((w) =>
-                w.id === payload.new.id ? (payload.new as Wallpaper) : w
-              )
-            );
-            // Update cache
-            const cached = cache.get(cacheKey);
-            if (cached) {
-              cached.data = cached.data.map((w) =>
-                w.id === payload.new.id ? (payload.new as Wallpaper) : w
-              );
-            }
-          } else if (payload.eventType === 'DELETE') {
-            setWallpapers((prev) => prev.filter((w) => w.id !== payload.old.id));
-            setTotal((prev) => Math.max(0, prev - 1));
-            // Invalidate cache
-            cache.delete(cacheKey);
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-      }
-    };
-  }, [page, pageSize, cacheKey, loadWallpapers, supabase]);
-
-  const refresh = useCallback(() => {
-    cache.delete(cacheKey);
-    loadWallpapers(true);
-  }, [cacheKey, loadWallpapers]);
-
-  return { wallpapers, hasMore, total, loading, error, refresh };
-};
-
-/**
- * Hook to fetch trending wallpapers with real-time updates
- */
-export const useTrendingWallpapers = (limit = 24) => {
-  const [wallpapers, setWallpapers] = useState<Wallpaper[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const channelRef = useRef<RealtimeChannel | null>(null);
-  const supabase = createClient();
-
-  const cacheKey = `trending-${limit}`;
-
-  const loadWallpapers = useCallback(async (skipCache = false) => {
-    try {
-      setLoading(true);
-
-      // Check cache
-      if (!skipCache) {
-        const cached = cache.get(cacheKey);
-        const now = Date.now();
-        if (cached && (now - cached.timestamp) < CACHE_DURATION) {
-          setWallpapers(cached.data);
-          setLoading(false);
-          return;
-        }
-      }
-
-      const data = await fetchTrendingWallpapers(limit);
-      
-      cache.set(cacheKey, {
-        data,
-        timestamp: Date.now(),
-      });
-
-      setWallpapers(data);
-      setError(null);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load trending wallpapers');
-      console.error('Error loading trending wallpapers:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [limit, cacheKey]);
-
-  useEffect(() => {
-    loadWallpapers();
-
-    // Real-time updates
-    channelRef.current = supabase
-      .channel('trending-wallpapers')
-      .on(
-        'postgres_changes',
-        { 
-          event: '*', 
-          schema: 'public', 
-          table: 'wallpapers' 
-        },
-        (_payload: RealtimePostgresChangesPayload<Wallpaper>) => {
-          // Refresh trending when any wallpaper changes
-          // (since trending depends on views/downloads)
-          cache.delete(cacheKey);
-          loadWallpapers(true);
-        }
-      )
-      .subscribe();
-
-    return () => {
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-      }
-    };
-  }, [limit, cacheKey, loadWallpapers, supabase]);
-
-  const refresh = useCallback(() => {
-    cache.delete(cacheKey);
-    loadWallpapers(true);
-  }, [cacheKey, loadWallpapers]);
-
-  return { wallpapers, loading, error, refresh };
-};
-
-/**
- * Hook to fetch wallpapers by category with real-time updates
- */
-export const useWallpapersByCategory = (
-  category: string, 
-  page = 0, 
-  pageSize = 2
-) => {
-  const [wallpapers, setWallpapers] = useState<Wallpaper[]>([]);
-  const [hasMore, setHasMore] = useState(false);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const channelRef = useRef<RealtimeChannel | null>(null);
-  const supabase = createClient();
-
-  const cacheKey = `category-${category}-${page}-${pageSize}`;
-
-  const loadWallpapers = useCallback(async (skipCache = false) => {
-    if (!category) {
+  const load = useCallback(async (force = false) => {
+    const cached = cache.get(key);
+    if (!force && cached && isFresh(cached)) {
+      setWallpapers(cached.data);
+      setHasMore(cached.hasMore ?? false);
+      setTotal(cached.total ?? 0);
       setLoading(false);
       return;
     }
-
+    setLoading(true);
     try {
-      setLoading(true);
-
-      // Check cache
-      if (!skipCache) {
-        const cached = cache.get(cacheKey);
-        const now = Date.now();
-        if (cached && (now - cached.timestamp) < CACHE_DURATION) {
-          setWallpapers(cached.data);
-          setHasMore(cached.hasMore ?? false);
-          setTotal(cached.total ?? 0);
-          setLoading(false);
-          return;
-        }
-      }
-
-      const data = await fetchWallpapersByCategory(category, page, pageSize);
-      
-      cache.set(cacheKey, {
-        data: data.wallpapers,
-        timestamp: Date.now(),
-        hasMore: data.hasMore,
-        total: data.total,
-      });
-
-      setWallpapers(data.wallpapers);
-      setHasMore(data.hasMore);
-      setTotal(data.total);
+      // ↓ Your fetchWallpapers should join profiles for uploader data:
+      //   .select('*, uploader:profiles(id,name,username,avatar,verified)')
+      const { wallpapers: data, hasMore: more, total: tot } = await fetchWallpapers(page, pageSize);
+      cache.set(key, { data, timestamp: Date.now(), hasMore: more, total: tot });
+      setWallpapers(data);
+      setHasMore(more);
+      setTotal(tot);
       setError(null);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load wallpapers');
-      console.error('Error loading category wallpapers:', err);
+    } catch (e: any) {
+      setError(e.message ?? 'Failed to load wallpapers');
     } finally {
       setLoading(false);
     }
-  }, [category, page, pageSize, cacheKey]);
+  }, [key, page, pageSize]);
 
-  useEffect(() => {
-    loadWallpapers();
+  useEffect(() => { load(); }, [load]);
 
-    // Real-time updates for this category
-    channelRef.current = supabase
-      .channel(`category-${category}-${page}`)
-      .on(
-        'postgres_changes',
-        { 
-          event: '*', 
-          schema: 'public', 
-          table: 'wallpapers',
-          filter: `category=eq.${category}`
-        },
-        (payload: RealtimePostgresChangesPayload<Wallpaper>) => {
-          if (payload.eventType === 'INSERT') {
-            if (page === 0) {
-              const newWallpaper = payload.new as Wallpaper;
-              setWallpapers((prev) => [newWallpaper, ...prev.slice(0, pageSize - 1)]);
-              setTotal((prev) => prev + 1);
-            }
-            cache.delete(cacheKey);
-          } else if (payload.eventType === 'UPDATE') {
-            setWallpapers((prev) =>
-              prev.map((w) =>
-                w.id === payload.new.id ? (payload.new as Wallpaper) : w
-              )
-            );
-            const cached = cache.get(cacheKey);
-            if (cached) {
-              cached.data = cached.data.map((w) =>
-                w.id === payload.new.id ? (payload.new as Wallpaper) : w
-              );
-            }
-          } else if (payload.eventType === 'DELETE') {
-            setWallpapers((prev) => prev.filter((w) => w.id !== payload.old.id));
-            setTotal((prev) => Math.max(0, prev - 1));
-            cache.delete(cacheKey);
-          }
-        }
-      )
-      .subscribe();
+  useRealtimeWallpapers(
+    `wallpapers-rt-${page}`,
+    undefined,
+    (w) => { if (page === 0) setWallpapers(p => [w, ...p.slice(0, pageSize - 1)]); setTotal(t => t + 1); },
+    (w) => setWallpapers(p => p.map(x => x.id === w.id ? w : x)),
+    (id) => { setWallpapers(p => p.filter(x => x.id !== id)); setTotal(t => Math.max(0, t - 1)); },
+    () => cache.delete(key),
+  );
 
-    return () => {
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-      }
-    };
-  }, [category, page, pageSize, cacheKey, loadWallpapers, supabase]);
-
-  const refresh = useCallback(() => {
-    cache.delete(cacheKey);
-    loadWallpapers(true);
-  }, [cacheKey, loadWallpapers]);
-
-  return { wallpapers, hasMore, total, loading, error, refresh };
+  return { wallpapers, hasMore, total, loading, error, refresh: () => load(true) };
 };
 
-/**
- * Utility function to clear all wallpaper caches
- */
-export const clearWallpaperCache = () => {
-  cache.clear();
+// ────────────────────────────────────────────────────────────────
+// useTrendingWallpapers
+// ────────────────────────────────────────────────────────────────
+export const useTrendingWallpapers = (limit = 24) => {
+  const [wallpapers, setWallpapers] = useState<Wallpaper[]>([]);
+  const [loading,    setLoading]    = useState(true);
+  const [error,      setError]      = useState<string | null>(null);
+
+  const key = `trending-${limit}`;
+
+  const load = useCallback(async (force = false) => {
+    const cached = cache.get(key);
+    if (!force && cached && isFresh(cached)) {
+      setWallpapers(cached.data);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const data = await fetchTrendingWallpapers(limit);
+      cache.set(key, { data, timestamp: Date.now() });
+      setWallpapers(data);
+      setError(null);
+    } catch (e: any) {
+      setError(e.message ?? 'Failed to load trending wallpapers');
+    } finally {
+      setLoading(false);
+    }
+  }, [key, limit]);
+
+  useEffect(() => { load(); }, [load]);
+
+  // Trending depends on views/likes so refresh on any change
+  useRealtimeWallpapers(
+    'trending-rt',
+    undefined,
+    () => load(true),
+    () => load(true),
+    () => load(true),
+    () => cache.delete(key),
+  );
+
+  return { wallpapers, loading, error, refresh: () => load(true) };
 };
+
+// ────────────────────────────────────────────────────────────────
+// useWallpapersByCategory
+// ────────────────────────────────────────────────────────────────
+export const useWallpapersByCategory = (category: string, page = 0, pageSize = 24) => {
+  const [wallpapers, setWallpapers] = useState<Wallpaper[]>([]);
+  const [hasMore,    setHasMore]    = useState(false);
+  const [total,      setTotal]      = useState(0);
+  const [loading,    setLoading]    = useState(true);
+  const [error,      setError]      = useState<string | null>(null);
+
+  const key = `cat-${category}-${page}-${pageSize}`;
+
+  const load = useCallback(async (force = false) => {
+    if (!category) { setLoading(false); return; }
+    const cached = cache.get(key);
+    if (!force && cached && isFresh(cached)) {
+      setWallpapers(cached.data);
+      setHasMore(cached.hasMore ?? false);
+      setTotal(cached.total ?? 0);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const { wallpapers: data, hasMore: more, total: tot } = await fetchWallpapersByCategory(category, page, pageSize);
+      cache.set(key, { data, timestamp: Date.now(), hasMore: more, total: tot });
+      setWallpapers(data);
+      setHasMore(more);
+      setTotal(tot);
+      setError(null);
+    } catch (e: any) {
+      setError(e.message ?? 'Failed to load wallpapers');
+    } finally {
+      setLoading(false);
+    }
+  }, [key, category, page, pageSize]);
+
+  useEffect(() => { load(); }, [load]);
+
+  useRealtimeWallpapers(
+    `cat-rt-${category}-${page}`,
+    { filter: `category=eq.${category}` },
+    (w) => { if (page === 0) setWallpapers(p => [w, ...p.slice(0, pageSize - 1)]); setTotal(t => t + 1); },
+    (w) => setWallpapers(p => p.map(x => x.id === w.id ? w : x)),
+    (id) => { setWallpapers(p => p.filter(x => x.id !== id)); setTotal(t => Math.max(0, t - 1)); },
+    () => cache.delete(key),
+  );
+
+  return { wallpapers, hasMore, total, loading, error, refresh: () => load(true) };
+};
+
+// ── Utility ──────────────────────────────────────────────────────
+export const clearWallpaperCache = () => cache.clear();
