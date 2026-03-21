@@ -8,7 +8,7 @@ import { Heart, Download, Share2, Bookmark, Flag, MoreHorizontal } from 'lucide-
 import { toggleLike, isWallpaperLiked, toggleSave, isWallpaperSaved } from '@/lib/stores/userStore';
 import { useAuth } from '@/app/components/AuthProvider';
 import { saveFeedScroll } from '@/lib/feedCache';
-import { startLoader } from '@/app/components/TopLoader';
+import { startLoader } from '@/app/components/TopLoader'; 
 import type { Wallpaper } from '../types';
 
 // ── Placeholder colors ───────────────────────────────────────────
