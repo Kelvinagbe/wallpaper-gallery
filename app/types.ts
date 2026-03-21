@@ -15,13 +15,13 @@ export type Wallpaper = {
   verified?: boolean;
   createdAt?: string;
   category?: string;
+  type?: 'mobile' | 'pc';
   uploader?: {
     id: string;
     name: string;
     username?: string;
     avatar?: string;
     verified?: boolean;
- type?: 'mobile' | 'pc';
   };
 };
 
