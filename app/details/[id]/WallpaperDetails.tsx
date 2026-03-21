@@ -4,7 +4,11 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { ChevronLeft, Heart, Download, Share2, Check, Link as LinkIcon, Loader2, Maximize2, Minimize2, Eye, UserCircle } from 'lucide-react';
+import {
+  ChevronLeft, Heart, Download, Share2, Check,
+  Link as LinkIcon, Loader2, Maximize2, Minimize2,
+  Eye, Lock, UserCircle,
+} from 'lucide-react';
 import { VerifiedBadge } from '@/app/components/VerifiedBadge';
 import { LoginPromptModal } from '@/app/components/LoginPromptModal';
 import { createClient } from '@/lib/supabase/client';
@@ -12,10 +16,15 @@ import { useAuth } from '@/app/components/AuthProvider';
 import { incrementViews, incrementDownloads } from '@/lib/stores/wallpaperStore';
 import type { Wallpaper } from '@/app/types';
 
+// ── 🗂️ Cache for like/follow state (30s TTL) ─────────────────────
 const cache = new Map<string, { liked: boolean; following: boolean; likeCount: number; timestamp: number }>();
 const CACHE_TTL = 30_000;
-const fmt = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 
+// ── 🔢 Helpers ───────────────────────────────────────────────────
+const fmt = (n: number) => n >= 1_000_000 ? `${(n/1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n/1000).toFixed(1)}k` : String(n);
+const F   = "'DM Sans', sans-serif";
+
+// ── 🖼️ Session image cache — avoids re-fetching already loaded images ──
 const imgCache = (() => {
   const mem = new Set<string>();
   try { (JSON.parse(sessionStorage.getItem('__wpcache__') || '[]') as string[]).forEach(u => mem.add(u)); } catch {}
@@ -25,12 +34,13 @@ const imgCache = (() => {
   };
 })();
 
+// ── ⏰ Relative time string ──────────────────────────────────────
 const timeAgoStr = (date: string) => {
   const d = Math.floor((Date.now() - new Date(date).getTime()) / 1000);
-  return d < 60 ? 'Just now' : d < 3600 ? `${Math.floor(d / 60)}m ago` : d < 86400 ? `${Math.floor(d / 3600)}h ago` : d < 604800 ? `${Math.floor(d / 86400)}d ago` : `${Math.floor(d / 604800)}w ago`;
+  return d < 60 ? 'Just now' : d < 3600 ? `${Math.floor(d/60)}m ago` : d < 86400 ? `${Math.floor(d/3600)}h ago` : d < 604800 ? `${Math.floor(d/86400)}d ago` : `${Math.floor(d/604800)}w ago`;
 };
 
-// ─── CopyLinkModal ─────────────────────────────────────────────────────────────
+// ── 🔗 Copy Link Modal ───────────────────────────────────────────
 const CopyLinkModal = ({ isOpen, onClose, link }: { isOpen: boolean; onClose: () => void; link: string }) => {
   const [copied, setCopied] = useState(false);
   if (!isOpen) return null;
@@ -43,15 +53,15 @@ const CopyLinkModal = ({ isOpen, onClose, link }: { isOpen: boolean; onClose: ()
     <div style={{ position: 'fixed', inset: 0, zIndex: 200, display: 'flex', alignItems: 'flex-end', background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(10px)' }} onClick={onClose}>
       <div style={{ width: '100%', background: '#fff', borderRadius: '24px 24px 0 0', padding: '24px 20px 32px', display: 'flex', flexDirection: 'column', gap: 12 }} onClick={e => e.stopPropagation()}>
         <div style={{ width: 36, height: 4, borderRadius: 2, background: 'rgba(0,0,0,0.1)', margin: '0 auto 4px' }} />
-        <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 17, fontWeight: 700, color: '#0a0a0a', textAlign: 'center' }}>Share Link</p>
+        <p style={{ fontFamily: F, fontSize: 17, fontWeight: 700, color: '#0a0a0a', textAlign: 'center' }}>Share Link</p>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 14, background: 'rgba(0,0,0,0.04)', border: '1px solid rgba(0,0,0,0.07)' }}>
           <LinkIcon size={14} color="rgba(0,0,0,0.3)" style={{ flexShrink: 0 }} />
-          <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: 'rgba(0,0,0,0.5)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{link}</span>
+          <span style={{ fontFamily: F, fontSize: 13, color: 'rgba(0,0,0,0.5)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{link}</span>
         </div>
-        <button onClick={copy} style={{ width: '100%', padding: '15px', borderRadius: 14, border: 'none', fontFamily: "'DM Sans', sans-serif", fontSize: 14, fontWeight: 600, color: '#fff', background: copied ? '#10b981' : '#0a0a0a', cursor: 'pointer', transition: 'background .2s' }}>
+        <button onClick={copy} style={{ width: '100%', padding: '15px', borderRadius: 14, border: 'none', fontFamily: F, fontSize: 14, fontWeight: 600, color: '#fff', background: copied ? '#10b981' : '#0a0a0a', cursor: 'pointer', transition: 'background .2s' }}>
           {copied ? '✓ Copied!' : 'Copy Link'}
         </button>
-        <button onClick={onClose} style={{ width: '100%', padding: '14px', borderRadius: 14, border: 'none', fontFamily: "'DM Sans', sans-serif", fontSize: 14, fontWeight: 500, color: 'rgba(0,0,0,0.4)', background: 'rgba(0,0,0,0.04)', cursor: 'pointer' }}>
+        <button onClick={onClose} style={{ width: '100%', padding: '14px', borderRadius: 14, border: 'none', fontFamily: F, fontSize: 14, fontWeight: 500, color: 'rgba(0,0,0,0.4)', background: 'rgba(0,0,0,0.04)', cursor: 'pointer' }}>
           Cancel
         </button>
       </div>
@@ -60,7 +70,7 @@ const CopyLinkModal = ({ isOpen, onClose, link }: { isOpen: boolean; onClose: ()
   );
 };
 
-// ─── FloatingHearts ────────────────────────────────────────────────────────────
+// ── 💖 Floating Hearts animation on like ────────────────────────
 const FloatingHearts = ({ hearts }: { hearts: Array<{ id: number; x: number; y: number; angle: number; distance: number }> }) => {
   if (typeof window === 'undefined' || !hearts.length) return null;
   return createPortal(<>
@@ -72,43 +82,53 @@ const FloatingHearts = ({ hearts }: { hearts: Array<{ id: number; x: number; y: 
   </>, document.body);
 };
 
-// ─── Main ──────────────────────────────────────────────────────────────────────
+// ── 🖼️ Main WallpaperDetail Component ───────────────────────────
 export default function WallpaperDetail({ initialWallpaper }: { initialWallpaper: Wallpaper }) {
-  const router   = useRouter();
+  const router      = useRouter();
   const { session } = useAuth();
-  const supabase = useMemo(() => createClient(), []);
-  const wp       = initialWallpaper;
+  const supabase    = useMemo(() => createClient(), []);
+  const wp          = initialWallpaper;
+  const isPC        = wp.type === 'pc'; // 🖥️ determines aspect ratio
 
+  // ── State ────────────────────────────────────────────────────
   const [likes,     setLikes]     = useState(wp.likes);
   const [views,     setViews]     = useState(wp.views);
   const [hearts,    setHearts]    = useState<Array<{ id: number; x: number; y: number; angle: number; distance: number }>>([]);
   const [full,      setFull]      = useState(false);
   const [imgLoaded, setImgLoaded] = useState(imgCache.has(wp.url));
   const [timeAgo,   setTimeAgo]   = useState(() => wp.createdAt ? timeAgoStr(wp.createdAt) : 'Just now');
-  const [st, setSt] = useState({ liked: false, following: false, downloading: false, downloaded: false, dataLoading: true, showLogin: false, loginAction: '', copyOpen: false, pfpSetting: false, pfpSet: false });
+  const [st, setSt] = useState({
+    liked: false, following: false,
+    downloading: false, downloaded: false,
+    dataLoading: true,
+    showLogin: false, loginAction: '',
+    copyOpen: false,
+    pfpSetting: false, pfpSet: false, // 🖼️ set as profile picture
+  });
 
   const likeRef = useRef<HTMLButtonElement>(null);
   const set     = (patch: Partial<typeof st>) => setSt(s => ({ ...s, ...patch }));
 
+  // ── ⏰ Update relative time every minute ─────────────────────
   useEffect(() => {
     if (!wp.createdAt) return;
     const t = setInterval(() => setTimeAgo(timeAgoStr(wp.createdAt!)), 60_000);
     return () => clearInterval(t);
   }, [wp.createdAt]);
 
-  // ── View count — sessionStorage dedup, no spam ────────────────────────────────
+  // ── 👁️ Increment view count after 5s (deduped per session) ──
   useEffect(() => {
     const viewKey = `viewed_${wp.id}`;
-    if (sessionStorage.getItem(viewKey)) return; // already viewed this session
+    if (sessionStorage.getItem(viewKey)) return;
     const timer = setTimeout(async () => {
       sessionStorage.setItem(viewKey, '1');
       await incrementViews(wp.id);
-      setViews(v => v + 1); // optimistic local update
-    }, 5000); // count after 5s on page
+      setViews(v => v + 1);
+    }, 5000);
     return () => clearTimeout(timer);
   }, [wp.id]);
 
-  // ── Fetch like/follow state ───────────────────────────────────────────────────
+  // ── ❤️ Fetch like + follow state for current user ────────────
   useEffect(() => {
     if (!session) { set({ dataLoading: false }); return; }
     const uid = session.user.id;
@@ -131,7 +151,7 @@ export default function WallpaperDetail({ initialWallpaper }: { initialWallpaper
     })();
   }, [wp.id, session?.user?.id]);
 
-  // ── Realtime likes ────────────────────────────────────────────────────────────
+  // ── 🔴 Realtime like count updates ──────────────────────────
   useEffect(() => {
     const ch = supabase.channel(`wp-likes-${wp.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'likes', filter: `wallpaper_id=eq.${wp.id}` }, async () => {
@@ -141,9 +161,11 @@ export default function WallpaperDetail({ initialWallpaper }: { initialWallpaper
     return () => { supabase.removeChannel(ch); };
   }, [wp.id]);
 
+  // ── 🔐 Auth gate — shows login modal if not signed in ───────
   const auth = (action: string, cb: () => void) =>
     !session ? set({ loginAction: action, showLogin: true }) : cb();
 
+  // ── ❤️ Like / Unlike ─────────────────────────────────────────
   const handleLike = () => auth('like wallpapers', async () => {
     const v = !st.liked;
     set({ liked: v });
@@ -151,6 +173,7 @@ export default function WallpaperDetail({ initialWallpaper }: { initialWallpaper
     navigator.vibrate?.(50);
     const key = `${wp.id}-${session!.user.id}`, cached = cache.get(key);
     if (cached) cache.set(key, { ...cached, liked: v, likeCount: v ? cached.likeCount + 1 : cached.likeCount - 1, timestamp: Date.now() });
+    // 💖 Spawn floating hearts on like
     if (v && likeRef.current) {
       const r = likeRef.current.getBoundingClientRect();
       setHearts(Array.from({ length: 8 }, (_, i) => ({ id: Date.now() + i, x: r.left + r.width / 2 - 14, y: r.top + r.height / 2 - 14, angle: -90 + (i * 270 / 7) + (Math.random() - .5) * 20, distance: 80 + Math.random() * 60 })));
@@ -160,6 +183,7 @@ export default function WallpaperDetail({ initialWallpaper }: { initialWallpaper
       : await supabase.from('likes').delete().eq('user_id', session!.user.id).eq('wallpaper_id', wp.id);
   });
 
+  // ── 👤 Follow / Unfollow ─────────────────────────────────────
   const handleFollow = () => auth('follow users', async () => {
     if (!wp.userId) return;
     const v = !st.following;
@@ -171,6 +195,7 @@ export default function WallpaperDetail({ initialWallpaper }: { initialWallpaper
       : await supabase.from('follows').delete().eq('follower_id', session!.user.id).eq('following_id', wp.userId);
   });
 
+  // ── ⬇️ Download — locked for guests ─────────────────────────
   const handleDownload = async () => {
     if (st.downloading || st.downloaded) return;
     set({ downloading: true });
@@ -186,15 +211,13 @@ export default function WallpaperDetail({ initialWallpaper }: { initialWallpaper
     } catch { set({ downloading: false }); }
   };
 
+  // ── 🖼️ Set wallpaper as profile picture ─────────────────────
   const handleSetPfp = async () => {
     if (!session || st.pfpSetting || st.pfpSet) return;
     set({ pfpSetting: true });
     navigator.vibrate?.(50);
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ avatar_url: wp.thumbnail })
-        .eq('id', session.user.id);
+      const { error } = await supabase.from('profiles').update({ avatar_url: wp.thumbnail }).eq('id', session.user.id);
       if (error) throw error;
       set({ pfpSetting: false, pfpSet: true });
       navigator.vibrate?.(100);
@@ -204,145 +227,162 @@ export default function WallpaperDetail({ initialWallpaper }: { initialWallpaper
     }
   };
 
+  // ── 🔗 Share ─────────────────────────────────────────────────
   const handleShare = () => navigator.share
     ? navigator.share({ title: wp.title, url: window.location.href }).catch(() => set({ copyOpen: true }))
     : set({ copyOpen: true });
 
+  // ── 🎨 CSS ───────────────────────────────────────────────────
+  const CSS = `
+    @keyframes shimmer   { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
+    @keyframes fadeSlide { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes spin      { to{transform:rotate(360deg)} }
+    .shimmer  { background:linear-gradient(90deg,#ebebeb 25%,#e0e0de 50%,#ebebeb 75%);background-size:200% 100%;animation:shimmer 1.6s infinite; }
+    .fade-in  { animation:fadeSlide .45s cubic-bezier(.16,1,.3,1) forwards; }
+    .no-save  { -webkit-user-select:none;user-select:none;-webkit-touch-callout:none; }
+    .act-btn  { transition:transform .15s,opacity .15s; }
+    .act-btn:active { transform:scale(0.93);opacity:.8; }
+    .wp-full  { position:fixed!important;inset:0!important;margin:0!important;border-radius:0!important;z-index:100;aspect-ratio:unset!important;height:100dvh!important; }
+  `;
+
   return (
-    <div style={{ minHeight: '100dvh', background: '#f7f7f5', fontFamily: "'DM Sans', sans-serif" }}>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,300&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet" />
-      <style>{`
-        @keyframes shimmer { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
-        .shimmer { background: linear-gradient(90deg,#ebebeb 25%,#e0e0de 50%,#ebebeb 75%); background-size:200% 100%; animation: shimmer 1.6s infinite; }
-        @keyframes fadeSlide { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
-        .fade-slide { animation: fadeSlide 0.5s cubic-bezier(.16,1,.3,1) forwards; }
-        .no-save { -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
-        .action-btn { transition: transform .15s, opacity .15s; }
-        .action-btn:active { transform: scale(0.92); opacity: .8; }
-        .wp-fullscreen { position: fixed !important; inset: 0 !important; margin: 0 !important; border-radius: 0 !important; z-index: 100; }
-        @keyframes spin { to { transform: rotate(360deg); } }
-      `}</style>
+    <div style={{ minHeight: '100dvh', background: '#f7f7f5', fontFamily: F }}>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Serif+Display&display=swap" rel="stylesheet" />
+      <style>{CSS}</style>
 
       <FloatingHearts hearts={hearts} />
       <LoginPromptModal isOpen={st.showLogin} onClose={() => set({ showLogin: false })} action={st.loginAction} />
       <CopyLinkModal isOpen={st.copyOpen} onClose={() => set({ copyOpen: false })} link={typeof window !== 'undefined' ? window.location.href : ''} />
 
-      {/* ── Top nav ── */}
-      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', pointerEvents: 'none' }}>
-        <button onClick={() => full ? setFull(false) : router.back()} aria-label="Back" className="action-btn"
-          style={{ pointerEvents: 'all', width: 40, height: 40, borderRadius: '50%', background: full ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.9)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', border: full ? 'none' : '1px solid rgba(0,0,0,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 2px 12px rgba(0,0,0,0.08)', transition: 'all .2s' }}>
-          <ChevronLeft size={20} color={full ? '#fff' : '#0a0a0a'} strokeWidth={2.5} />
+      {/* ── 🔝 Floating nav — back + fullscreen ── */}
+      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', pointerEvents: 'none' }}>
+        <button onClick={() => full ? setFull(false) : router.back()} className="act-btn"
+          style={{ pointerEvents: 'all', width: 38, height: 38, borderRadius: '50%', background: 'rgba(0,0,0,0.32)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <ChevronLeft size={20} color="#fff" strokeWidth={2.5} />
         </button>
-        <button onClick={() => setFull(v => !v)} aria-label="Toggle fullscreen" className="action-btn"
-          style={{ pointerEvents: 'all', width: 40, height: 40, borderRadius: '50%', background: full ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.9)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', border: full ? 'none' : '1px solid rgba(0,0,0,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 2px 12px rgba(0,0,0,0.08)', transition: 'all .2s' }}>
-          {full ? <Minimize2 size={17} color="#fff" strokeWidth={2.5} /> : <Maximize2 size={17} color="#0a0a0a" strokeWidth={2.5} />}
+        <button onClick={() => setFull(v => !v)} className="act-btn"
+          style={{ pointerEvents: 'all', width: 38, height: 38, borderRadius: '50%', background: 'rgba(0,0,0,0.32)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          {full ? <Minimize2 size={17} color="#fff" strokeWidth={2.5} /> : <Maximize2 size={17} color="#fff" strokeWidth={2.5} />}
         </button>
       </div>
 
-      {/* ── Wallpaper card ── */}
-      <div style={{ padding: full ? 0 : '68px 16px 0' }}>
-        <div className={full ? 'wp-fullscreen' : ''} style={{ position: 'relative', width: '100%', aspectRatio: full ? undefined : '9/16', height: full ? '100dvh' : undefined, borderRadius: full ? 0 : 20, overflow: 'hidden', background: '#e8e8e6' }} onContextMenu={e => e.preventDefault()}>
+      {/* ── 🖼️ Wallpaper image — full width, aspect ratio by type ── */}
+      <div
+        className={full ? 'wp-full' : ''}
+        style={{ position: 'relative', width: '100%', aspectRatio: isPC ? '4/3' : '9/16', background: '#e8e8e6', overflow: 'hidden' }}
+        onContextMenu={e => e.preventDefault()}
+      >
+        {!imgLoaded && <div className="shimmer" style={{ position: 'absolute', inset: 0 }} />}
 
-          {!imgLoaded && <div className="shimmer" style={{ position: 'absolute', inset: 0 }} />}
+        <Image
+          src={wp.url} alt={wp.title} fill priority draggable={false}
+          className="no-save"
+          style={{ objectFit: 'cover', opacity: imgLoaded ? 1 : 0, transition: 'opacity .4s ease', pointerEvents: 'none' }}
+          sizes="(max-width:768px) 100vw, 600px"
+          onLoad={() => { imgCache.add(wp.url); setImgLoaded(true); }}
+        />
 
-          <Image src={wp.url} alt={wp.title} fill priority draggable={false} className="no-save"
-            style={{ objectFit: 'cover', opacity: imgLoaded ? 1 : 0, transition: 'opacity .4s ease', pointerEvents: 'none', userSelect: 'none' }}
-            sizes="(max-width:768px) 100vw, 600px"
-            onLoad={() => { imgCache.add(wp.url); setImgLoaded(true); }}
-          />
+        {/* 🛡️ Prevent right-click / long-press save */}
+        <div className="no-save" style={{ position: 'absolute', inset: 0, zIndex: 2 }} onContextMenu={e => e.preventDefault()} />
 
-          <div className="no-save" style={{ position: 'absolute', inset: 0, zIndex: 2 }} onContextMenu={e => e.preventDefault()} />
+        {/* ❤️ Like FAB — bottom right of image */}
+        {imgLoaded && (
+          <div style={{ position: 'absolute', bottom: 14, right: 14, zIndex: 3, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+            <button ref={likeRef} onClick={handleLike} className="act-btn"
+              style={{ width: 46, height: 46, borderRadius: '50%', background: st.liked ? '#f43f5e' : 'rgba(0,0,0,0.28)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'background .2s' }}>
+              <Heart size={19} color="#fff" fill={st.liked ? '#fff' : 'none'} strokeWidth={2} />
+            </button>
+            {likes > 0 && <span style={{ fontSize: 10, fontWeight: 600, color: '#fff', textShadow: '0 1px 4px rgba(0,0,0,0.5)' }}>{fmt(likes)}</span>}
+          </div>
+        )}
+      </div>
 
-          {/* Like button */}
-          {imgLoaded && (
-            <div style={{ position: 'absolute', bottom: 16, right: 16, zIndex: 3, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-              <button ref={likeRef} onClick={handleLike} aria-label="Like" className="action-btn"
-                style={{ width: 48, height: 48, borderRadius: '50%', background: st.liked ? '#f43f5e' : 'rgba(0,0,0,0.28)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'background .2s' }}>
-                <Heart size={20} color="#fff" fill={st.liked ? '#fff' : 'none'} strokeWidth={2} />
-              </button>
-              {likes > 0 && <span style={{ fontSize: 11, fontWeight: 600, color: '#fff', textShadow: '0 1px 4px rgba(0,0,0,0.5)' }}>{fmt(likes)}</span>}
-            </div>
+      {/* ── 📋 Info section — scrolls naturally below image ── */}
+      {!full && (
+        <div className="fade-in" style={{ padding: '18px 16px 48px', background: '#f7f7f5' }}>
+
+          {/* 📝 Title + description */}
+          <h1 style={{ fontFamily: "'DM Serif Display', serif", fontSize: 22, fontWeight: 400, color: '#0a0a0a', letterSpacing: '-0.02em', lineHeight: 1.25, marginBottom: 6 }}>
+            {wp.title}
+          </h1>
+          {wp.description && (
+            <p style={{ fontSize: 13, color: 'rgba(0,0,0,0.45)', lineHeight: 1.6, fontWeight: 300, marginBottom: 14 }}>{wp.description}</p>
           )}
 
-          {full && <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 120, background: 'linear-gradient(to top, rgba(0,0,0,0.5) 0%, transparent 100%)', zIndex: 2, pointerEvents: 'none' }} />}
-        </div>
-      </div>
-
-      {/* ── Info section ── */}
-      {!full && (
-        <div className="fade-slide" style={{ padding: '20px 16px 140px' }}>
-
-          {/* Title + description */}
-          <div style={{ marginBottom: 16 }}>
-            <h1 style={{ fontFamily: "'DM Serif Display', serif", fontSize: 24, fontWeight: 400, color: '#0a0a0a', letterSpacing: '-0.02em', lineHeight: 1.2, marginBottom: 6 }}>
-              {wp.title}
-            </h1>
-            {wp.description && <p style={{ fontSize: 14, color: 'rgba(0,0,0,0.45)', lineHeight: 1.6, fontWeight: 300 }}>{wp.description}</p>}
+          {/* 📊 Stats row */}
+          <div style={{ display: 'flex', gap: 14, marginBottom: 14 }}>
+            {[
+              { icon: <Eye size={12} />,      label: `${fmt(views)} views`           },
+              { icon: <Download size={12} />, label: `${fmt(wp.downloads)} downloads` },
+              { icon: <Heart size={12} />,    label: `${fmt(likes)} likes`            },
+            ].map(({ icon, label }) => (
+              <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'rgba(0,0,0,0.4)', fontWeight: 500 }}>
+                <span style={{ opacity: 0.6 }}>{icon}</span>{label}
+              </div>
+            ))}
           </div>
 
-          {/* Stats row — views + downloads + likes */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <Eye size={13} color="rgba(0,0,0,0.35)" />
-              <span style={{ fontSize: 12, color: 'rgba(0,0,0,0.4)', fontWeight: 500 }}>{fmt(views)} views</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <Download size={13} color="rgba(0,0,0,0.35)" />
-              <span style={{ fontSize: 12, color: 'rgba(0,0,0,0.4)', fontWeight: 500 }}>{fmt(wp.downloads)} downloads</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <Heart size={13} color="rgba(0,0,0,0.35)" />
-              <span style={{ fontSize: 12, color: 'rgba(0,0,0,0.4)', fontWeight: 500 }}>{fmt(likes)} likes</span>
-            </div>
-          </div>
+          <div style={{ height: 1, background: 'rgba(0,0,0,0.07)', marginBottom: 14 }} />
 
-          <div style={{ height: 1, background: 'rgba(0,0,0,0.07)', marginBottom: 16 }} />
-
-         {/* User row */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-            <button onClick={() => router.push(`/user/${wp.userId}`)} style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'left' }}>
+          {/* 👤 User row — avatar, name, follow button */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+            <button onClick={() => router.push(`/user/${wp.userId}`)}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
               <div style={{ position: 'relative', width: 40, height: 40, borderRadius: '50%', overflow: 'hidden', flexShrink: 0, border: '1.5px solid rgba(0,0,0,0.07)' }}>
                 <Image src={wp.userAvatar} alt={wp.uploadedBy} fill style={{ objectFit: 'cover' }} sizes="40px" />
               </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                   <span style={{ fontSize: 14, fontWeight: 600, color: '#0a0a0a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{wp.uploadedBy}</span>
                   {wp.verified && <VerifiedBadge size="sm" />}
                 </div>
-                <span style={{ fontSize: 12, color: 'rgba(0,0,0,0.35)', fontWeight: 400 }}>{timeAgo}</span>
+                <span style={{ fontSize: 12, color: 'rgba(0,0,0,0.35)' }}>{timeAgo}</span>
               </div>
             </button>
-
             {st.dataLoading
               ? <div className="shimmer" style={{ width: 80, height: 34, borderRadius: 8, flexShrink: 0 }} />
-              : (
-                <button onClick={handleFollow} className="action-btn"
-                  style={{ flexShrink: 0, padding: '8px 18px', borderRadius: 8, border: st.following ? '1.5px solid rgba(0,0,0,0.12)' : 'none', background: st.following ? 'transparent' : '#0a0a0a', color: st.following ? 'rgba(0,0,0,0.45)' : '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', transition: 'all .2s', fontFamily: "'DM Sans', sans-serif" }}>
+              : <button onClick={handleFollow} className="act-btn"
+                  style={{ flexShrink: 0, padding: '8px 18px', borderRadius: 8, border: st.following ? '1.5px solid rgba(0,0,0,0.12)' : 'none', background: st.following ? 'transparent' : '#0a0a0a', color: st.following ? 'rgba(0,0,0,0.45)' : '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', transition: 'all .2s', fontFamily: F }}>
                   {st.following ? 'Following' : 'Follow'}
                 </button>
-              )
             }
           </div>
 
-          <div style={{ height: 1, background: 'rgba(0,0,0,0.07)', marginBottom: 16 }} />
+          <div style={{ height: 1, background: 'rgba(0,0,0,0.07)', marginBottom: 14 }} />
 
-          {/* Share row */}
-          <div style={{ display: 'flex', gap: 10 }}>
+          {/* 🔗 Share + Copy — icon only buttons */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
             {[
-              { label: 'Share', icon: <Share2 size={15} />, onClick: handleShare },
-              { label: 'Copy Link', icon: <LinkIcon size={15} />, onClick: () => set({ copyOpen: true }) },
+              { icon: <Share2 size={17} />,   onClick: handleShare,               label: 'Share'     },
+              { icon: <LinkIcon size={17} />, onClick: () => set({ copyOpen: true }), label: 'Copy link' },
             ].map(btn => (
-              <button key={btn.label} onClick={btn.onClick} className="action-btn"
-                style={{ flex: 1, padding: '13px 0', borderRadius: 12, background: 'rgba(0,0,0,0.04)', border: '1px solid rgba(0,0,0,0.07)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, fontFamily: "'DM Sans', sans-serif", fontSize: 13, fontWeight: 600, color: 'rgba(0,0,0,0.6)', cursor: 'pointer' }}>
-                {btn.icon}{btn.label}
+              <button key={btn.label} onClick={btn.onClick} className="act-btn" aria-label={btn.label}
+                style={{ flex: 1, padding: '13px 0', borderRadius: 12, background: 'rgba(0,0,0,0.04)', border: '1px solid rgba(0,0,0,0.07)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(0,0,0,0.5)', cursor: 'pointer' }}>
+                {btn.icon}
               </button>
             ))}
           </div>
 
-          {/* Use as profile picture — only for authenticated users */}
+          {/* ⬇️ Download — 🔒 locked for guests, inline in scroll */}
+          <button
+            onClick={session ? handleDownload : () => set({ loginAction: 'download wallpapers', showLogin: true })}
+            disabled={st.downloading}
+            className="act-btn"
+            style={{ width: '100%', padding: '15px 0', borderRadius: 14, border: 'none', fontFamily: F, fontSize: 15, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9, color: '#fff', background: st.downloaded ? '#10b981' : 'linear-gradient(135deg,#1a1a1a 0%,#0a0a0a 100%)', opacity: st.downloading ? 0.7 : 1, cursor: st.downloading ? 'not-allowed' : 'pointer', boxShadow: st.downloaded ? '0 8px 24px rgba(16,185,129,0.3)' : '0 8px 24px rgba(0,0,0,0.15)', transition: 'background .3s,box-shadow .3s,opacity .2s', letterSpacing: '-0.01em' }}>
+            {st.downloading
+              ? <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
+              : st.downloaded
+                ? <><Check size={18} />Downloaded</>
+                : !session
+                  ? <><Lock size={18} />Download Wallpaper</>
+                  : <><Download size={18} />Download Wallpaper</>
+            }
+          </button>
+
+          {/* 🖼️ Set as profile picture — only shown when logged in */}
           {session && (
-            <button onClick={handleSetPfp} disabled={st.pfpSetting || st.pfpSet} className="action-btn"
-              style={{ width: '100%', marginTop: 10, padding: '13px 0', borderRadius: 12, border: `1px solid ${st.pfpSet ? 'rgba(16,185,129,0.3)' : 'rgba(0,0,0,0.07)'}`, background: st.pfpSet ? 'rgba(16,185,129,0.06)' : 'rgba(0,0,0,0.04)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, fontFamily: "'DM Sans', sans-serif", fontSize: 13, fontWeight: 600, color: st.pfpSet ? '#10b981' : 'rgba(0,0,0,0.6)', cursor: st.pfpSetting || st.pfpSet ? 'default' : 'pointer', opacity: st.pfpSetting ? 0.6 : 1, transition: 'all .2s' }}>
+            <button onClick={handleSetPfp} disabled={st.pfpSetting || st.pfpSet} className="act-btn"
+              style={{ width: '100%', marginTop: 10, padding: '13px 0', borderRadius: 12, border: `1px solid ${st.pfpSet ? 'rgba(16,185,129,0.3)' : 'rgba(0,0,0,0.07)'}`, background: st.pfpSet ? 'rgba(16,185,129,0.06)' : 'rgba(0,0,0,0.04)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, fontFamily: F, fontSize: 13, fontWeight: 600, color: st.pfpSet ? '#10b981' : 'rgba(0,0,0,0.6)', cursor: st.pfpSetting || st.pfpSet ? 'default' : 'pointer', opacity: st.pfpSetting ? 0.6 : 1, transition: 'all .2s' }}>
               {st.pfpSetting
                 ? <><Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} />Setting...</>
                 : st.pfpSet
@@ -351,19 +391,19 @@ export default function WallpaperDetail({ initialWallpaper }: { initialWallpaper
               }
             </button>
           )}
+
+          {/* 🏷️ Tags */}
+          {wp.tags?.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginTop: 16 }}>
+              {wp.tags.map(tag => (
+                <span key={tag} style={{ padding: '5px 12px', borderRadius: 100, border: '1px solid rgba(0,0,0,0.1)', fontSize: 12, fontWeight: 500, color: 'rgba(0,0,0,0.45)', background: 'transparent' }}>
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       )}
-
-      {/* ── Download button ── */}
-      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 50, padding: '12px 16px max(20px, env(safe-area-inset-bottom))', background: 'linear-gradient(to top, rgba(247,247,245,1) 60%, rgba(247,247,245,0) 100%)' }}>
-        <button onClick={handleDownload} disabled={st.downloading} className="action-btn"
-          style={{ width: '100%', padding: '15px 0', borderRadius: 14, border: 'none', fontFamily: "'DM Sans', sans-serif", fontSize: 15, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9, color: '#fff', background: st.downloaded ? '#10b981' : 'linear-gradient(135deg, #1a1a1a 0%, #0a0a0a 100%)', opacity: st.downloading ? 0.7 : 1, cursor: st.downloading ? 'not-allowed' : 'pointer', boxShadow: st.downloaded ? '0 8px 24px rgba(16,185,129,0.3)' : '0 8px 24px rgba(0,0,0,0.18)', transition: 'background .3s, box-shadow .3s, opacity .2s', letterSpacing: '-0.01em' }}>
-          {st.downloading
-            ? <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
-            : st.downloaded ? <><Check size={18} />Downloaded</> : <><Download size={18} />Download Wallpaper</>
-          }
-        </button>
-      </div>
     </div>
   );
 }
