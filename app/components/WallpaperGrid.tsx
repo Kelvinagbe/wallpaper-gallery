@@ -31,27 +31,35 @@ type WallpaperGridProps = {
 };
 
 export const WallpaperGrid = ({ wallpapers, isLoading, onWallpaperClick, onLoadMore, hasMore = true }: WallpaperGridProps) => {
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadingMore,   setLoadingMore]   = useState(false);
   const [hasEverLoaded, setHasEverLoaded] = useState(false);
   const loadMoreTriggerRef = useRef<HTMLDivElement>(null);
+  const loadingMoreRef     = useRef(false); // ref-guard avoids stale closure in observer
 
   usePrefetch(useMemo(() => wallpapers.slice(20, 30).map(wp => wp.url), [wallpapers]));
 
-  useEffect(() => { if (wallpapers.length > 0 && !hasEverLoaded) setHasEverLoaded(true); }, [wallpapers.length]);
+  useEffect(() => {
+    if (wallpapers.length > 0 && !hasEverLoaded) setHasEverLoaded(true);
+  }, [wallpapers.length, hasEverLoaded]);
 
+  // Intersection observer — uses ref guard so deps stay stable
   useEffect(() => {
     if (!loadMoreTriggerRef.current || !onLoadMore || !hasMore) return;
+
     const observer = new IntersectionObserver(async ([entry]) => {
-      if (entry.isIntersecting && !loadingMore && !isLoading && hasMore) {
-        setLoadingMore(true);
-        try { await onLoadMore(); } catch { console.error('Load more failed'); }
-        finally { setLoadingMore(false); }
-      }
+      if (!entry.isIntersecting || loadingMoreRef.current || !hasMore) return;
+      loadingMoreRef.current = true;
+      setLoadingMore(true);
+      try { await onLoadMore(); }
+      catch { console.error('Load more failed'); }
+      finally { loadingMoreRef.current = false; setLoadingMore(false); }
     }, { threshold: 0.1, rootMargin: '400px' });
+
     observer.observe(loadMoreTriggerRef.current);
     return () => observer.disconnect();
-  }, [onLoadMore, loadingMore, isLoading, hasMore]);
+  }, [onLoadMore, hasMore]); // removed loadingMore — now tracked via ref
 
+  // ── States ────────────────────────────────────────────────────
   if (!hasEverLoaded && isLoading) return (
     <>
       <div className="wallpaper-grid">{Array.from({ length: 10 }, (_, i) => <ShimmerCard key={i} index={i} />)}</div>
@@ -78,8 +86,13 @@ export const WallpaperGrid = ({ wallpapers, isLoading, onWallpaperClick, onLoadM
     <>
       <div className="wallpaper-grid">
         {wallpapers.map((wp, idx) => (
-          <WallpaperCard key={wp.id} wp={wp} priority={idx < 6} placeholderIndex={idx}
-            onClick={onWallpaperClick ? () => onWallpaperClick(wp) : undefined} />
+          <WallpaperCard
+            key={wp.id}
+            wp={wp}
+            priority={idx < 6}
+            placeholderIndex={idx}
+            onClick={onWallpaperClick ? () => onWallpaperClick(wp) : undefined}
+          />
         ))}
       </div>
 
@@ -88,7 +101,10 @@ export const WallpaperGrid = ({ wallpapers, isLoading, onWallpaperClick, onLoadM
       {loadingMore && (
         <div className="flex flex-col items-center justify-center py-8 gap-2">
           <div className="flex items-center gap-1.5">
-            {[0, 1, 2].map(i => <div key={i} className="w-2 h-2 rounded-full bg-gray-300" style={{ animation: `dotBounce 1.2s ease-in-out ${i * 0.2}s infinite` }} />)}
+            {[0, 1, 2].map(i => (
+              <div key={i} className="w-2 h-2 rounded-full bg-gray-300"
+                style={{ animation: `dotBounce 1.2s ease-in-out ${i * 0.2}s infinite` }} />
+            ))}
           </div>
           <span className="text-gray-400 text-xs">Loading more...</span>
         </div>
