@@ -29,6 +29,7 @@ const transformWallpaper = (wp: any): Wallpaper => ({
   verified:    wp.profiles?.verified || false,
   createdAt:   wp.created_at,
   category:    wp.category || 'Other',
+  type:        wp.type || 'mobile',
 });
 
 const transformProfile = (p: any): UserProfile => ({
