@@ -101,7 +101,7 @@ export const WallpaperCard = ({ wp, onClick, priority = false, placeholderIndex 
 
   const handleUploaderClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (wp.userId) { startLoader(); router.push(`/profile/${wp.userId}`); }
+    if (wp.userId) { startLoader(); router.push(`/user/${wp.userId}`); }
   };
 
   const handleLike = async (e: React.MouseEvent) => {
