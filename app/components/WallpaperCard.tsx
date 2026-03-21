@@ -86,6 +86,7 @@ export const WallpaperCard = ({ wp, onClick, priority = false, placeholderIndex 
   const isMounted = useRef(true);
   const imgSrc    = wp.thumbnail || wp.url;
   const ph        = COLORS[placeholderIndex % COLORS.length];
+  const isPC      = wp.type === 'pc';
   const fmt       = (n: number) => n >= 1_000_000 ? `${(n/1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n/1_000).toFixed(1)}k` : String(n);
 
   useEffect(() => () => { isMounted.current = false; }, []);
@@ -158,9 +159,10 @@ export const WallpaperCard = ({ wp, onClick, priority = false, placeholderIndex 
   // ── Render ───────────────────────────────────────────────────
   return (
     <>
+      {/* Card wrapper — aspect ratio switches based on type */}
       <div
         className="relative w-full rounded-xl overflow-hidden cursor-pointer"
-        style={{ aspectRatio: '9/16', background: ph.bg }}
+        style={{ aspectRatio: isPC ? '16/9' : '9/16', background: ph.bg }}
         onClick={handleCardClick}
       >
         {/* Shimmer */}
@@ -173,7 +175,10 @@ export const WallpaperCard = ({ wp, onClick, priority = false, placeholderIndex 
         {/* Image */}
         <Image
           src={imgSrc} alt={wp.title} fill
-          sizes="(max-width:480px) 50vw,(max-width:768px) 33vw,(max-width:1024px) 25vw,20vw"
+          sizes={isPC
+            ? '(max-width:768px) 100vw, 50vw'
+            : '(max-width:480px) 50vw,(max-width:768px) 33vw,(max-width:1024px) 25vw,20vw'
+          }
           onLoad={() => { imgCache.add(imgSrc); if (isMounted.current) set({ loaded: true }); }}
           className="object-cover z-[2]"
           priority={priority} loading={priority ? 'eager' : 'lazy'}
@@ -182,40 +187,48 @@ export const WallpaperCard = ({ wp, onClick, priority = false, placeholderIndex 
 
         {/* Gradient overlay */}
         {state.loaded && (
-          <div className="absolute inset-0 z-[3]" style={{ background: 'linear-gradient(to top,rgba(0,0,0,0.88) 0%,rgba(0,0,0,0.2) 40%,transparent 65%)' }} />
+          <div className="absolute inset-0 z-[3]" style={{
+            background: isPC
+              ? 'linear-gradient(to top,rgba(0,0,0,0.7) 0%,rgba(0,0,0,0.1) 50%,transparent 75%)'
+              : 'linear-gradient(to top,rgba(0,0,0,0.88) 0%,rgba(0,0,0,0.2) 40%,transparent 65%)',
+          }} />
+        )}
+
+        {/* PC type badge */}
+        {state.loaded && isPC && (
+          <div className="absolute top-2 left-2 z-[5]" style={{ padding: '2px 7px', borderRadius: 5, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)', fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.85)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+            Desktop
+          </div>
         )}
 
         {/* Bottom info */}
         {state.loaded && (
-          <div className="absolute bottom-0 left-0 right-0 z-[4] px-2 pb-2.5 pt-6">
+          <div className="absolute bottom-0 left-0 right-0 z-[4]" style={{ padding: isPC ? '8px 10px 8px' : '8px 8px 10px' }}>
 
-            {/* Uploader — uses uploadedBy / userAvatar / userId / verified from Wallpaper type */}
+            {/* Uploader */}
             {wp.uploadedBy && (
               <button
                 onClick={handleUploaderClick}
                 className="flex items-center gap-1.5 mb-1.5 w-full"
                 aria-label={`View ${wp.uploadedBy}'s profile`}
               >
-                {wp.userAvatar ? (
-                  <img
-                    src={wp.userAvatar}
-                    alt={wp.uploadedBy}
-                    className="w-4 h-4 rounded-full object-cover flex-shrink-0"
-                    style={{ border: '1px solid rgba(255,255,255,0.25)' }}
+                {wp.userAvatar && wp.userAvatar !== 'favicon.ico' ? (
+                  <img src={wp.userAvatar} alt={wp.uploadedBy}
+                    className="rounded-full object-cover flex-shrink-0"
+                    style={{ width: isPC ? 18 : 16, height: isPC ? 18 : 16, border: '1px solid rgba(255,255,255,0.25)' }}
                   />
                 ) : (
-                  <div
-                    className="w-4 h-4 rounded-full flex-shrink-0 flex items-center justify-center text-white"
-                    style={{ fontSize: 7, fontWeight: 800, background: 'rgba(255,255,255,0.25)', border: '1px solid rgba(255,255,255,0.3)' }}
-                  >
+                  <div className="rounded-full flex-shrink-0 flex items-center justify-center text-white"
+                    style={{ width: isPC ? 18 : 16, height: isPC ? 18 : 16, fontSize: 7, fontWeight: 800, background: 'rgba(255,255,255,0.25)', border: '1px solid rgba(255,255,255,0.3)' }}>
                     {wp.uploadedBy[0]?.toUpperCase()}
                   </div>
                 )}
-                <span className="text-[9px] font-medium text-white truncate leading-none">
+                <span className="truncate leading-none text-white"
+                  style={{ fontSize: isPC ? 10 : 9, fontWeight: 500, opacity: 0.75 }}>
                   @{wp.uploadedBy}
                 </span>
                 {wp.verified && (
-                  <svg width="8" height="8" viewBox="0 0 20 20" fill="none" className="flex-shrink-0">
+                  <svg width={isPC ? 10 : 8} height={isPC ? 10 : 8} viewBox="0 0 20 20" fill="none" className="flex-shrink-0">
                     <circle cx="10" cy="10" r="10" fill="#1877F2"/>
                     <path d="M6.5 10.2L8.8 12.5L13.5 7.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                   </svg>
@@ -223,15 +236,20 @@ export const WallpaperCard = ({ wp, onClick, priority = false, placeholderIndex 
               </button>
             )}
 
-            {/* Title */}
-            <p className="text-white text-[11px] font-medium leading-tight line-clamp-1 mb-1.5">{wp.title}</p>
-
-            {/* Like */}
-            <div className="flex items-center justify-end">
-              <button aria-label="Like" onClick={handleLike} className="flex items-center gap-1">
-                <Heart className={`w-3.5 h-3.5 transition-all ${state.liked ? 'fill-rose-500 text-rose-500 scale-110' : 'text-white/60'}`} />
+            {/* Title + like */}
+            <div className="flex items-end justify-between gap-2">
+              <p className="text-white leading-tight line-clamp-1 flex-1"
+                style={{ fontSize: isPC ? 12 : 11, fontWeight: 600, margin: 0 }}>
+                {wp.title}
+              </p>
+              <button aria-label="Like" onClick={handleLike} className="flex items-center gap-1 flex-shrink-0">
+                <Heart className={`transition-all ${state.liked ? 'fill-rose-500 text-rose-500 scale-110' : 'text-white/60'}`}
+                  style={{ width: isPC ? 14 : 13, height: isPC ? 14 : 13 }} />
                 {likeCount > 0 && (
-                  <span className={`text-[10px] font-medium ${state.liked ? 'text-rose-400' : 'text-white/50'}`}>{fmt(likeCount)}</span>
+                  <span className={`font-medium ${state.liked ? 'text-rose-400' : 'text-white/50'}`}
+                    style={{ fontSize: isPC ? 11 : 10 }}>
+                    {fmt(likeCount)}
+                  </span>
                 )}
               </button>
             </div>
@@ -249,6 +267,33 @@ export const WallpaperCard = ({ wp, onClick, priority = false, placeholderIndex 
           </button>
         )}
       </div>
+
+      {/* PC — title + uploader below image (Unsplash style) */}
+      {isPC && state.loaded && (
+        <div style={{ padding: '8px 2px 0' }}>
+          <p style={{ fontSize: 13, fontWeight: 600, color: '#0a0a0a', margin: '0 0 4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {wp.title}
+          </p>
+          {wp.uploadedBy && (
+            <button onClick={handleUploaderClick} className="flex items-center gap-1.5" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+              {wp.userAvatar && wp.userAvatar !== 'favicon.ico' ? (
+                <img src={wp.userAvatar} alt={wp.uploadedBy} style={{ width: 16, height: 16, borderRadius: '50%', objectFit: 'cover' }} />
+              ) : (
+                <div style={{ width: 16, height: 16, borderRadius: '50%', background: 'rgba(0,0,0,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 7, fontWeight: 700, color: 'rgba(0,0,0,0.5)' }}>
+                  {wp.uploadedBy[0]?.toUpperCase()}
+                </div>
+              )}
+              <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.45)', fontWeight: 500 }}>@{wp.uploadedBy}</span>
+              {wp.verified && (
+                <svg width="10" height="10" viewBox="0 0 20 20" fill="none">
+                  <circle cx="10" cy="10" r="10" fill="#1877F2"/>
+                  <path d="M6.5 10.2L8.8 12.5L13.5 7.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              )}
+            </button>
+          )}
+        </div>
+      )}
 
       <BottomSheet
         isOpen={state.showMenu} onClose={() => set({ showMenu: false })}
