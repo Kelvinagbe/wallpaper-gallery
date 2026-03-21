@@ -14,18 +14,22 @@ const COLORS = [
 ];
 
 const CSS = `
+  /* ── Masonry layout ── */
   .wg {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 14px;
+    columns: 2;
+    column-gap: 14px;
     padding: 6px;
   }
-  @media(min-width:480px)  { .wg { grid-template-columns: repeat(3,1fr) } }
-  @media(min-width:768px)  { .wg { grid-template-columns: repeat(4,1fr) } }
-  @media(min-width:1024px) { .wg { grid-template-columns: repeat(5,1fr) } }
+  @media(min-width:480px)  { .wg { columns: 3 } }
+  @media(min-width:768px)  { .wg { columns: 4 } }
+  @media(min-width:1024px) { .wg { columns: 5 } }
 
-  /* PC cards span full row */
-  .wg-pc { grid-column: 1 / -1; }
+  /* Each card breaks to its natural height */
+  .wg-item {
+    break-inside: avoid;
+    margin-bottom: 14px;
+    display: block;
+  }
 
   @keyframes shimmerSweep { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
   @keyframes dotBounce    { 0%,80%,100%{transform:scale(0.6);opacity:0.4} 40%{transform:scale(1);opacity:1} }
@@ -34,8 +38,10 @@ const CSS = `
 const ShimmerCard = ({ index, opacity = 1 }: { index: number; opacity?: number }) => {
   const c = COLORS[index % COLORS.length];
   return (
-    <div className="relative w-full rounded-xl overflow-hidden" style={{ aspectRatio: '9/16', background: c.bg, opacity }}>
-      <div className="absolute inset-0" style={{ background: `linear-gradient(105deg,transparent 40%,${c.shimmer}80 50%,transparent 60%)`, backgroundSize: '200% 100%', animation: 'shimmerSweep 1.6s ease-in-out infinite' }} />
+    <div className="wg-item">
+      <div className="relative w-full rounded-xl overflow-hidden" style={{ aspectRatio: '9/16', background: c.bg, opacity }}>
+        <div className="absolute inset-0" style={{ background: `linear-gradient(105deg,transparent 40%,${c.shimmer}80 50%,transparent 60%)`, backgroundSize: '200% 100%', animation: 'shimmerSweep 1.6s ease-in-out infinite' }} />
+      </div>
     </div>
   );
 };
@@ -77,7 +83,7 @@ export const WallpaperGrid = ({ wallpapers, isLoading, onWallpaperClick, onLoadM
     return () => observer.disconnect();
   }, [onLoadMore, hasMore]);
 
-  if (!hasEverLoaded && isLoading)                         return <Shimmers count={10} />;
+  if (!hasEverLoaded && isLoading)                           return <Shimmers count={10} />;
   if (hasEverLoaded && wallpapers.length === 0 && isLoading) return <Shimmers count={6} opacity={0.5} />;
 
   if (wallpapers.length === 0 && !isLoading) return (
@@ -92,9 +98,7 @@ export const WallpaperGrid = ({ wallpapers, isLoading, onWallpaperClick, onLoadM
     <>
       <div className="wg">
         {wallpapers.map((wp, idx) => (
-          // PC cards get wg-pc class — spans full row
-          // Mobile cards get no class — normal grid cell
-          <div key={wp.id} className={wp.type === 'pc' ? 'wg-pc' : ''}>
+          <div key={wp.id} className="wg-item">
             <WallpaperCard
               wp={wp}
               priority={idx < 6}
