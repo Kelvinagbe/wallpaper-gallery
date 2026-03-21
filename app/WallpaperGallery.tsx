@@ -6,7 +6,6 @@ import { feedCache } from '@/lib/feedCache';
 import { Header } from './components/Header';
 import { Navigation } from './components/Navigation';
 import { WallpaperGrid } from './components/WallpaperGrid';
-import { DesktopWallpaperRow } from './components/DesktopWallpaperRow';
 import { GlobalStyles } from './components/GlobalStyles';
 import type { Wallpaper, Filter } from './types';
 
@@ -91,10 +90,6 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
     return () => window.removeEventListener('pagehide', save);
   }, []);
 
-  // Split wallpapers by type
-  const pcWalls     = wallpapers.filter(wp => wp.type === 'pc');
-  const mobileWalls = wallpapers.filter(wp => wp.type !== 'pc');
-
   return (
     <div className="min-h-screen bg-white text-gray-900">
       <GlobalStyles />
@@ -102,9 +97,8 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
       <div className="sidebar-offset">
         <Header filter={filter} setFilter={handleFilterChange} onMenuOpen={() => setSidebarOpen(true)} />
         <main className="max-w-7xl mx-auto px-4 py-6 pb-8">
-          {pcWalls.length > 0 && <DesktopWallpaperRow wallpapers={pcWalls} />}
           <WallpaperGrid
-            wallpapers={mobileWalls}
+            wallpapers={wallpapers}
             isLoading={isInitialLoad}
             onLoadMore={handleLoadMore}
             hasMore={hasMore}
