@@ -12,21 +12,21 @@ import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/app/components/AuthProvider';
 import { useUpload } from '@/app/hooks/useUpload';
 
-// ─── Constants ─────────────────────────────────────────────────────────────────
+// ── Constants ────────────────────────────────────────────────────
 const CATEGORIES = [
   'Nature', 'Cars', 'Anime', 'City', 'Abstract', 'Space',
   'Animals', 'Architecture', 'Gaming', 'Minimal', 'Dark', 'Gradient',
 ];
 const DAILY_LIMIT = 4;
 
-// ─── Shared styles ─────────────────────────────────────────────────────────────
+// ── Shared styles ────────────────────────────────────────────────
 const S = {
   solidBtn: { flex: 1, padding: '13px 0', borderRadius: 12, border: 'none', background: '#0a0a0a', color: '#fff', fontFamily: 'inherit', fontSize: 14, fontWeight: 600, cursor: 'pointer' } as React.CSSProperties,
   ghostBtn: { flex: 1, padding: '13px 0', borderRadius: 12, border: '1px solid rgba(0,0,0,0.1)', background: 'transparent', color: 'rgba(0,0,0,0.5)', fontFamily: 'inherit', fontSize: 14, fontWeight: 500, cursor: 'pointer' } as React.CSSProperties,
   input:    { width: '100%', padding: '11px 14px', background: 'rgba(0,0,0,0.03)', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 12, fontSize: 14, color: '#0a0a0a', fontFamily: 'inherit', outline: 'none', transition: 'border-color .15s' } as React.CSSProperties,
 };
 
-// ─── Context ───────────────────────────────────────────────────────────────────
+// ── Context ──────────────────────────────────────────────────────
 const UploadModalCtx = createContext<{ open: () => void; close: () => void } | null>(null);
 export const useUploadModal = () => {
   const ctx = useContext(UploadModalCtx);
@@ -34,7 +34,7 @@ export const useUploadModal = () => {
   return ctx;
 };
 
-// ─── Spinner ───────────────────────────────────────────────────────────────────
+// ── Spinner ──────────────────────────────────────────────────────
 const Spinner = () => (
   <svg width="48" height="48" viewBox="0 0 48 48" fill="none" style={{ animation: 'upl-spin 0.8s linear infinite' }}>
     <circle cx="24" cy="24" r="20" stroke="rgba(0,0,0,0.08)" strokeWidth="4" />
@@ -42,8 +42,7 @@ const Spinner = () => (
   </svg>
 );
 
-// ─── Daily limit helper ────────────────────────────────────────────────────────
-// Checks how many wallpapers user has uploaded today via Supabase
+// ── Daily limit helper ───────────────────────────────────────────
 const getTodayUploadCount = async (supabase: ReturnType<typeof createClient>, userId: string): Promise<number> => {
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
@@ -55,15 +54,15 @@ const getTodayUploadCount = async (supabase: ReturnType<typeof createClient>, us
   return count ?? 0;
 };
 
-// ─── Suspension check ────────────────────────────────────────────────────────
+// ── Suspension check ─────────────────────────────────────────────
 interface SuspensionStatus {
-  suspended:     boolean;
+  suspended:      boolean;
   suspendedUntil?: Date;
-  violations:    number;
+  violations:     number;
 }
 
 const checkSuspension = async (
-  supabase: ReturnType<typeof createClient>, userId: string
+  supabase: ReturnType<typeof createClient>, userId: string,
 ): Promise<SuspensionStatus> => {
   const { data } = await supabase
     .from('profiles')
@@ -76,7 +75,7 @@ const checkSuspension = async (
   return { suspended, suspendedUntil: suspendedUntil ?? undefined, violations: data.violations ?? 0 };
 };
 
-// ─── Countdown hook ───────────────────────────────────────────────────────────
+// ── Countdown hook ───────────────────────────────────────────────
 const useCountdown = (until: Date | undefined) => {
   const [timeLeft, setTimeLeft] = useState('');
   useEffect(() => {
@@ -97,7 +96,42 @@ const useCountdown = (until: Date | undefined) => {
   return timeLeft;
 };
 
-// ─── Upload Modal ──────────────────────────────────────────────────────────────
+// ── Type picker ──────────────────────────────────────────────────
+const TypePicker = ({ value, onChange, disabled }: {
+  value: 'mobile' | 'pc';
+  onChange: (v: 'mobile' | 'pc') => void;
+  disabled?: boolean;
+}) => (
+  <div style={{ display: 'flex', gap: 8 }}>
+    {([
+      { key: 'mobile', label: '📱 Mobile', sub: '9:16' },
+      { key: 'pc',     label: '🖥️ Desktop', sub: '16:9' },
+    ] as const).map(({ key, label, sub }) => {
+      const active = value === key;
+      return (
+        <button
+          key={key}
+          onClick={() => !disabled && onChange(key)}
+          style={{
+            flex: 1, padding: '10px 0', borderRadius: 12, fontFamily: 'inherit',
+            fontSize: 13, fontWeight: 600, cursor: disabled ? 'default' : 'pointer',
+            transition: 'all .15s', display: 'flex', flexDirection: 'column',
+            alignItems: 'center', gap: 2,
+            border: active ? '1.5px solid #0a0a0a' : '1px solid rgba(0,0,0,0.1)',
+            background: active ? '#0a0a0a' : 'transparent',
+            color: active ? '#fff' : 'rgba(0,0,0,0.45)',
+            opacity: disabled ? 0.4 : 1,
+          }}
+        >
+          <span>{label}</span>
+          <span style={{ fontSize: 10, fontWeight: 400, opacity: 0.65 }}>{sub} portrait</span>
+        </button>
+      );
+    })}
+  </div>
+);
+
+// ── Upload Modal ─────────────────────────────────────────────────
 const UploadModal = ({ onClose }: { onClose: () => void }) => {
   const { session } = useAuth();
   const supabase    = createClient();
@@ -106,6 +140,7 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
   const [title,       setTitle]       = useState('');
   const [desc,        setDesc]        = useState('');
   const [category,    setCategory]    = useState('');
+  const [type,        setType]        = useState<'mobile' | 'pc'>('mobile');
   const [catOpen,     setCatOpen]     = useState(false);
   const [file,        setFile]        = useState<File | null>(null);
   const [preview,     setPreview]     = useState('');
@@ -113,9 +148,9 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
   const [dragging,    setDragging]    = useState(false);
   const [closing,     setClosing]     = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
-  const [todayCount,   setTodayCount]   = useState(0);
-  const [suspension,   setSuspension]   = useState<SuspensionStatus>({ suspended: false, violations: 0 });
-  const [violation,    setViolation]    = useState<{ reason: string; details?: string } | null>(null);
+  const [todayCount,  setTodayCount]  = useState(0);
+  const [suspension,  setSuspension]  = useState<SuspensionStatus>({ suspended: false, violations: 0 });
+  const [violation,   setViolation]   = useState<{ reason: string; details?: string } | null>(null);
 
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -135,7 +170,12 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
         setSuspension(susp);
       }
       const cached = getCachedData();
-      if (cached) { setTitle(cached.title || ''); setDesc(cached.description || ''); setCategory(cached.category || ''); }
+      if (cached) {
+        setTitle(cached.title || '');
+        setDesc(cached.description || '');
+        setCategory(cached.category || '');
+        setType(cached.type || 'mobile');
+      }
       setAuthLoading(false);
     })();
     document.body.style.overflow = 'hidden';
@@ -149,7 +189,7 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
   };
 
   const resetAll = () => {
-    setTitle(''); setDesc(''); setCategory('');
+    setTitle(''); setDesc(''); setCategory(''); setType('mobile');
     setFile(null); setPreview(''); setImgDims(null);
     reset();
   };
@@ -160,20 +200,24 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
     const url = URL.createObjectURL(f);
     setPreview(url);
     const img = new Image();
-    img.onload = () => setImgDims({ w: img.naturalWidth, h: img.naturalHeight });
+    img.onload = () => {
+      const w = img.naturalWidth;
+      const h = img.naturalHeight;
+      setImgDims({ w, h });
+      // Auto-detect type from image dimensions
+      setType(w > h ? 'pc' : 'mobile');
+    };
     img.src = url;
   }, []);
 
   const doUpload = async (resume: boolean) => {
     setViolation(null);
-    const result = await uploadFile(file!, title, desc, resume, category);
+    const result = await uploadFile(file!, title, desc, resume, category, type);
     if (result.success) {
       setTodayCount(c => c + 1);
       setTimeout(() => { resetAll(); close(); }, 2000);
     } else if (result.violation && result.error) {
-      // Set violation immediately so overlay renders right away
       setViolation({ reason: result.error, details: result.details });
-      // Then fetch fresh suspension status in background
       checkSuspension(supabase, user?.id).then(susp => setSuspension(susp));
     }
   };
@@ -197,7 +241,7 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
       <div className={closing ? 'upl-sheet-down' : 'upl-sheet-up'} onClick={e => e.stopPropagation()}
         style={{ position: 'relative', zIndex: 71, background: '#fff', borderRadius: '24px 24px 0 0', paddingBottom: 'max(20px, env(safe-area-inset-bottom))', boxShadow: '0 -4px 40px rgba(0,0,0,0.1)', maxHeight: '90dvh', display: 'flex', flexDirection: 'column' }}>
 
-        {/* ── Suspension screen — shows immediately after 3rd violation too ── */}
+        {/* ── Suspension overlay ── */}
         {suspension.suspended && !violation && (
           <div style={{ position: 'absolute', inset: 0, zIndex: 10, borderRadius: '24px 24px 0 0', background: '#fff', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: '32px 24px', textAlign: 'center' }}>
             <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'rgba(239,68,68,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -222,7 +266,7 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
           </div>
         )}
 
-        {/* Progress overlay — hidden for violation errors so banner shows */}
+        {/* ── Upload progress overlay ── */}
         {uploading && !violation && !isComplete && (
           <div style={{ position: 'absolute', inset: 0, zIndex: 10, borderRadius: '24px 24px 0 0', background: 'rgba(255,255,255,0.97)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: '32px 24px', animation: 'upl-overlay-in .25s ease forwards' }}>
             {error
@@ -260,7 +304,9 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
             </div>
             <div>
               <p style={{ fontSize: 20, fontWeight: 700, color: '#0a0a0a', letterSpacing: '-0.02em', marginBottom: 6 }}>Upload Complete!</p>
-              <p style={{ fontSize: 14, color: 'rgba(0,0,0,0.45)', lineHeight: 1.6, margin: 0 }}>Your wallpaper has been uploaded successfully and will be visible to everyone.</p>
+              <p style={{ fontSize: 14, color: 'rgba(0,0,0,0.45)', lineHeight: 1.6, margin: 0 }}>
+                Your {type === 'pc' ? 'desktop' : 'mobile'} wallpaper has been uploaded and will be visible to everyone.
+              </p>
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
               {[...Array(3)].map((_, i) => (
@@ -270,7 +316,7 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
           </div>
         )}
 
-        {/* ── Violation overlay — shows on top when image is rejected ── */}
+        {/* ── Violation overlay ── */}
         {violation && (
           <div style={{ position: 'absolute', inset: 0, zIndex: 20, borderRadius: '24px 24px 0 0', background: 'rgba(255,255,255,0.98)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: '32px 24px', textAlign: 'center', animation: 'upl-overlay-in .25s ease forwards' }}>
             <div style={{ width: 60, height: 60, borderRadius: '50%', background: 'rgba(239,68,68,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -288,9 +334,7 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
                 </p>
               </div>
             </div>
-            <div style={{ display: 'flex', gap: 10, width: '100%', maxWidth: 280 }}>
-              <button onClick={() => setViolation(null)} style={{ ...S.ghostBtn }}>Dismiss</button>
-            </div>
+            <button onClick={() => setViolation(null)} style={{ ...S.ghostBtn, maxWidth: 280 }}>Dismiss</button>
           </div>
         )}
 
@@ -299,20 +343,24 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
           <div style={{ width: 36, height: 4, borderRadius: 2, background: 'rgba(0,0,0,0.1)' }} />
         </div>
 
-        {/* Header */}
+       {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 20px 14px', flexShrink: 0, borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
           <div>
             <p style={{ fontSize: 16, fontWeight: 700, color: '#0a0a0a', letterSpacing: '-0.02em' }}>Upload Wallpaper</p>
             {authLoading
               ? <div style={{ width: 120, height: 12, borderRadius: 6, background: 'rgba(0,0,0,0.07)', marginTop: 5, animation: 'upl-shimmer 1.4s ease infinite' }} />
-              : <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
-                  {user ? <span style={{ fontSize: 12, color: '#10b981', fontWeight: 500 }}>{user.email}</span>
-                        : <span style={{ fontSize: 12, color: '#ef4444', fontWeight: 500 }}>Not signed in</span>}
+              : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2, flexWrap: 'wrap' }}>
+                  {user
+                    ? <span style={{ fontSize: 12, color: '#10b981', fontWeight: 500 }}>{user.email}</span>
+                    : <span style={{ fontSize: 12, color: '#ef4444', fontWeight: 500 }}>Not signed in</span>
+                  }
                   <span style={{ color: 'rgba(0,0,0,0.2)' }}>·</span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 12, fontWeight: 500, color: speedColor }}>
-                    <SpeedIcon size={11} />{speed === 'offline' ? 'Offline' : speed === 'slow' ? 'Slow' : 'Online'}
+                    <SpeedIcon size={11} />
+                    {speed === 'offline' ? 'Offline' : speed === 'slow' ? 'Slow' : 'Online'}
                   </span>
-                  {!authLoading && user && (
+                  {user && (
                     <>
                       <span style={{ color: 'rgba(0,0,0,0.2)' }}>·</span>
                       <span style={{ fontSize: 12, fontWeight: 500, color: limitReached ? '#ef4444' : 'rgba(0,0,0,0.4)' }}>
@@ -321,6 +369,7 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
                     </>
                   )}
                 </div>
+              )
             }
           </div>
           <button onClick={close} disabled={uploading && !error}
@@ -329,12 +378,12 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
           </button>
         </div>
 
-      
         {/* Body */}
         <div style={{ overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 14, flex: 1 }}>
 
           {authLoading ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ height: 52, borderRadius: 12, background: 'rgba(0,0,0,0.06)', animation: 'upl-shimmer 1.4s ease infinite' }} />
               <div style={{ display: 'flex', gap: 14 }}>
                 <div style={{ width: 100, height: 100, borderRadius: 16, background: 'rgba(0,0,0,0.06)', flexShrink: 0, animation: 'upl-shimmer 1.4s ease infinite' }} />
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -347,7 +396,7 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
             </div>
           ) : (
             <>
-              {/* Daily limit reached banner */}
+              {/* Daily limit banner */}
               {limitReached && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 12 }}>
                   <AlertCircle size={15} color="#ef4444" style={{ flexShrink: 0 }} />
@@ -362,9 +411,12 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
               {canResume && !uploading && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 12 }}>
                   <RefreshCw size={13} color="#10b981" />
-                  <p style={{ fontSize: 12, color: '#10b981', fontWeight: 500 }}>Previous upload interrupted — tap Upload to resume</p>
+                  <p style={{ fontSize: 12, color: '#10b981', fontWeight: 500, margin: 0 }}>Previous upload interrupted — tap Upload to resume</p>
                 </div>
               )}
+
+              {/* ── Type picker ── */}
+              <TypePicker value={type} onChange={setType} disabled={uploading || limitReached} />
 
               {/* Image + title row */}
               <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
@@ -373,24 +425,47 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
                   onDragOver={e => { e.preventDefault(); setDragging(true); }}
                   onDragLeave={() => setDragging(false)}
                   onDrop={e => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) selectFile(f); }}
-                  style={{ width: 100, height: 100, flexShrink: 0, borderRadius: 16, overflow: 'hidden', border: dragging ? '2px solid #0a0a0a' : preview ? '1px solid rgba(0,0,0,0.08)' : '2px dashed rgba(0,0,0,0.15)', background: 'rgba(0,0,0,0.02)', cursor: preview || limitReached ? 'default' : 'pointer', position: 'relative', transition: 'border-color .15s', opacity: limitReached ? 0.4 : 1 }}
+                  style={{
+                    width: type === 'pc' ? 160 : 100,
+                    height: type === 'pc' ? 90  : 100,
+                    flexShrink: 0, borderRadius: 16, overflow: 'hidden',
+                    border: dragging ? '2px solid #0a0a0a' : preview ? '1px solid rgba(0,0,0,0.08)' : '2px dashed rgba(0,0,0,0.15)',
+                    background: 'rgba(0,0,0,0.02)', cursor: preview || limitReached ? 'default' : 'pointer',
+                    position: 'relative', transition: 'all .2s', opacity: limitReached ? 0.4 : 1,
+                  }}
                 >
                   {preview ? (
                     <>
                       <img src={preview} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                      {imgDims && <div style={{ position: 'absolute', bottom: 4, left: 4, right: 4, textAlign: 'center', fontSize: 9, color: '#fff', fontWeight: 600, background: 'rgba(0,0,0,0.5)', borderRadius: 4, padding: '2px 0' }}>{imgDims.w}×{imgDims.h}</div>}
-                      {!uploading && <button onClick={e => { e.stopPropagation(); setPreview(''); setFile(null); setImgDims(null); }} style={{ position: 'absolute', top: 4, right: 4, width: 20, height: 20, borderRadius: '50%', background: 'rgba(0,0,0,0.55)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><X size={10} color="#fff" /></button>}
+                      {imgDims && (
+                        <div style={{ position: 'absolute', bottom: 4, left: 4, right: 4, textAlign: 'center', fontSize: 9, color: '#fff', fontWeight: 600, background: 'rgba(0,0,0,0.5)', borderRadius: 4, padding: '2px 0' }}>
+                          {imgDims.w}×{imgDims.h}
+                        </div>
+                      )}
+                      {!uploading && (
+                        <button
+                          onClick={e => { e.stopPropagation(); setPreview(''); setFile(null); setImgDims(null); }}
+                          style={{ position: 'absolute', top: 4, right: 4, width: 20, height: 20, borderRadius: '50%', background: 'rgba(0,0,0,0.55)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                          <X size={10} color="#fff" />
+                        </button>
+                      )}
                     </>
                   ) : (
                     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                       <ImageIcon size={22} color="rgba(0,0,0,0.25)" />
-                      <span style={{ fontSize: 10, color: 'rgba(0,0,0,0.3)', fontWeight: 500, textAlign: 'center' }}>Tap to add</span>
+                      <span style={{ fontSize: 10, color: 'rgba(0,0,0,0.3)', fontWeight: 500, textAlign: 'center' }}>
+                        {type === 'pc' ? '16:9 image' : '9:16 image'}
+                      </span>
                     </div>
                   )}
                 </div>
 
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Wallpaper title *" disabled={uploading || limitReached} maxLength={100} style={{ ...S.input, opacity: limitReached ? 0.4 : 1 }} />
+                  <input
+                    type="text" value={title} onChange={e => setTitle(e.target.value)}
+                    placeholder="Wallpaper title *" disabled={uploading || limitReached}
+                    maxLength={100} style={{ ...S.input, opacity: limitReached ? 0.4 : 1 }}
+                  />
                   {file ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px', background: 'rgba(0,0,0,0.03)', borderRadius: 10, border: '1px solid rgba(0,0,0,0.06)' }}>
                       <Check size={11} color="#10b981" style={{ flexShrink: 0 }} />
@@ -401,7 +476,8 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
                     <p style={{ fontSize: 11, color: 'rgba(0,0,0,0.3)', paddingLeft: 2 }}>PNG · JPG · WEBP · max 10MB</p>
                   )}
                   {preview && !uploading && !limitReached && (
-                    <button onClick={() => fileRef.current?.click()} style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid rgba(0,0,0,0.08)', background: 'transparent', fontSize: 11, fontWeight: 500, color: 'rgba(0,0,0,0.45)', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <button onClick={() => fileRef.current?.click()}
+                      style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid rgba(0,0,0,0.08)', background: 'transparent', fontSize: 11, fontWeight: 500, color: 'rgba(0,0,0,0.45)', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 4 }}>
                       <Upload size={10} />Change
                     </button>
                   )}
@@ -410,7 +486,9 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
 
               {/* Category */}
               <div>
-                <button onClick={() => !uploading && !limitReached && setCatOpen(p => !p)} disabled={uploading || limitReached}
+                <button
+                  onClick={() => !uploading && !limitReached && setCatOpen(p => !p)}
+                  disabled={uploading || limitReached}
                   style={{ ...S.input, display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: uploading || limitReached ? 'default' : 'pointer', color: category ? '#0a0a0a' : 'rgba(0,0,0,0.35)', opacity: limitReached ? 0.4 : 1 }}>
                   <span style={{ fontSize: 14 }}>{category || 'Select category (optional)'}</span>
                   <ChevronDown size={15} color="rgba(0,0,0,0.3)" style={{ flexShrink: 0, transition: 'transform .2s', transform: catOpen ? 'rotate(180deg)' : 'rotate(0deg)' }} />
@@ -431,7 +509,12 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
               </div>
 
               {/* Description */}
-              <textarea value={desc} onChange={e => setDesc(e.target.value)} placeholder="Short description (optional)" rows={2} disabled={uploading || limitReached} maxLength={300} style={{ ...S.input, resize: 'none', opacity: limitReached ? 0.4 : 1 }} />
+              <textarea
+                value={desc} onChange={e => setDesc(e.target.value)}
+                placeholder="Short description (optional)" rows={2}
+                disabled={uploading || limitReached} maxLength={300}
+                style={{ ...S.input, resize: 'none', opacity: limitReached ? 0.4 : 1 }}
+              />
             </>
           )}
         </div>
@@ -446,12 +529,13 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
         </div>
       </div>
 
-      <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) selectFile(f); }} />
+      <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }}
+        onChange={e => { const f = e.target.files?.[0]; if (f) selectFile(f); }} />
     </div>
   );
 };
 
-// ─── Provider ─────────────────────────────────────────────────────────────────
+// ── Provider ─────────────────────────────────────────────────────
 export const UploadModalProvider = ({ children }: { children: ReactNode }) => {
   const [visible, setVisible] = useState(false);
   const open  = useCallback(() => setVisible(true),  []);
