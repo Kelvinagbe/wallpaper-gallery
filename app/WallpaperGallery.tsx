@@ -6,7 +6,7 @@ import { feedCache } from '@/lib/feedCache';
 import { Header } from './components/Header';
 import { Navigation } from './components/Navigation';
 import { WallpaperGrid } from './components/WallpaperGrid';
-import { DesktopWallpaperRow } from './components/DesktopWallpaperRow';
+import { PCWallpaperRow } from './components/DesktopWallpaperRow';
 import { GlobalStyles } from './components/GlobalStyles';
 import type { Wallpaper, Filter } from './types';
 
