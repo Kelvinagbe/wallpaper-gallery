@@ -174,7 +174,7 @@ const UploadModal = ({ onClose }: { onClose: () => void }) => {
         setTitle(cached.title || '');
         setDesc(cached.description || '');
         setCategory(cached.category || '');
-        setType(cached.type || 'mobile');
+        setType(cached.wallType|| 'mobile');
       }
       setAuthLoading(false);
     })();
