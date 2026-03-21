@@ -19,9 +19,9 @@ const CSS = `
     column-gap: 6px;
     padding: 6px 4px;
   }
-  @media(min-width:480px)  { .wg { columns: 3; column-gap: 12px; padding: 12px 16px; } }
-  @media(min-width:768px)  { .wg { columns: 4; column-gap: 14px; padding: 14px 20px; } }
-  @media(min-width:1024px) { .wg { columns: 5; column-gap: 16px; padding: 16px 24px; } }
+  @media(min-width:480px)  { .wg { columns: 3; column-gap: 8px;  padding: 8px 6px;  } }
+@media(min-width:768px)  { .wg { columns: 4; column-gap: 10px; padding: 10px 8px; } }
+@media(min-width:1024px) { .wg { columns: 5; column-gap: 12px; padding: 12px 10px;} }
 
   .wg-item {
     break-inside: avoid;
