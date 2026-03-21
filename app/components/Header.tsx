@@ -20,6 +20,47 @@ const FILTERS: { value: Filter; label: string }[] = [
   { value: 'popular',  label: 'Popular'  },
 ];
 
+// ── Design tokens ────────────────────────────────────────────────
+const F = "'Outfit', sans-serif";
+const A = '#c8ff47';
+
+// ── Reusable style objects ───────────────────────────────────────
+const S: Record<string, React.CSSProperties> = {
+  row:       { display: 'flex', alignItems: 'center' },
+  iconBtn:   { width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, background: 'transparent', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 8, cursor: 'pointer', transition: 'border-color .15s, background .15s' },
+  ghostBtn:  { padding: '7px 16px', fontFamily: F, fontSize: 13, fontWeight: 600, border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, background: 'transparent', color: 'rgba(255,255,255,0.7)', cursor: 'pointer', transition: 'all .18s' },
+  accentBtn: { padding: '7px 18px', fontFamily: F, fontSize: 13, fontWeight: 700, border: 'none', borderRadius: 8, background: A, color: '#0a0a0a', cursor: 'pointer', transition: 'all .18s' },
+  backdrop:  { position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 },
+  modal:     { width: '100%', maxWidth: 380, background: '#fff', borderRadius: 20, overflow: 'hidden', boxShadow: '0 40px 120px rgba(0,0,0,0.25)' },
+  closeBtn:  { width: 30, height: 30, borderRadius: '50%', background: 'rgba(0,0,0,0.05)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background .15s' },
+  authBtn:   { width: '100%', padding: '14px 20px', borderRadius: 12, cursor: 'pointer', fontFamily: F, fontWeight: 600, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', transition: 'all .2s' },
+};
+
+// ── CSS classes (animations + tabs + sheet rows + responsive) ────
+const CSS = `
+  @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap');
+  @keyframes bdIn  { from{opacity:0} to{opacity:1} }
+  @keyframes bdOut { from{opacity:1} to{opacity:0} }
+  @keyframes mIn   { from{opacity:0;transform:scale(.95) translateY(10px)} to{opacity:1;transform:scale(1) translateY(0)} }
+  @keyframes mOut  { from{opacity:1;transform:scale(1) translateY(0)} to{opacity:0;transform:scale(.95) translateY(10px)} }
+  @keyframes shIn  { from{transform:translateY(100%)} to{transform:translateY(0)} }
+  @keyframes shOut { from{transform:translateY(0)} to{transform:translateY(100%)} }
+  .bd-in{animation:bdIn .22s ease forwards} .bd-out{animation:bdOut .22s ease forwards}
+  .m-in{animation:mIn .3s cubic-bezier(.16,1,.3,1) forwards} .m-out{animation:mOut .22s ease forwards}
+  .sh-in{animation:shIn .32s cubic-bezier(.16,1,.3,1) forwards} .sh-out{animation:shOut .26s ease forwards}
+  .wl-tab{position:relative;padding:0 16px;height:100%;display:flex;align-items:center;font-family:'Outfit',sans-serif;font-size:13px;font-weight:500;color:rgba(255,255,255,0.38);background:transparent;border:none;cursor:pointer;transition:color .18s;white-space:nowrap}
+  .wl-tab::after{content:'';position:absolute;bottom:0;left:16px;right:16px;height:1.5px;background:${A};transform:scaleX(0);transform-origin:left;transition:transform .22s cubic-bezier(.16,1,.3,1);border-radius:2px}
+  .wl-tab:hover{color:rgba(255,255,255,.72)} .wl-tab.active{color:#fff;font-weight:600} .wl-tab.active::after{transform:scaleX(1)}
+  .sheet-row{width:100%;padding:16px 22px;display:flex;align-items:center;justify-content:space-between;background:transparent;border:none;border-top:1px solid rgba(0,0,0,.05);font-family:'Outfit',sans-serif;font-size:15px;color:rgba(0,0,0,.55);cursor:pointer;transition:background .12s}
+  .sheet-row.active{font-weight:600;color:#000} .sheet-row:active{background:rgba(0,0,0,.03)}
+  @media(min-width:1024px){.mob{display:none!important}.desk{display:flex!important}}
+  @media(max-width:1023px){.desk{display:none!important}.mob{display:flex!important}}
+`;
+
+// ── Hover helpers ────────────────────────────────────────────────
+const hov = (el: EventTarget, on: Partial<CSSStyleDeclaration>, off: Partial<CSSStyleDeclaration>, enter: boolean) =>
+  Object.assign((el as HTMLElement).style, enter ? on : off);
+
 export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
   const router = useRouter();
   const { user } = useAuth();
@@ -31,122 +72,41 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
   const [closingSheet, setClosingSheet] = useState(false);
 
   useEffect(() => {
-    document.body.style.overflow = (showAuth || showSheet) ? 'hidden' : '';
+    document.body.style.overflow = showAuth || showSheet ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
   }, [showAuth, showSheet]);
 
-  const closeAuth = (cb?: () => void) => {
-    setClosingAuth(true);
-    setTimeout(() => { setShowAuth(false); setClosingAuth(false); cb?.(); }, 250);
-  };
-  const closeSheet = (cb?: () => void) => {
-    setClosingSheet(true);
-    setTimeout(() => { setShowSheet(false); setClosingSheet(false); cb?.(); }, 280);
-  };
-
-  const handleNav = (path: string) => closeAuth(() => router.push(path));
-
-  const hov = (
-    enter: Partial<CSSStyleDeclaration>,
-    leave: Partial<CSSStyleDeclaration>,
-  ) => ({
-    onMouseEnter: (e: React.MouseEvent<HTMLButtonElement>) => Object.assign(e.currentTarget.style, enter),
-    onMouseLeave: (e: React.MouseEvent<HTMLButtonElement>) => Object.assign(e.currentTarget.style, leave),
-  });
-
-  const isFiltered = filter !== 'all';
+  const closeAuth  = (cb?: () => void) => { setClosingAuth(true);  setTimeout(() => { setShowAuth(false);  setClosingAuth(false);  cb?.(); }, 250); };
+  const closeSheet = (cb?: () => void) => { setClosingSheet(true); setTimeout(() => { setShowSheet(false); setClosingSheet(false); cb?.(); }, 280); };
+  const handleNav  = (path: string) => closeAuth(() => router.push(path));
 
   return (
     <>
-      <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
-      <style>{`
-        @keyframes bdIn  { from{opacity:0} to{opacity:1} }
-        @keyframes bdOut { from{opacity:1} to{opacity:0} }
-        @keyframes mIn   { from{opacity:0;transform:scale(.96) translateY(-6px)} to{opacity:1;transform:scale(1) translateY(0)} }
-        @keyframes mOut  { from{opacity:1;transform:scale(1) translateY(0)} to{opacity:0;transform:scale(.96) translateY(-6px)} }
-        @keyframes shIn  { from{transform:translateY(100%)} to{transform:translateY(0)} }
-        @keyframes shOut { from{transform:translateY(0)} to{transform:translateY(100%)} }
-        .bd-in  { animation: bdIn  .22s ease forwards }
-        .bd-out { animation: bdOut .22s ease forwards }
-        .m-in   { animation: mIn   .25s cubic-bezier(.16,1,.3,1) forwards }
-        .m-out  { animation: mOut  .22s ease forwards }
-        .sh-in  { animation: shIn  .30s cubic-bezier(.16,1,.3,1) forwards }
-        .sh-out { animation: shOut .26s cubic-bezier(.4,0,1,1) forwards }
-
-        .hdr-menu-btn { display: flex; }
-        @media (min-width: 1024px) { .hdr-menu-btn { display: none !important; } }
-
-        .hdr-tab {
-          position: relative; padding: 0 14px; height: 56px;
-          display: flex; align-items: center;
-          font-family: 'Inter', sans-serif; font-size: 13px; font-weight: 500;
-          color: rgba(0,0,0,.4); background: transparent; border: none;
-          cursor: pointer; transition: color .15s; white-space: nowrap;
-        }
-        .hdr-tab::after {
-          content: ''; position: absolute; bottom: 0; left: 14px; right: 14px;
-          height: 2px; background: #000; transform: scaleX(0);
-          transition: transform .2s cubic-bezier(.16,1,.3,1);
-        }
-        .hdr-tab:hover { color: rgba(0,0,0,.75); }
-        .hdr-tab.active { color: #000; }
-        .hdr-tab.active::after { transform: scaleX(1); }
-
-        .hdr-desktop-nav { display: none; align-items: stretch; height: 56px; flex: 1; }
-        @media (min-width: 1024px) { .hdr-desktop-nav { display: flex; } }
-
-        .mob-filter-icon { display: flex; }
-        @media (min-width: 1024px) { .mob-filter-icon { display: none !important; } }
-
-        .hdr-divider { display: none; width: 1px; height: 18px; background: rgba(0,0,0,0.1); flex-shrink: 0; margin: 0 4px; }
-        @media (min-width: 1024px) { .hdr-divider { display: block; } }
-
-        .sheet-row {
-          width: 100%; padding: 15px 20px;
-          display: flex; align-items: center; justify-content: space-between;
-          background: transparent; border: none; border-top: 1px solid rgba(0,0,0,0.06);
-          font-family: 'Inter', sans-serif; font-size: 15px; font-weight: 400;
-          color: rgba(0,0,0,0.7); cursor: pointer; text-align: left; transition: background .12s;
-        }
-        .sheet-row:active { background: rgba(0,0,0,0.03); }
-        .sheet-row.active { font-weight: 600; color: #000; }
-
-        .hdr-btn {
-          padding: 7px 15px; font-family: 'Inter', sans-serif;
-          font-size: 13px; font-weight: 500; border-radius: 0;
-          cursor: pointer; transition: all .18s; white-space: nowrap;
-        }
-      `}</style>
+      <style>{CSS}</style>
 
       {/* ── HEADER ── */}
-      <header style={{ position: 'sticky', top: 0, zIndex: 50, background: 'rgba(255,255,255,0.88)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(0,0,0,0.07)' }}>
-        <div style={{ maxWidth: 1280, margin: '0 auto', padding: '0 16px', height: 56, display: 'flex', alignItems: 'center', gap: 8 }}>
+      <header style={{ position: 'sticky', top: 0, zIndex: 50, background: 'rgba(9,9,9,0.82)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <div style={{ maxWidth: 1300, margin: '0 auto', padding: '0 20px', height: 56, ...S.row, gap: 4 }}>
 
-          {/* Hamburger — mobile only */}
-          <button
-            onClick={onMenuOpen}
-            className="hdr-menu-btn"
-            aria-label="Open menu"
-            style={{ width: 36, height: 36, padding: 0, background: 'transparent', border: 'none', cursor: 'pointer', borderRadius: 8, alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'background .15s' }}
-            {...hov({ background: 'rgba(0,0,0,0.05)' }, { background: 'transparent' })}
-          >
-            <Menu size={20} color="rgba(0,0,0,0.5)" />
+          {/* Hamburger */}
+          <button onClick={onMenuOpen} className="mob" style={S.iconBtn} aria-label="Open menu"
+            onMouseEnter={e => hov(e.currentTarget, { borderColor:'rgba(255,255,255,.22)', background:'rgba(255,255,255,.04)' }, {}, true)}
+            onMouseLeave={e => hov(e.currentTarget, {}, { borderColor:'rgba(255,255,255,.09)', background:'transparent' }, false)}>
+            <Menu size={18} color="rgba(255,255,255,0.55)" />
           </button>
 
           {/* Logo */}
-          <span
-            onClick={() => router.push('/')}
-            style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 18, letterSpacing: '-0.5px', cursor: 'pointer', flexShrink: 0, background: 'linear-gradient(135deg,#000 0%,rgba(0,0,0,.55) 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}
-          >
-            WALLS
-          </span>
+          <button onClick={() => router.push('/')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 10px', flexShrink: 0, fontFamily: F, fontWeight: 800, fontSize: 17, letterSpacing: '-0.3px', color: '#fff' }}>
+            WALL<span style={{ color: A }}>S</span>
+          </button>
 
-          <div className="hdr-divider" />
+          {/* Divider */}
+          <div className="desk" style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.08)', flexShrink: 0, margin: '0 6px' }} />
 
           {/* Desktop tabs */}
-          <nav className="hdr-desktop-nav">
+          <nav className="desk" style={{ alignItems: 'stretch', height: 56, flex: 1 }}>
             {FILTERS.map(({ value, label }) => (
-              <button key={value} className={`hdr-tab${filter === value ? ' active' : ''}`} onClick={() => setFilter(value)}>
+              <button key={value} className={`wl-tab${filter === value ? ' active' : ''}`} onClick={() => setFilter(value)}>
                 {label}
               </button>
             ))}
@@ -154,76 +114,48 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
 
           <div style={{ flex: 1 }} />
 
-          {/* Mobile filter icon */}
-          <button
-            className="mob-filter-icon"
-            onClick={() => setShowSheet(true)}
-            aria-label="Filter"
-            style={{ position: 'relative', width: 36, height: 36, background: 'transparent', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 8, cursor: 'pointer', transition: 'background .15s', flexShrink: 0, alignItems: 'center', justifyContent: 'center' }}
-          >
-            <SlidersHorizontal size={16} color="rgba(0,0,0,0.6)" strokeWidth={2} />
-            {isFiltered && <span style={{ position: 'absolute', top: 6, right: 6, width: 6, height: 6, borderRadius: '50%', background: '#000', border: '1.5px solid #fff' }} />}
+          {/* Mobile filter */}
+          <button className="mob" onClick={() => setShowSheet(true)} style={{ ...S.iconBtn, position: 'relative' }} aria-label="Filter"
+            onMouseEnter={e => hov(e.currentTarget, { borderColor:'rgba(255,255,255,.22)' }, {}, true)}
+            onMouseLeave={e => hov(e.currentTarget, {}, { borderColor:'rgba(255,255,255,.09)' }, false)}>
+            <SlidersHorizontal size={15} color="rgba(255,255,255,0.55)" strokeWidth={2} />
+            {filter !== 'all' && <span style={{ position: 'absolute', top: 7, right: 7, width: 5, height: 5, borderRadius: '50%', background: A, border: '1.5px solid #090909' }} />}
           </button>
 
-          {/* Right actions — Upload (logged in) or Sign in */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-            {user ? (
-              <button
-                className="hdr-btn"
-                onClick={openUpload}
-                style={{ border: '1px solid rgba(0,0,0,0.13)', background: 'transparent', color: 'rgba(0,0,0,0.55)' }}
-                {...hov(
-                  { background: 'rgba(0,0,0,0.04)', color: 'rgba(0,0,0,0.9)', borderColor: 'rgba(0,0,0,0.28)' },
-                  { background: 'transparent',      color: 'rgba(0,0,0,0.55)', borderColor: 'rgba(0,0,0,0.13)' },
-                )}
-              >
-                Upload
-              </button>
-            ) : (
-              <button
-                className="hdr-btn"
-                onClick={() => setShowAuth(true)}
-                style={{ border: 'none', background: '#000', color: '#fff', fontWeight: 600 }}
-                {...hov(
-                  { background: 'rgba(0,0,0,0.78)', transform: 'scale(0.98)' },
-                  { background: '#000',              transform: 'scale(1)'    },
-                )}
-              >
-                Sign in
-              </button>
-            )}
+          {/* CTA */}
+          <div style={{ ...S.row, gap: 8, flexShrink: 0, marginLeft: 8 }}>
+            {user
+              ? <button onClick={openUpload} style={S.ghostBtn}
+                  onMouseEnter={e => hov(e.currentTarget, { background:'rgba(255,255,255,.07)', borderColor:'rgba(255,255,255,.25)', color:'#fff' }, {}, true)}
+                  onMouseLeave={e => hov(e.currentTarget, {}, { background:'transparent', borderColor:'rgba(255,255,255,.12)', color:'rgba(255,255,255,.7)' }, false)}>
+                  Upload
+                </button>
+              : <button onClick={() => setShowAuth(true)} style={S.accentBtn}
+                  onMouseEnter={e => hov(e.currentTarget, { background:'#d8ff6e', transform:'scale(0.97)' }, {}, true)}
+                  onMouseLeave={e => hov(e.currentTarget, {}, { background: A, transform:'scale(1)' }, false)}>
+                  Sign in
+                </button>
+            }
           </div>
+
         </div>
       </header>
 
-      {/* ── MOBILE FILTER BOTTOM SHEET ── */}
+      {/* ── MOBILE FILTER SHEET ── */}
       {showSheet && (
-        <div
-          className={closingSheet ? 'bd-out' : 'bd-in'}
-          onClick={() => closeSheet()}
-          style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,0.25)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }}
-        >
-          <div
-            className={closingSheet ? 'sh-out' : 'sh-in'}
-            onClick={e => e.stopPropagation()}
-            style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: '#fff', borderRadius: '20px 20px 0 0', paddingBottom: 'max(16px, env(safe-area-inset-bottom))', boxShadow: '0 -8px 40px rgba(0,0,0,0.1)' }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 4px' }}>
-              <div style={{ width: 36, height: 4, borderRadius: 2, background: 'rgba(0,0,0,0.1)' }} />
+        <div className={closingSheet ? 'bd-out' : 'bd-in'} onClick={() => closeSheet()} style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}>
+          <div className={closingSheet ? 'sh-out' : 'sh-in'} onClick={e => e.stopPropagation()} style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: '#fff', borderRadius: '22px 22px 0 0', paddingBottom: 'max(20px, env(safe-area-inset-bottom))', boxShadow: '0 -12px 60px rgba(0,0,0,0.15)' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', padding: '14px 0 6px' }}>
+              <div style={{ width: 32, height: 3, borderRadius: 2, background: 'rgba(0,0,0,0.12)' }} />
             </div>
-            <div style={{ padding: '10px 20px', fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase' as const, color: 'rgba(0,0,0,0.3)' }}>
-              Browse by
-            </div>
+            <div style={{ padding: '8px 22px 12px', fontFamily: F, fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'rgba(0,0,0,0.28)' }}>Browse by</div>
             {FILTERS.map(({ value, label }) => (
               <button key={value} className={`sheet-row${filter === value ? ' active' : ''}`} onClick={() => { setFilter(value); closeSheet(); }}>
                 <span>{label}</span>
-                {filter === value && <Check size={16} strokeWidth={2.5} color="#000" />}
+                {filter === value && <Check size={15} strokeWidth={2.5} color="#000" />}
               </button>
             ))}
-            <button
-              onClick={() => closeSheet()}
-              style={{ width: '100%', padding: '15px 20px', marginTop: 6, background: 'rgba(0,0,0,0.03)', border: 'none', borderTop: '1px solid rgba(0,0,0,0.06)', fontFamily: "'Inter', sans-serif", fontSize: 14, fontWeight: 500, color: 'rgba(0,0,0,0.35)', cursor: 'pointer', textAlign: 'center' as const }}
-            >
+            <button onClick={() => closeSheet()} style={{ width: '100%', padding: '16px 22px', background: 'rgba(0,0,0,0.02)', border: 'none', borderTop: '1px solid rgba(0,0,0,0.05)', fontFamily: F, fontSize: 14, fontWeight: 500, color: 'rgba(0,0,0,0.32)', cursor: 'pointer' }}>
               Cancel
             </button>
           </div>
@@ -232,56 +164,48 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
 
       {/* ── AUTH MODAL ── */}
       {showAuth && (
-        <div
-          className={closingAuth ? 'bd-out' : 'bd-in'}
-          onClick={() => closeAuth()}
-          style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.28)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
-        >
-          <div
-            className={closingAuth ? 'm-out' : 'm-in'}
-            onClick={e => e.stopPropagation()}
-            style={{ width: '100%', maxWidth: 360, background: '#fff', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 20, padding: '28px 24px', boxShadow: '0 32px 80px rgba(0,0,0,0.14)' }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
-              <button
-                onClick={() => closeAuth()}
-                style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(0,0,0,0.05)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background .18s' }}
-                {...hov({ background: 'rgba(0,0,0,0.1)' }, { background: 'rgba(0,0,0,0.05)' })}
-              >
-                <X size={14} color="rgba(0,0,0,0.4)" />
-              </button>
-            </div>
-
-            <div style={{ marginBottom: 24 }}>
-              <h2 style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 22, color: '#000', letterSpacing: '-0.5px', marginBottom: 6 }}>Welcome to WALLS</h2>
-              <p style={{ fontSize: 13, color: 'rgba(0,0,0,0.4)', fontFamily: "'Inter', sans-serif" }}>Sign in or create an account to continue</p>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {[
-                { label: 'Sign in with Email', icon: Mail,     path: '/auth/login',  primary: true  },
-                { label: 'Create Account',     icon: UserPlus, path: '/auth/signup', primary: false },
-              ].map(({ label, icon: Icon, path, primary }) => (
-                <button
-                  key={path}
-                  onClick={() => handleNav(path)}
-                  style={{ width: '100%', padding: '13px 18px', borderRadius: 0, cursor: 'pointer', fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', transition: 'all .18s', background: primary ? '#000' : 'rgba(0,0,0,0.03)', color: primary ? '#fff' : '#000', border: primary ? 'none' : '1px solid rgba(0,0,0,0.1)' }}
-                  {...hov(
-                    primary ? { background: 'rgba(0,0,0,0.78)', transform: 'scale(0.99)' } : { background: 'rgba(0,0,0,0.06)', borderColor: 'rgba(0,0,0,0.2)', transform: 'scale(0.99)' },
-                    primary ? { background: '#000', transform: 'scale(1)' } : { background: 'rgba(0,0,0,0.03)', borderColor: 'rgba(0,0,0,0.1)', transform: 'scale(1)' },
-                  )}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <Icon size={16} /><span>{label}</span>
-                  </div>
-                  <ArrowRight size={15} />
+        <div className={closingAuth ? 'bd-out' : 'bd-in'} onClick={() => closeAuth()} style={S.backdrop}>
+          <div className={closingAuth ? 'm-out' : 'm-in'} onClick={e => e.stopPropagation()} style={S.modal}>
+            <div style={{ height: 4, background: `linear-gradient(90deg,${A},#8fff9e)` }} />
+            <div style={{ padding: '28px 28px 32px' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 20 }}>
+                <button onClick={() => closeAuth()} style={S.closeBtn}
+                  onMouseEnter={e => hov(e.currentTarget, { background:'rgba(0,0,0,.10)' }, {}, true)}
+                  onMouseLeave={e => hov(e.currentTarget, {}, { background:'rgba(0,0,0,.05)' }, false)}>
+                  <X size={13} color="rgba(0,0,0,0.45)" />
                 </button>
-              ))}
-            </div>
+              </div>
 
-            <p style={{ marginTop: 18, textAlign: 'center', fontSize: 11, color: 'rgba(0,0,0,0.22)', fontFamily: "'Inter', sans-serif", lineHeight: 1.6 }}>
-              By continuing you agree to our Terms of Service and Privacy Policy
-            </p>
+              <div style={{ marginBottom: 28 }}>
+                <div style={{ fontFamily: F, fontWeight: 800, fontSize: 24, color: '#0a0a0a', letterSpacing: '-0.5px', marginBottom: 6, lineHeight: 1.15 }}>
+                  Welcome to WALL<span style={{ color: A }}>S</span>
+                </div>
+                <p style={{ fontSize: 13, color: 'rgba(0,0,0,0.42)', fontFamily: F, lineHeight: 1.6 }}>
+                  Sign in to save, upload and discover beautiful wallpapers.
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {[
+                  { label: 'Sign in with Email', icon: Mail,     path: '/auth/login',  primary: true  },
+                  { label: 'Create Account',     icon: UserPlus, path: '/auth/signup', primary: false },
+                ].map(({ label, icon: Icon, path, primary }) => (
+                  <button key={path} onClick={() => handleNav(path)}
+                    style={{ ...S.authBtn, background: primary ? '#0a0a0a' : 'transparent', color: primary ? '#fff' : '#0a0a0a', border: primary ? 'none' : '1.5px solid rgba(0,0,0,0.12)' }}
+                    onMouseEnter={e => hov(e.currentTarget, primary ? { background:'#222' } : { borderColor:'rgba(0,0,0,.28)', background:'rgba(0,0,0,.03)' }, {}, true)}
+                    onMouseLeave={e => hov(e.currentTarget, {}, primary ? { background:'#0a0a0a' } : { borderColor:'rgba(0,0,0,.12)', background:'transparent' }, false)}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <Icon size={15} strokeWidth={2} /><span>{label}</span>
+                    </div>
+                    <ArrowRight size={14} strokeWidth={2} style={{ opacity: 0.5 }} />
+                  </button>
+                ))}
+              </div>
+
+              <p style={{ marginTop: 22, textAlign: 'center', fontSize: 11, color: 'rgba(0,0,0,0.22)', fontFamily: F, lineHeight: 1.7 }}>
+                By continuing you agree to our <span style={{ textDecoration: 'underline', cursor: 'pointer' }}>Terms</span> and <span style={{ textDecoration: 'underline', cursor: 'pointer' }}>Privacy Policy</span>
+              </p>
+            </div>
           </div>
         </div>
       )}
