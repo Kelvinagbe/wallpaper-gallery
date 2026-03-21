@@ -14,12 +14,17 @@ const COLORS = [
 ];
 
 const CSS = `
-  .wg{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;padding:6px;}
-  @media(min-width:480px){.wg{grid-template-columns:repeat(3,1fr)}}
-  @media(min-width:768px){.wg{grid-template-columns:repeat(4,1fr)}}
-  @media(min-width:1024px){.wg{grid-template-columns:repeat(5,1fr)}}
-  @keyframes shimmerSweep{0%{background-position:-200% 0}100%{background-position:200% 0}}
-  @keyframes dotBounce{0%,80%,100%{transform:scale(0.6);opacity:0.4}40%{transform:scale(1);opacity:1}}
+  .wg {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
+    padding: 6px;
+  }
+  @media(min-width:480px)  { .wg { grid-template-columns: repeat(3,1fr) } }
+  @media(min-width:768px)  { .wg { grid-template-columns: repeat(4,1fr) } }
+  @media(min-width:1024px) { .wg { grid-template-columns: repeat(5,1fr) } }
+  @keyframes shimmerSweep  { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
+  @keyframes dotBounce     { 0%,80%,100%{transform:scale(0.6);opacity:0.4} 40%{transform:scale(1);opacity:1} }
 `;
 
 const ShimmerCard = ({ index, opacity = 1 }: { index: number; opacity?: number }) => {
@@ -46,17 +51,14 @@ type WallpaperGridProps = {
 export const WallpaperGrid = ({ wallpapers, isLoading, onWallpaperClick, onLoadMore, hasMore = true }: WallpaperGridProps) => {
   const [loadingMore,   setLoadingMore]   = useState(false);
   const [hasEverLoaded, setHasEverLoaded] = useState(false);
-  const triggerRef    = useRef<HTMLDivElement>(null);
-  const loadingRef    = useRef(false);
+  const triggerRef  = useRef<HTMLDivElement>(null);
+  const loadingRef  = useRef(false);
 
-  // Filter out PC wallpapers — they belong in DesktopWallpaperRow
-  const mobileWallpapers = useMemo(() => wallpapers.filter(wp => wp.type !== 'pc'), [wallpapers]);
-
-  usePrefetch(useMemo(() => mobileWallpapers.slice(20, 30).map(wp => wp.url), [mobileWallpapers]));
+  usePrefetch(useMemo(() => wallpapers.slice(20, 30).map(wp => wp.url), [wallpapers]));
 
   useEffect(() => {
-    if (mobileWallpapers.length > 0 && !hasEverLoaded) setHasEverLoaded(true);
-  }, [mobileWallpapers.length, hasEverLoaded]);
+    if (wallpapers.length > 0 && !hasEverLoaded) setHasEverLoaded(true);
+  }, [wallpapers.length, hasEverLoaded]);
 
   useEffect(() => {
     if (!triggerRef.current || !onLoadMore || !hasMore) return;
@@ -71,11 +73,10 @@ export const WallpaperGrid = ({ wallpapers, isLoading, onWallpaperClick, onLoadM
     return () => observer.disconnect();
   }, [onLoadMore, hasMore]);
 
-  // ── States ────────────────────────────────────────────────────
-  if (!hasEverLoaded && isLoading)                        return <Shimmers count={10} />;
-  if (hasEverLoaded && mobileWallpapers.length === 0 && isLoading) return <Shimmers count={6} opacity={0.5} />;
+  if (!hasEverLoaded && isLoading)                          return <Shimmers count={10} />;
+  if (hasEverLoaded && wallpapers.length === 0 && isLoading) return <Shimmers count={6} opacity={0.5} />;
 
-  if (mobileWallpapers.length === 0 && !isLoading) return (
+  if (wallpapers.length === 0 && !isLoading) return (
     <div className="text-center py-20">
       <div className="text-6xl mb-4">🔍</div>
       <h3 className="text-xl font-semibold text-gray-800 mb-2">No wallpapers found</h3>
@@ -86,7 +87,7 @@ export const WallpaperGrid = ({ wallpapers, isLoading, onWallpaperClick, onLoadM
   return (
     <>
       <div className="wg">
-        {mobileWallpapers.map((wp, idx) => (
+        {wallpapers.map((wp, idx) => (
           <WallpaperCard
             key={wp.id} wp={wp}
             priority={idx < 6}
@@ -101,13 +102,16 @@ export const WallpaperGrid = ({ wallpapers, isLoading, onWallpaperClick, onLoadM
       {loadingMore && (
         <div className="flex flex-col items-center justify-center py-8 gap-2">
           <div className="flex items-center gap-1.5">
-            {[0,1,2].map(i => <div key={i} className="w-2 h-2 rounded-full bg-gray-300" style={{ animation: `dotBounce 1.2s ease-in-out ${i*0.2}s infinite` }} />)}
+            {[0,1,2].map(i => (
+              <div key={i} className="w-2 h-2 rounded-full bg-gray-300"
+                style={{ animation: `dotBounce 1.2s ease-in-out ${i * 0.2}s infinite` }} />
+            ))}
           </div>
           <span className="text-gray-400 text-xs">Loading more...</span>
         </div>
       )}
 
-      {!hasMore && mobileWallpapers.length > 0 && (
+      {!hasMore && wallpapers.length > 0 && (
         <div className="text-center py-8 text-gray-400 text-sm">You've seen all wallpapers</div>
       )}
 
