@@ -211,7 +211,7 @@ export const WallpaperCard = ({ wp, onClick, priority = false, placeholderIndex 
                     {wp.uploadedBy[0]?.toUpperCase()}
                   </div>
                 )}
-                <span className="text-[9px] font-medium text-white/55 truncate leading-none">
+                <span className="text-[9px] font-medium text-white truncate leading-none">
                   @{wp.uploadedBy}
                 </span>
                 {wp.verified && (
