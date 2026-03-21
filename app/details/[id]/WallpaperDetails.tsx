@@ -24,7 +24,7 @@ const CACHE_TTL = 30_000;
 const fmt = (n: number) => n >= 1_000_000 ? `${(n/1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n/1000).toFixed(1)}k` : String(n);
 const F   = "'DM Sans', sans-serif";
 
-// ── 🖼️ Session image cache — avoids re-fetching already loaded images ──
+// ── 🖼️ Session image cache ───────────────────────────────────────
 const imgCache = (() => {
   const mem = new Set<string>();
   try { (JSON.parse(sessionStorage.getItem('__wpcache__') || '[]') as string[]).forEach(u => mem.add(u)); } catch {}
@@ -34,7 +34,7 @@ const imgCache = (() => {
   };
 })();
 
-// ── ⏰ Relative time string ──────────────────────────────────────
+// ── ⏰ Relative time ─────────────────────────────────────────────
 const timeAgoStr = (date: string) => {
   const d = Math.floor((Date.now() - new Date(date).getTime()) / 1000);
   return d < 60 ? 'Just now' : d < 3600 ? `${Math.floor(d/60)}m ago` : d < 86400 ? `${Math.floor(d/3600)}h ago` : d < 604800 ? `${Math.floor(d/86400)}d ago` : `${Math.floor(d/604800)}w ago`;
@@ -70,7 +70,7 @@ const CopyLinkModal = ({ isOpen, onClose, link }: { isOpen: boolean; onClose: ()
   );
 };
 
-// ── 💖 Floating Hearts animation on like ────────────────────────
+// ── 💖 Floating Hearts ───────────────────────────────────────────
 const FloatingHearts = ({ hearts }: { hearts: Array<{ id: number; x: number; y: number; angle: number; distance: number }> }) => {
   if (typeof window === 'undefined' || !hearts.length) return null;
   return createPortal(<>
@@ -82,15 +82,15 @@ const FloatingHearts = ({ hearts }: { hearts: Array<{ id: number; x: number; y: 
   </>, document.body);
 };
 
-// ── 🖼️ Main WallpaperDetail Component ───────────────────────────
+// ── 🖼️ Main Component ────────────────────────────────────────────
 export default function WallpaperDetail({ initialWallpaper }: { initialWallpaper: Wallpaper }) {
   const router      = useRouter();
   const { session } = useAuth();
   const supabase    = useMemo(() => createClient(), []);
   const wp          = initialWallpaper;
-  const isPC        = wp.type === 'pc'; // 🖥️ determines aspect ratio
+  const isPC        = wp.type === 'pc';
+  const isOwner     = session?.user.id === wp.userId; // 👤 hide follow for own wallpapers
 
-  // ── State ────────────────────────────────────────────────────
   const [likes,     setLikes]     = useState(wp.likes);
   const [views,     setViews]     = useState(wp.views);
   const [hearts,    setHearts]    = useState<Array<{ id: number; x: number; y: number; angle: number; distance: number }>>([]);
@@ -103,32 +103,32 @@ export default function WallpaperDetail({ initialWallpaper }: { initialWallpaper
     dataLoading: true,
     showLogin: false, loginAction: '',
     copyOpen: false,
-    pfpSetting: false, pfpSet: false, // 🖼️ set as profile picture
+    pfpSetting: false, pfpSet: false,
   });
 
   const likeRef = useRef<HTMLButtonElement>(null);
   const set     = (patch: Partial<typeof st>) => setSt(s => ({ ...s, ...patch }));
 
-  // ── ⏰ Update relative time every minute ─────────────────────
+  // ── ⏰ Tick relative time ────────────────────────────────────
   useEffect(() => {
     if (!wp.createdAt) return;
     const t = setInterval(() => setTimeAgo(timeAgoStr(wp.createdAt!)), 60_000);
     return () => clearInterval(t);
   }, [wp.createdAt]);
 
-  // ── 👁️ Increment view count after 5s (deduped per session) ──
+  // ── 👁️ View count — 5s dedup per session ────────────────────
   useEffect(() => {
-    const viewKey = `viewed_${wp.id}`;
-    if (sessionStorage.getItem(viewKey)) return;
-    const timer = setTimeout(async () => {
-      sessionStorage.setItem(viewKey, '1');
+    const key = `viewed_${wp.id}`;
+    if (sessionStorage.getItem(key)) return;
+    const t = setTimeout(async () => {
+      sessionStorage.setItem(key, '1');
       await incrementViews(wp.id);
       setViews(v => v + 1);
     }, 5000);
-    return () => clearTimeout(timer);
+    return () => clearTimeout(t);
   }, [wp.id]);
 
-  // ── ❤️ Fetch like + follow state for current user ────────────
+  // ── ❤️ Fetch like / follow state ─────────────────────────────
   useEffect(() => {
     if (!session) { set({ dataLoading: false }); return; }
     const uid = session.user.id;
@@ -151,7 +151,7 @@ export default function WallpaperDetail({ initialWallpaper }: { initialWallpaper
     })();
   }, [wp.id, session?.user?.id]);
 
-  // ── 🔴 Realtime like count updates ──────────────────────────
+  // ── 🔴 Realtime likes ────────────────────────────────────────
   useEffect(() => {
     const ch = supabase.channel(`wp-likes-${wp.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'likes', filter: `wallpaper_id=eq.${wp.id}` }, async () => {
@@ -161,11 +161,11 @@ export default function WallpaperDetail({ initialWallpaper }: { initialWallpaper
     return () => { supabase.removeChannel(ch); };
   }, [wp.id]);
 
-  // ── 🔐 Auth gate — shows login modal if not signed in ───────
+  // ── 🔐 Auth gate ─────────────────────────────────────────────
   const auth = (action: string, cb: () => void) =>
     !session ? set({ loginAction: action, showLogin: true }) : cb();
 
-  // ── ❤️ Like / Unlike ─────────────────────────────────────────
+  // ── ❤️ Like ──────────────────────────────────────────────────
   const handleLike = () => auth('like wallpapers', async () => {
     const v = !st.liked;
     set({ liked: v });
@@ -173,7 +173,6 @@ export default function WallpaperDetail({ initialWallpaper }: { initialWallpaper
     navigator.vibrate?.(50);
     const key = `${wp.id}-${session!.user.id}`, cached = cache.get(key);
     if (cached) cache.set(key, { ...cached, liked: v, likeCount: v ? cached.likeCount + 1 : cached.likeCount - 1, timestamp: Date.now() });
-    // 💖 Spawn floating hearts on like
     if (v && likeRef.current) {
       const r = likeRef.current.getBoundingClientRect();
       setHearts(Array.from({ length: 8 }, (_, i) => ({ id: Date.now() + i, x: r.left + r.width / 2 - 14, y: r.top + r.height / 2 - 14, angle: -90 + (i * 270 / 7) + (Math.random() - .5) * 20, distance: 80 + Math.random() * 60 })));
@@ -183,7 +182,7 @@ export default function WallpaperDetail({ initialWallpaper }: { initialWallpaper
       : await supabase.from('likes').delete().eq('user_id', session!.user.id).eq('wallpaper_id', wp.id);
   });
 
-  // ── 👤 Follow / Unfollow ─────────────────────────────────────
+  // ── 👤 Follow ────────────────────────────────────────────────
   const handleFollow = () => auth('follow users', async () => {
     if (!wp.userId) return;
     const v = !st.following;
@@ -211,7 +210,7 @@ export default function WallpaperDetail({ initialWallpaper }: { initialWallpaper
     } catch { set({ downloading: false }); }
   };
 
-  // ── 🖼️ Set wallpaper as profile picture ─────────────────────
+  // ── 🖼️ Set as profile picture ────────────────────────────────
   const handleSetPfp = async () => {
     if (!session || st.pfpSetting || st.pfpSet) return;
     set({ pfpSetting: true });
@@ -232,21 +231,31 @@ export default function WallpaperDetail({ initialWallpaper }: { initialWallpaper
     ? navigator.share({ title: wp.title, url: window.location.href }).catch(() => set({ copyOpen: true }))
     : set({ copyOpen: true });
 
-  // ── 🎨 CSS ───────────────────────────────────────────────────
   const CSS = `
     @keyframes shimmer   { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
-    @keyframes fadeSlide { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes fadeSlide { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
     @keyframes spin      { to{transform:rotate(360deg)} }
-    .shimmer  { background:linear-gradient(90deg,#ebebeb 25%,#e0e0de 50%,#ebebeb 75%);background-size:200% 100%;animation:shimmer 1.6s infinite; }
-    .fade-in  { animation:fadeSlide .45s cubic-bezier(.16,1,.3,1) forwards; }
-    .no-save  { -webkit-user-select:none;user-select:none;-webkit-touch-callout:none; }
-    .act-btn  { transition:transform .15s,opacity .15s; }
+    .shimmer { background:linear-gradient(90deg,#ebebeb 25%,#e0e0de 50%,#ebebeb 75%);background-size:200% 100%;animation:shimmer 1.6s infinite; }
+    .fade-in { animation:fadeSlide .4s cubic-bezier(.16,1,.3,1) forwards; }
+    .no-save { -webkit-user-select:none;user-select:none;-webkit-touch-callout:none; }
+    .act-btn { transition:transform .15s,opacity .15s; }
     .act-btn:active { transform:scale(0.93);opacity:.8; }
-    .wp-full  { position:fixed!important;inset:0!important;margin:0!important;border-radius:0!important;z-index:100;aspect-ratio:unset!important;height:100dvh!important; }
+    .wp-full { position:fixed!important;inset:0!important;border-radius:0!important;z-index:100;aspect-ratio:unset!important;height:100dvh!important; }
   `;
 
+  // ── Shared action button style ───────────────────────────────
+  const actionBtn = (active?: boolean): React.CSSProperties => ({
+    flex: 1, padding: '12px 0', borderRadius: 12,
+    background: active ? 'rgba(16,185,129,0.06)' : 'rgba(0,0,0,0.04)',
+    border: `1px solid ${active ? 'rgba(16,185,129,0.3)' : 'rgba(0,0,0,0.07)'}`,
+    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+    fontFamily: F, fontSize: 13, fontWeight: 600,
+    color: active ? '#10b981' : 'rgba(0,0,0,0.55)',
+    cursor: 'pointer',
+  });
+
   return (
-    <div style={{ minHeight: '100dvh', background: '#f7f7f5', fontFamily: F }}>
+    <div style={{ minHeight: '100dvh', background: '#f5f5f3', fontFamily: F }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Serif+Display&display=swap" rel="stylesheet" />
       <style>{CSS}</style>
 
@@ -254,7 +263,7 @@ export default function WallpaperDetail({ initialWallpaper }: { initialWallpaper
       <LoginPromptModal isOpen={st.showLogin} onClose={() => set({ showLogin: false })} action={st.loginAction} />
       <CopyLinkModal isOpen={st.copyOpen} onClose={() => set({ copyOpen: false })} link={typeof window !== 'undefined' ? window.location.href : ''} />
 
-      {/* ── 🔝 Floating nav — back + fullscreen ── */}
+      {/* ── 🔝 Floating nav ── */}
       <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', pointerEvents: 'none' }}>
         <button onClick={() => full ? setFull(false) : router.back()} className="act-btn"
           style={{ pointerEvents: 'all', width: 38, height: 38, borderRadius: '50%', background: 'rgba(0,0,0,0.32)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
@@ -266,65 +275,67 @@ export default function WallpaperDetail({ initialWallpaper }: { initialWallpaper
         </button>
       </div>
 
-      {/* ── 🖼️ Wallpaper image — full width, aspect ratio by type ── */}
-      <div
-        className={full ? 'wp-full' : ''}
-        style={{ position: 'relative', width: '100%', aspectRatio: isPC ? '4/3' : '9/16', background: '#e8e8e6', overflow: 'hidden' }}
-        onContextMenu={e => e.preventDefault()}
-      >
-        {!imgLoaded && <div className="shimmer" style={{ position: 'absolute', inset: 0 }} />}
+      {/* ── 🖼️ Image — padded, rounded, gap from top ── */}
+      <div style={{ padding: full ? 0 : '62px 16px 0' }}>
+        <div
+          className={full ? 'wp-full' : ''}
+          style={{ position: 'relative', width: '100%', aspectRatio: isPC ? '4/3' : '9/16', borderRadius: full ? 0 : 20, overflow: 'hidden', background: '#e0e0de' }}
+          onContextMenu={e => e.preventDefault()}
+        >
+          {!imgLoaded && <div className="shimmer" style={{ position: 'absolute', inset: 0 }} />}
 
-        <Image
-          src={wp.url} alt={wp.title} fill priority draggable={false}
-          className="no-save"
-          style={{ objectFit: 'cover', opacity: imgLoaded ? 1 : 0, transition: 'opacity .4s ease', pointerEvents: 'none' }}
-          sizes="(max-width:768px) 100vw, 600px"
-          onLoad={() => { imgCache.add(wp.url); setImgLoaded(true); }}
-        />
+          <Image
+            src={wp.url} alt={wp.title} fill priority draggable={false}
+            className="no-save"
+            style={{ objectFit: 'cover', opacity: imgLoaded ? 1 : 0, transition: 'opacity .4s ease', pointerEvents: 'none' }}
+            sizes="(max-width:768px) 100vw, 600px"
+            onLoad={() => { imgCache.add(wp.url); setImgLoaded(true); }}
+          />
 
-        {/* 🛡️ Prevent right-click / long-press save */}
-        <div className="no-save" style={{ position: 'absolute', inset: 0, zIndex: 2 }} onContextMenu={e => e.preventDefault()} />
+          {/* 🛡️ Block right-click save */}
+          <div className="no-save" style={{ position: 'absolute', inset: 0, zIndex: 2 }} onContextMenu={e => e.preventDefault()} />
 
-        {/* ❤️ Like FAB — bottom right of image */}
-        {imgLoaded && (
-          <div style={{ position: 'absolute', bottom: 14, right: 14, zIndex: 3, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
-            <button ref={likeRef} onClick={handleLike} className="act-btn"
-              style={{ width: 46, height: 46, borderRadius: '50%', background: st.liked ? '#f43f5e' : 'rgba(0,0,0,0.28)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'background .2s' }}>
-              <Heart size={19} color="#fff" fill={st.liked ? '#fff' : 'none'} strokeWidth={2} />
-            </button>
-            {likes > 0 && <span style={{ fontSize: 10, fontWeight: 600, color: '#fff', textShadow: '0 1px 4px rgba(0,0,0,0.5)' }}>{fmt(likes)}</span>}
-          </div>
-        )}
+          {/* ❤️ Like FAB */}
+          {imgLoaded && (
+            <div style={{ position: 'absolute', bottom: 14, right: 14, zIndex: 3, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+              <button ref={likeRef} onClick={handleLike} className="act-btn"
+                style={{ width: 46, height: 46, borderRadius: '50%', background: st.liked ? '#f43f5e' : 'rgba(0,0,0,0.28)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'background .2s' }}>
+                <Heart size={19} color="#fff" fill={st.liked ? '#fff' : 'none'} strokeWidth={2} />
+              </button>
+              {likes > 0 && <span style={{ fontSize: 10, fontWeight: 600, color: '#fff', textShadow: '0 1px 4px rgba(0,0,0,0.5)' }}>{fmt(likes)}</span>}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* ── 📋 Info section — scrolls naturally below image ── */}
+      {/* ── 📋 Info — scrolls below image ── */}
       {!full && (
-        <div className="fade-in" style={{ padding: '18px 16px 48px', background: '#f7f7f5' }}>
+        <div className="fade-in" style={{ padding: '16px 16px 48px' }}>
 
           {/* 📝 Title + description */}
-          <h1 style={{ fontFamily: "'DM Serif Display', serif", fontSize: 22, fontWeight: 400, color: '#0a0a0a', letterSpacing: '-0.02em', lineHeight: 1.25, marginBottom: 6 }}>
+          <h1 style={{ fontFamily: "'DM Serif Display', serif", fontSize: 22, fontWeight: 400, color: '#0a0a0a', letterSpacing: '-0.02em', lineHeight: 1.25, marginBottom: 5 }}>
             {wp.title}
           </h1>
           {wp.description && (
-            <p style={{ fontSize: 13, color: 'rgba(0,0,0,0.45)', lineHeight: 1.6, fontWeight: 300, marginBottom: 14 }}>{wp.description}</p>
+            <p style={{ fontSize: 13, color: 'rgba(0,0,0,0.45)', lineHeight: 1.6, fontWeight: 300, marginBottom: 12 }}>{wp.description}</p>
           )}
 
-          {/* 📊 Stats row */}
+          {/* 📊 Stats */}
           <div style={{ display: 'flex', gap: 14, marginBottom: 14 }}>
             {[
-              { icon: <Eye size={12} />,      label: `${fmt(views)} views`           },
-              { icon: <Download size={12} />, label: `${fmt(wp.downloads)} downloads` },
-              { icon: <Heart size={12} />,    label: `${fmt(likes)} likes`            },
+              { icon: <Eye size={12} />,      label: `${fmt(views)} views`            },
+              { icon: <Download size={12} />, label: `${fmt(wp.downloads)} downloads`  },
+              { icon: <Heart size={12} />,    label: `${fmt(likes)} likes`             },
             ].map(({ icon, label }) => (
               <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'rgba(0,0,0,0.4)', fontWeight: 500 }}>
-                <span style={{ opacity: 0.6 }}>{icon}</span>{label}
+                <span style={{ opacity: 0.55 }}>{icon}</span>{label}
               </div>
             ))}
           </div>
 
           <div style={{ height: 1, background: 'rgba(0,0,0,0.07)', marginBottom: 14 }} />
 
-          {/* 👤 User row — avatar, name, follow button */}
+        {/* 👤 User row — follow button hidden for owner */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
             <button onClick={() => router.push(`/user/${wp.userId}`)}
               style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
@@ -339,64 +350,69 @@ export default function WallpaperDetail({ initialWallpaper }: { initialWallpaper
                 <span style={{ fontSize: 12, color: 'rgba(0,0,0,0.35)' }}>{timeAgo}</span>
               </div>
             </button>
-            {st.dataLoading
-              ? <div className="shimmer" style={{ width: 80, height: 34, borderRadius: 8, flexShrink: 0 }} />
-              : <button onClick={handleFollow} className="act-btn"
-                  style={{ flexShrink: 0, padding: '8px 18px', borderRadius: 8, border: st.following ? '1.5px solid rgba(0,0,0,0.12)' : 'none', background: st.following ? 'transparent' : '#0a0a0a', color: st.following ? 'rgba(0,0,0,0.45)' : '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', transition: 'all .2s', fontFamily: F }}>
-                  {st.following ? 'Following' : 'Follow'}
-                </button>
-            }
+
+            {/* 🚫 Hide follow button if viewer is the owner */}
+            {!isOwner && (
+              st.dataLoading
+                ? <div className="shimmer" style={{ width: 80, height: 34, borderRadius: 8, flexShrink: 0 }} />
+                : <button onClick={handleFollow} className="act-btn"
+                    style={{ flexShrink: 0, padding: '8px 18px', borderRadius: 8, border: st.following ? '1.5px solid rgba(0,0,0,0.12)' : 'none', background: st.following ? 'transparent' : '#0a0a0a', color: st.following ? 'rgba(0,0,0,0.45)' : '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', transition: 'all .2s', fontFamily: F }}>
+                    {st.following ? 'Following' : 'Follow'}
+                  </button>
+            )}
           </div>
 
           <div style={{ height: 1, background: 'rgba(0,0,0,0.07)', marginBottom: 14 }} />
 
-          {/* 🔗 Share + Copy — icon only buttons */}
+          {/* ── ⬇️ Download + Share + Copy — all in one row ── */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-            {[
-              { icon: <Share2 size={17} />,   onClick: handleShare,               label: 'Share'     },
-              { icon: <LinkIcon size={17} />, onClick: () => set({ copyOpen: true }), label: 'Copy link' },
-            ].map(btn => (
-              <button key={btn.label} onClick={btn.onClick} className="act-btn" aria-label={btn.label}
-                style={{ flex: 1, padding: '13px 0', borderRadius: 12, background: 'rgba(0,0,0,0.04)', border: '1px solid rgba(0,0,0,0.07)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(0,0,0,0.5)', cursor: 'pointer' }}>
-                {btn.icon}
-              </button>
-            ))}
-          </div>
 
-          {/* ⬇️ Download — 🔒 locked for guests, inline in scroll */}
-          <button
-            onClick={session ? handleDownload : () => set({ loginAction: 'download wallpapers', showLogin: true })}
-            disabled={st.downloading}
-            className="act-btn"
-            style={{ width: '100%', padding: '15px 0', borderRadius: 14, border: 'none', fontFamily: F, fontSize: 15, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9, color: '#fff', background: st.downloaded ? '#10b981' : 'linear-gradient(135deg,#1a1a1a 0%,#0a0a0a 100%)', opacity: st.downloading ? 0.7 : 1, cursor: st.downloading ? 'not-allowed' : 'pointer', boxShadow: st.downloaded ? '0 8px 24px rgba(16,185,129,0.3)' : '0 8px 24px rgba(0,0,0,0.15)', transition: 'background .3s,box-shadow .3s,opacity .2s', letterSpacing: '-0.01em' }}>
-            {st.downloading
-              ? <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
-              : st.downloaded
-                ? <><Check size={18} />Downloaded</>
-                : !session
-                  ? <><Lock size={18} />Download Wallpaper</>
-                  : <><Download size={18} />Download Wallpaper</>
-            }
-          </button>
-
-          {/* 🖼️ Set as profile picture — only shown when logged in */}
-          {session && (
-            <button onClick={handleSetPfp} disabled={st.pfpSetting || st.pfpSet} className="act-btn"
-              style={{ width: '100%', marginTop: 10, padding: '13px 0', borderRadius: 12, border: `1px solid ${st.pfpSet ? 'rgba(16,185,129,0.3)' : 'rgba(0,0,0,0.07)'}`, background: st.pfpSet ? 'rgba(16,185,129,0.06)' : 'rgba(0,0,0,0.04)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, fontFamily: F, fontSize: 13, fontWeight: 600, color: st.pfpSet ? '#10b981' : 'rgba(0,0,0,0.6)', cursor: st.pfpSetting || st.pfpSet ? 'default' : 'pointer', opacity: st.pfpSetting ? 0.6 : 1, transition: 'all .2s' }}>
-              {st.pfpSetting
-                ? <><Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} />Setting...</>
-                : st.pfpSet
-                  ? <><Check size={15} />Profile Picture Set</>
-                  : <><UserCircle size={15} />Use as Profile Picture</>
+            {/* ⬇️ Download — 🔒 lock for guests */}
+            <button
+              onClick={session ? handleDownload : () => set({ loginAction: 'download wallpapers', showLogin: true })}
+              disabled={st.downloading}
+              className="act-btn"
+              style={{ flex: 2, padding: '13px 0', borderRadius: 12, border: 'none', fontFamily: F, fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, color: '#fff', background: st.downloaded ? '#10b981' : '#0a0a0a', opacity: st.downloading ? 0.7 : 1, cursor: st.downloading ? 'not-allowed' : 'pointer', transition: 'background .2s,opacity .2s' }}>
+              {st.downloading
+                ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
+                : st.downloaded
+                  ? <><Check size={16} />Downloaded</>
+                  : !session
+                    ? <><Lock size={16} />Download</>
+                    : <><Download size={16} />Download</>
               }
             </button>
+
+            {/* 🔗 Share — icon only */}
+            <button onClick={handleShare} className="act-btn" aria-label="Share" style={actionBtn()}>
+              <Share2 size={17} />
+            </button>
+
+            {/* 📋 Copy link — icon only */}
+            <button onClick={() => set({ copyOpen: true })} className="act-btn" aria-label="Copy link" style={actionBtn()}>
+              <LinkIcon size={17} />
+            </button>
+          </div>
+
+          {/* 🖼️ Set as profile picture + pfp — same row */}
+          {session && (
+            <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+              <button onClick={handleSetPfp} disabled={st.pfpSetting || st.pfpSet} className="act-btn" style={actionBtn(st.pfpSet)}>
+                {st.pfpSetting
+                  ? <Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} />
+                  : st.pfpSet
+                    ? <><Check size={15} />Picture Set</>
+                    : <><UserCircle size={15} />Set as Profile Picture</>
+                }
+              </button>
+            </div>
           )}
 
           {/* 🏷️ Tags */}
           {wp.tags?.length > 0 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginTop: 16 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginTop: 6 }}>
               {wp.tags.map(tag => (
-                <span key={tag} style={{ padding: '5px 12px', borderRadius: 100, border: '1px solid rgba(0,0,0,0.1)', fontSize: 12, fontWeight: 500, color: 'rgba(0,0,0,0.45)', background: 'transparent' }}>
+                <span key={tag} style={{ padding: '5px 12px', borderRadius: 100, border: '1px solid rgba(0,0,0,0.1)', fontSize: 12, fontWeight: 500, color: 'rgba(0,0,0,0.45)' }}>
                   {tag}
                 </span>
               ))}
