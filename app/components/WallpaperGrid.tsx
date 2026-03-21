@@ -13,6 +13,15 @@ const COLORS = [
   { bg: '#f0ede8', shimmer: '#e8dcc8' },
 ];
 
+const CSS = `
+  .wg{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;padding:6px;}
+  @media(min-width:480px){.wg{grid-template-columns:repeat(3,1fr)}}
+  @media(min-width:768px){.wg{grid-template-columns:repeat(4,1fr)}}
+  @media(min-width:1024px){.wg{grid-template-columns:repeat(5,1fr)}}
+  @keyframes shimmerSweep{0%{background-position:-200% 0}100%{background-position:200% 0}}
+  @keyframes dotBounce{0%,80%,100%{transform:scale(0.6);opacity:0.4}40%{transform:scale(1);opacity:1}}
+`;
+
 const ShimmerCard = ({ index, opacity = 1 }: { index: number; opacity?: number }) => {
   const c = COLORS[index % COLORS.length];
   return (
@@ -21,6 +30,10 @@ const ShimmerCard = ({ index, opacity = 1 }: { index: number; opacity?: number }
     </div>
   );
 };
+
+const Shimmers = ({ count, opacity }: { count: number; opacity?: number }) => (
+  <><div className="wg">{Array.from({ length: count }, (_, i) => <ShimmerCard key={i} index={i} opacity={opacity} />)}</div><style>{CSS}</style></>
+);
 
 type WallpaperGridProps = {
   wallpapers: Wallpaper[];
@@ -33,48 +46,36 @@ type WallpaperGridProps = {
 export const WallpaperGrid = ({ wallpapers, isLoading, onWallpaperClick, onLoadMore, hasMore = true }: WallpaperGridProps) => {
   const [loadingMore,   setLoadingMore]   = useState(false);
   const [hasEverLoaded, setHasEverLoaded] = useState(false);
-  const loadMoreTriggerRef = useRef<HTMLDivElement>(null);
-  const loadingMoreRef     = useRef(false); // ref-guard avoids stale closure in observer
+  const triggerRef    = useRef<HTMLDivElement>(null);
+  const loadingRef    = useRef(false);
 
-  usePrefetch(useMemo(() => wallpapers.slice(20, 30).map(wp => wp.url), [wallpapers]));
+  // Filter out PC wallpapers — they belong in DesktopWallpaperRow
+  const mobileWallpapers = useMemo(() => wallpapers.filter(wp => wp.type !== 'pc'), [wallpapers]);
+
+  usePrefetch(useMemo(() => mobileWallpapers.slice(20, 30).map(wp => wp.url), [mobileWallpapers]));
 
   useEffect(() => {
-    if (wallpapers.length > 0 && !hasEverLoaded) setHasEverLoaded(true);
-  }, [wallpapers.length, hasEverLoaded]);
+    if (mobileWallpapers.length > 0 && !hasEverLoaded) setHasEverLoaded(true);
+  }, [mobileWallpapers.length, hasEverLoaded]);
 
-  // Intersection observer — uses ref guard so deps stay stable
   useEffect(() => {
-    if (!loadMoreTriggerRef.current || !onLoadMore || !hasMore) return;
-
+    if (!triggerRef.current || !onLoadMore || !hasMore) return;
     const observer = new IntersectionObserver(async ([entry]) => {
-      if (!entry.isIntersecting || loadingMoreRef.current || !hasMore) return;
-      loadingMoreRef.current = true;
-      setLoadingMore(true);
+      if (!entry.isIntersecting || loadingRef.current || !hasMore) return;
+      loadingRef.current = true; setLoadingMore(true);
       try { await onLoadMore(); }
       catch { console.error('Load more failed'); }
-      finally { loadingMoreRef.current = false; setLoadingMore(false); }
+      finally { loadingRef.current = false; setLoadingMore(false); }
     }, { threshold: 0.1, rootMargin: '400px' });
-
-    observer.observe(loadMoreTriggerRef.current);
+    observer.observe(triggerRef.current);
     return () => observer.disconnect();
-  }, [onLoadMore, hasMore]); // removed loadingMore — now tracked via ref
+  }, [onLoadMore, hasMore]);
 
   // ── States ────────────────────────────────────────────────────
-  if (!hasEverLoaded && isLoading) return (
-    <>
-      <div className="wallpaper-grid">{Array.from({ length: 10 }, (_, i) => <ShimmerCard key={i} index={i} />)}</div>
-      <style>{`@keyframes shimmerSweep{0%{background-position:-200% 0}100%{background-position:200% 0}}`}</style>
-    </>
-  );
+  if (!hasEverLoaded && isLoading)                        return <Shimmers count={10} />;
+  if (hasEverLoaded && mobileWallpapers.length === 0 && isLoading) return <Shimmers count={6} opacity={0.5} />;
 
-  if (hasEverLoaded && wallpapers.length === 0 && isLoading) return (
-    <>
-      <div className="wallpaper-grid">{Array.from({ length: 6 }, (_, i) => <ShimmerCard key={i} index={i} opacity={0.5} />)}</div>
-      <style>{`@keyframes shimmerSweep{0%{background-position:-200% 0}100%{background-position:200% 0}}`}</style>
-    </>
-  );
-
-  if (wallpapers.length === 0 && !isLoading) return (
+  if (mobileWallpapers.length === 0 && !isLoading) return (
     <div className="text-center py-20">
       <div className="text-6xl mb-4">🔍</div>
       <h3 className="text-xl font-semibold text-gray-800 mb-2">No wallpapers found</h3>
@@ -84,11 +85,10 @@ export const WallpaperGrid = ({ wallpapers, isLoading, onWallpaperClick, onLoadM
 
   return (
     <>
-      <div className="wallpaper-grid">
-        {wallpapers.map((wp, idx) => (
+      <div className="wg">
+        {mobileWallpapers.map((wp, idx) => (
           <WallpaperCard
-            key={wp.id}
-            wp={wp}
+            key={wp.id} wp={wp}
             priority={idx < 6}
             placeholderIndex={idx}
             onClick={onWallpaperClick ? () => onWallpaperClick(wp) : undefined}
@@ -96,32 +96,22 @@ export const WallpaperGrid = ({ wallpapers, isLoading, onWallpaperClick, onLoadM
         ))}
       </div>
 
-      {hasMore && <div ref={loadMoreTriggerRef} className="h-1" />}
+      {hasMore && <div ref={triggerRef} className="h-1" />}
 
       {loadingMore && (
         <div className="flex flex-col items-center justify-center py-8 gap-2">
           <div className="flex items-center gap-1.5">
-            {[0, 1, 2].map(i => (
-              <div key={i} className="w-2 h-2 rounded-full bg-gray-300"
-                style={{ animation: `dotBounce 1.2s ease-in-out ${i * 0.2}s infinite` }} />
-            ))}
+            {[0,1,2].map(i => <div key={i} className="w-2 h-2 rounded-full bg-gray-300" style={{ animation: `dotBounce 1.2s ease-in-out ${i*0.2}s infinite` }} />)}
           </div>
           <span className="text-gray-400 text-xs">Loading more...</span>
         </div>
       )}
 
-      {!hasMore && wallpapers.length > 0 && (
+      {!hasMore && mobileWallpapers.length > 0 && (
         <div className="text-center py-8 text-gray-400 text-sm">You've seen all wallpapers</div>
       )}
 
-      <style>{`
-        .wallpaper-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;padding:6px;}
-        @media(min-width:480px){.wallpaper-grid{grid-template-columns:repeat(3,1fr)}}
-        @media(min-width:768px){.wallpaper-grid{grid-template-columns:repeat(4,1fr)}}
-        @media(min-width:1024px){.wallpaper-grid{grid-template-columns:repeat(5,1fr)}}
-        @keyframes shimmerSweep{0%{background-position:-200% 0}100%{background-position:200% 0}}
-        @keyframes dotBounce{0%,80%,100%{transform:scale(0.6);opacity:0.4}40%{transform:scale(1);opacity:1}}
-      `}</style>
+      <style>{CSS}</style>
     </>
   );
 };
