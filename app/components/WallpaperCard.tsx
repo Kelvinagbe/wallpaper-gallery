@@ -140,6 +140,15 @@ export const WallpaperCard = ({ wp, onClick, priority = false, placeholderIndex 
     router.push(`/details/${wp.id}`);
   };
 
+  // Navigate to uploader profile without triggering card click
+  const handleUploaderClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (wp.uploader?.id) {
+      startLoader();
+      router.push(`/profile/${wp.uploader.id}`);
+    }
+  };
+
   const fmt = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n / 1_000).toFixed(1)}k` : String(n);
 
   return (
@@ -168,6 +177,47 @@ export const WallpaperCard = ({ wp, onClick, priority = false, placeholderIndex 
         {/* Info */}
         {state.loaded && (
           <div className="absolute bottom-0 left-0 right-0 z-[4] px-2 pb-2.5 pt-6">
+
+            {/* ── Uploader row ── */}
+            {wp.uploader && (
+              <button
+                onClick={handleUploaderClick}
+                className="flex items-center gap-1.5 mb-1.5 w-full"
+                aria-label={`View ${wp.uploader.name}'s profile`}
+              >
+                {/* Avatar */}
+                {wp.uploader.avatar ? (
+                  <img
+                    src={wp.uploader.avatar}
+                    alt={wp.uploader.name}
+                    className="w-4 h-4 rounded-full object-cover flex-shrink-0"
+                    style={{ border: '1px solid rgba(255,255,255,0.25)' }}
+                  />
+                ) : (
+                  <div
+                    className="w-4 h-4 rounded-full flex-shrink-0 flex items-center justify-center text-white"
+                    style={{ fontSize: 7, fontWeight: 800, background: 'rgba(255,255,255,0.25)', border: '1px solid rgba(255,255,255,0.3)' }}
+                  >
+                    {wp.uploader.name?.[0]?.toUpperCase()}
+                  </div>
+                )}
+
+                {/* Username */}
+                <span className="text-[9px] font-medium text-white/55 truncate leading-none">
+                  {wp.uploader.username ? `@${wp.uploader.username}` : wp.uploader.name}
+                </span>
+
+                {/* Verified badge */}
+                {wp.uploader.verified && (
+                  <svg width="8" height="8" viewBox="0 0 20 20" fill="none" className="flex-shrink-0">
+                    <circle cx="10" cy="10" r="10" fill="#1877F2"/>
+                    <path d="M6.5 10.2L8.8 12.5L13.5 7.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                )}
+              </button>
+            )}
+
+            {/* Title + like */}
             <p className="text-white text-[11px] font-medium leading-tight line-clamp-1 mb-1.5">{wp.title}</p>
             <div className="flex items-center justify-end">
               <button aria-label="Like" onClick={handleLike} className="flex items-center gap-1">
