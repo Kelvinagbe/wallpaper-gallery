@@ -17,7 +17,7 @@ const CSS = `
   .wg {
     columns: 2;
     column-gap: 6px;
-    padding: 6px 4px;
+    padding: 6px 1px;
   }
   @media(min-width:480px)  { .wg { columns: 3; column-gap: 8px;  padding: 8px 6px;  } }
 @media(min-width:768px)  { .wg { columns: 4; column-gap: 10px; padding: 10px 8px; } }
