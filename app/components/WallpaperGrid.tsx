@@ -14,22 +14,22 @@ const COLORS = [
 ];
 
 const CSS = `
-  /* ── Masonry layout ── */
   .wg {
     columns: 2;
-    column-gap: 14px;
-    padding: 6px;
+    column-gap: 10px;
+    padding: 10px 12px;
   }
-  @media(min-width:480px)  { .wg { columns: 3 } }
-  @media(min-width:768px)  { .wg { columns: 4 } }
-  @media(min-width:1024px) { .wg { columns: 5 } }
+  @media(min-width:480px)  { .wg { columns: 3; column-gap: 12px; padding: 12px 16px; } }
+  @media(min-width:768px)  { .wg { columns: 4; column-gap: 14px; padding: 14px 20px; } }
+  @media(min-width:1024px) { .wg { columns: 5; column-gap: 16px; padding: 16px 24px; } }
 
-  /* Each card breaks to its natural height */
   .wg-item {
     break-inside: avoid;
-    margin-bottom: 14px;
+    margin-bottom: 10px;
     display: block;
   }
+  @media(min-width:480px) { .wg-item { margin-bottom: 12px; } }
+  @media(min-width:768px) { .wg-item { margin-bottom: 14px; } }
 
   @keyframes shimmerSweep { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
   @keyframes dotBounce    { 0%,80%,100%{transform:scale(0.6);opacity:0.4} 40%{transform:scale(1);opacity:1} }
@@ -39,8 +39,13 @@ const ShimmerCard = ({ index, opacity = 1 }: { index: number; opacity?: number }
   const c = COLORS[index % COLORS.length];
   return (
     <div className="wg-item">
-      <div className="relative w-full rounded-xl overflow-hidden" style={{ aspectRatio: '9/16', background: c.bg, opacity }}>
+      <div className="relative w-full rounded-2xl overflow-hidden" style={{ aspectRatio: '9/16', background: c.bg, opacity }}>
         <div className="absolute inset-0" style={{ background: `linear-gradient(105deg,transparent 40%,${c.shimmer}80 50%,transparent 60%)`, backgroundSize: '200% 100%', animation: 'shimmerSweep 1.6s ease-in-out infinite' }} />
+      </div>
+      {/* Shimmer for text below */}
+      <div style={{ padding: '6px 2px 0', display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div style={{ height: 10, borderRadius: 4, background: c.bg, width: '80%', animation: 'shimmerSweep 1.6s ease-in-out infinite' }} />
+        <div style={{ height: 8, borderRadius: 4, background: c.bg, width: '50%', animation: 'shimmerSweep 1.6s ease-in-out .1s infinite' }} />
       </div>
     </div>
   );
