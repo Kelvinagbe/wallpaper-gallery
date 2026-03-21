@@ -17,7 +17,7 @@ export type Wallpaper = {
   category?: string;
 };
 
-export type uploader?: {
+export type uploader = {
     id: string;
     name: string;
     username?: string;
