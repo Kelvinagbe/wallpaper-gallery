@@ -23,8 +23,12 @@ const CSS = `
   @media(min-width:480px)  { .wg { grid-template-columns: repeat(3,1fr) } }
   @media(min-width:768px)  { .wg { grid-template-columns: repeat(4,1fr) } }
   @media(min-width:1024px) { .wg { grid-template-columns: repeat(5,1fr) } }
-  @keyframes shimmerSweep  { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
-  @keyframes dotBounce     { 0%,80%,100%{transform:scale(0.6);opacity:0.4} 40%{transform:scale(1);opacity:1} }
+
+  /* PC cards span full row */
+  .wg-pc { grid-column: 1 / -1; }
+
+  @keyframes shimmerSweep { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
+  @keyframes dotBounce    { 0%,80%,100%{transform:scale(0.6);opacity:0.4} 40%{transform:scale(1);opacity:1} }
 `;
 
 const ShimmerCard = ({ index, opacity = 1 }: { index: number; opacity?: number }) => {
@@ -51,8 +55,8 @@ type WallpaperGridProps = {
 export const WallpaperGrid = ({ wallpapers, isLoading, onWallpaperClick, onLoadMore, hasMore = true }: WallpaperGridProps) => {
   const [loadingMore,   setLoadingMore]   = useState(false);
   const [hasEverLoaded, setHasEverLoaded] = useState(false);
-  const triggerRef  = useRef<HTMLDivElement>(null);
-  const loadingRef  = useRef(false);
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const loadingRef = useRef(false);
 
   usePrefetch(useMemo(() => wallpapers.slice(20, 30).map(wp => wp.url), [wallpapers]));
 
@@ -73,7 +77,7 @@ export const WallpaperGrid = ({ wallpapers, isLoading, onWallpaperClick, onLoadM
     return () => observer.disconnect();
   }, [onLoadMore, hasMore]);
 
-  if (!hasEverLoaded && isLoading)                          return <Shimmers count={10} />;
+  if (!hasEverLoaded && isLoading)                         return <Shimmers count={10} />;
   if (hasEverLoaded && wallpapers.length === 0 && isLoading) return <Shimmers count={6} opacity={0.5} />;
 
   if (wallpapers.length === 0 && !isLoading) return (
@@ -88,12 +92,16 @@ export const WallpaperGrid = ({ wallpapers, isLoading, onWallpaperClick, onLoadM
     <>
       <div className="wg">
         {wallpapers.map((wp, idx) => (
-          <WallpaperCard
-            key={wp.id} wp={wp}
-            priority={idx < 6}
-            placeholderIndex={idx}
-            onClick={onWallpaperClick ? () => onWallpaperClick(wp) : undefined}
-          />
+          // PC cards get wg-pc class — spans full row
+          // Mobile cards get no class — normal grid cell
+          <div key={wp.id} className={wp.type === 'pc' ? 'wg-pc' : ''}>
+            <WallpaperCard
+              wp={wp}
+              priority={idx < 6}
+              placeholderIndex={idx}
+              onClick={onWallpaperClick ? () => onWallpaperClick(wp) : undefined}
+            />
+          </div>
         ))}
       </div>
 
