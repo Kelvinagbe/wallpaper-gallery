@@ -11,9 +11,9 @@ import type { Wallpaper } from '@/app/types';
 const fmt = (n: number) => n >= 1_000_000 ? `${(n/1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n/1_000).toFixed(1)}k` : String(n);
 const PAGE_SIZE = 19;
 const F = 'system-ui, -apple-system, sans-serif';
-
 const S: Record<string, React.CSSProperties> = {
   row: { display: 'flex', alignItems: 'center' },
+  col: { display: 'flex', flexDirection: 'column', alignItems: 'center' },
 };
 
 export default function UserProfilePage() {
@@ -76,9 +76,7 @@ export default function UserProfilePage() {
   };
 
   const Shimmer = ({ w, h, r = 8 }: { w: string | number; h: string | number; r?: number }) => (
-    <div style={{ width: w, height: h, borderRadius: r, flexShrink: 0,
-      background: 'linear-gradient(90deg,#ececec 25%,#e0e0e0 50%,#ececec 75%)',
-      backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease infinite' }} />
+    <div style={{ width: w, height: h, borderRadius: r, flexShrink: 0, background: 'linear-gradient(90deg,#ececec 25%,#e0e0e0 50%,#ececec 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease infinite' }} />
   );
 
   return (
@@ -92,7 +90,7 @@ export default function UserProfilePage() {
         .follow-btn:active { opacity: 0.75; }
       `}</style>
 
-      {/* ── Fixed top bar — back + username ── */}
+      {/* ── Fixed top bar ── */}
       <div style={{ position: 'fixed', top: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 600, zIndex: 40, ...S.row, justifyContent: 'space-between', padding: '10px 12px', background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
         <button onClick={() => router.back()} style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(0,0,0,0.06)', border: 'none', ...S.row, justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
           <ChevronLeft size={18} color="#0a0a0a" strokeWidth={2.5} />
@@ -104,19 +102,15 @@ export default function UserProfilePage() {
       </div>
 
       {pageLoading ? (
-        /* ── Skeleton ── */
         <div style={{ paddingTop: 58 }}>
-          <Shimmer w="100%" h={200} r={0} />
-          <div style={{ padding: '0 16px 20px', marginTop: -42 }}>
+          <div style={{ ...S.col, padding: '32px 20px 20px', gap: 12 }}>
             <Shimmer w={120} h={120} r={60} />
-            <div style={{ height: 16 }} />
             <Shimmer w={160} h={22} />
-            <div style={{ height: 8 }} />
             <Shimmer w={110} h={14} />
-            <div style={{ height: 16 }} />
-            <Shimmer w="100%" h={72} r={12} />
-            <div style={{ height: 12 }} />
-            <Shimmer w="100%" h={42} r={8} />
+            <div style={{ ...S.row, gap: 32, marginTop: 4 }}>
+              {[1,2,3].map(i => <div key={i} style={{ ...S.col, gap: 4 }}><Shimmer w={40} h={18} /><Shimmer w={55} h={11} /></div>)}
+            </div>
+            <Shimmer w={160} h={40} r={24} />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 1 }}>
             {[...Array(9)].map((_,i) => <Shimmer key={i} w="100%" h={160} r={0} />)}
@@ -125,106 +119,65 @@ export default function UserProfilePage() {
       ) : profile ? (
         <div className="fade-up">
 
-          {/* ── Cover photo — full width, tall ── */}
-          <div style={{ paddingTop: 58, position: 'relative' }}>
-            <div style={{
-              width: '100%', height: 220,
-              background: profile.cover_url
-                ? `url(${profile.cover_url}) center/cover no-repeat`
-                : 'linear-gradient(160deg, #1a1a1a 0%, #2d2d2d 100%)',
-              position: 'relative',
-            }}>
-              {/* dark gradient at bottom so avatar reads clearly */}
-              <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 80, background: 'linear-gradient(to top, rgba(0,0,0,0.35), transparent)' }} />
+          {/* ── Profile section — centered, no cover ── */}
+          <div style={{ ...S.col, paddingTop: 74, paddingBottom: 20, gap: 0 }}>
+
+            {/* Avatar — large, no border, no shadow */}
+            <img
+              src={profile.avatar}
+              alt={profile.name}
+              style={{ width: 120, height: 120, borderRadius: '50%', objectFit: 'cover', display: 'block', background: '#e8e8e8' }}
+            />
+
+            {/* Name + verified — directly below avatar */}
+            <div style={{ ...S.row, gap: 5, marginTop: 14 }}>
+              <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0, letterSpacing: '-0.02em', lineHeight: 1.2 }}>{profile.name}</h2>
+              {profile.verified && <VerifiedBadge size="sm" />}
             </div>
 
-            {/* ── Avatar — overlaps cover, bottom-left (Facebook style) ── */}
-            <div style={{ position: 'relative', padding: '0 16px' }}>
-              <div style={{ position: 'absolute', top: -54, left: 16 }}>
-                <div style={{ position: 'relative', display: 'inline-block' }}>
-                  <img
-                    src={profile.avatar}
-                    alt={profile.name}
-                    style={{ width: 120, height: 120, borderRadius: '50%', objectFit: 'cover', border: '4px solid #fff', display: 'block', boxShadow: '0 2px 12px rgba(0,0,0,0.15)', background: '#e8e8e8' }}
-                  />
-                  {/* Verified badge on avatar — bottom right */}
-                  {profile.verified && (
-                    <div style={{ position: 'absolute', bottom: 4, right: 4 }}>
-                      <VerifiedBadge size="md" />
-                    </div>
-                  )}
+            {/* Username */}
+            {profile.username && (
+              <p style={{ fontSize: 13, color: 'rgba(0,0,0,0.38)', margin: '4px 0 0', fontWeight: 400 }}>@{profile.username}</p>
+            )}
+
+            {/* Bio */}
+            {profile.bio && (
+              <p style={{ fontSize: 14, color: 'rgba(0,0,0,0.55)', lineHeight: 1.55, margin: '10px 24px 0', textAlign: 'center' }}>{profile.bio}</p>
+            )}
+
+            {/* Stats — centered, inline */}
+            <div style={{ ...S.row, gap: 32, marginTop: 18 }}>
+              {[
+                { label: 'Posts',     val: stats.posts     },
+                { label: 'Followers', val: stats.followers },
+                { label: 'Following', val: stats.following },
+              ].map(({ label, val }) => (
+                <div key={label} style={{ ...S.col, gap: 1 }}>
+                  <span style={{ fontSize: 17, fontWeight: 700, color: '#0a0a0a', lineHeight: 1.2 }}>{fmt(val)}</span>
+                  <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.4)', fontWeight: 400, marginTop: 2 }}>{label}</span>
                 </div>
-              </div>
-
-              {/* ── Action buttons — top right, same row as avatar overlap ── */}
-              {session && !isOwn && (
-                <div style={{ ...S.row, justifyContent: 'flex-end', gap: 8, paddingTop: 12, paddingBottom: 0 }}>
-                  <button
-                    className="follow-btn"
-                    onClick={handleFollow}
-                    disabled={followLoading}
-                    style={{
-                      padding: '8px 22px',
-                      borderRadius: 8,
-                      border: isFollowing ? '1.5px solid rgba(0,0,0,0.14)' : 'none',
-                      background: isFollowing ? '#fff' : '#0a0a0a',
-                      color: isFollowing ? 'rgba(0,0,0,0.7)' : '#fff',
-                      fontSize: 14, fontWeight: 600,
-                      cursor: followLoading ? 'default' : 'pointer',
-                      opacity: followLoading ? 0.55 : 1,
-                      fontFamily: F,
-                      transition: 'all .18s',
-                    }}>
-                    {isFollowing ? 'Following' : 'Follow'}
-                  </button>
-                  <button style={{ width: 36, height: 36, borderRadius: 8, border: '1.5px solid rgba(0,0,0,0.12)', background: '#fff', ...S.row, justifyContent: 'center', cursor: 'pointer' }}>
-                    <MoreHorizontal size={17} color="rgba(0,0,0,0.6)" />
-                  </button>
-                </div>
-              )}
-
-              {/* Spacer below cover for avatar overlap */}
-              <div style={{ height: isOwn || !session ? 72 : 12 }} />
-
-              {/* ── Name + username + bio ── */}
-              <div style={{ paddingBottom: 16 }}>
-                <div style={{ ...S.row, gap: 6, marginBottom: 2 }}>
-                  <h2 style={{ fontSize: 22, fontWeight: 800, margin: 0, letterSpacing: '-0.03em', lineHeight: 1.2 }}>{profile.name}</h2>
-                  {profile.verified && <VerifiedBadge size="sm" />}
-                </div>
-
-                {profile.username && (
-                  <p style={{ fontSize: 13, color: 'rgba(0,0,0,0.4)', margin: '0 0 8px', fontWeight: 400 }}>@{profile.username}</p>
-                )}
-
-                {profile.bio && (
-                  <p style={{ fontSize: 14, color: 'rgba(0,0,0,0.6)', lineHeight: 1.55, margin: '0 0 0' }}>{profile.bio}</p>
-                )}
-              </div>
-
-              {/* ── Stats row — Facebook style: inline, text-based ── */}
-              <div style={{ ...S.row, gap: 20, paddingBottom: 16, borderBottom: '1px solid rgba(0,0,0,0.07)', flexWrap: 'wrap' }}>
-                {[
-                  { label: 'posts',     val: stats.posts     },
-                  { label: 'followers', val: stats.followers },
-                  { label: 'following', val: stats.following },
-                ].map(({ label, val }) => (
-                  <div key={label} style={{ ...S.row, gap: 4 }}>
-                    <span style={{ fontSize: 15, fontWeight: 700, color: '#0a0a0a' }}>{fmt(val)}</span>
-                    <span style={{ fontSize: 14, color: 'rgba(0,0,0,0.45)', fontWeight: 400 }}>{label}</span>
-                  </div>
-                ))}
-              </div>
+              ))}
             </div>
+
+            {/* Follow button — centered, below stats */}
+            {session && !isOwn && (
+              <button
+                className="follow-btn"
+                onClick={handleFollow}
+                disabled={followLoading}
+                style={{ marginTop: 16, padding: '9px 48px', borderRadius: 24, border: isFollowing ? '1.5px solid rgba(0,0,0,0.14)' : 'none', background: isFollowing ? '#fff' : '#0a0a0a', color: isFollowing ? 'rgba(0,0,0,0.65)' : '#fff', fontSize: 14, fontWeight: 600, cursor: followLoading ? 'default' : 'pointer', opacity: followLoading ? 0.55 : 1, fontFamily: F, transition: 'all .18s' }}>
+                {isFollowing ? 'Following' : 'Follow'}
+              </button>
+            )}
           </div>
 
-          {/* ── Posts section header ── */}
-          <div style={{ ...S.row, gap: 7, padding: '12px 16px', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+          {/* ── Posts header ── */}
+          <div style={{ ...S.row, gap: 7, padding: '10px 16px', borderTop: '1px solid rgba(0,0,0,0.07)', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
             <Grid size={13} color="rgba(0,0,0,0.35)" />
             <p style={{ fontSize: 12, fontWeight: 700, color: 'rgba(0,0,0,0.4)', textTransform: 'uppercase', letterSpacing: '0.07em', margin: 0 }}>Posts</p>
           </div>
 
-          {/* ── Wallpaper grid ── */}
+          {/* ── Grid ── */}
           {postsLoading ? (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 1 }}>
               {[...Array(9)].map((_,i) => (
