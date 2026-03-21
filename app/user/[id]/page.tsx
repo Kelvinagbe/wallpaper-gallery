@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { ChevronLeft, Grid } from 'lucide-react';
+import { ChevronLeft, Grid, MoreHorizontal } from 'lucide-react';
 import { VerifiedBadge } from '@/app/components/VerifiedBadge';
 import { useAuth } from '@/app/components/AuthProvider';
 import { fetchProfile, fetchUserWallpapers, getUserCounts, checkIsFollowing, followUser, unfollowUser } from '@/lib/stores/wallpaperStore';
@@ -10,6 +10,11 @@ import type { Wallpaper } from '@/app/types';
 
 const fmt = (n: number) => n >= 1_000_000 ? `${(n/1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n/1_000).toFixed(1)}k` : String(n);
 const PAGE_SIZE = 19;
+const F = 'system-ui, -apple-system, sans-serif';
+
+const S: Record<string, React.CSSProperties> = {
+  row: { display: 'flex', alignItems: 'center' },
+};
 
 export default function UserProfilePage() {
   const router      = useRouter();
@@ -70,7 +75,6 @@ export default function UserProfilePage() {
     finally { setFollowLoading(false); }
   };
 
-  // ── Shimmer ──────────────────────────────────────────────────────────────────
   const Shimmer = ({ w, h, r = 8 }: { w: string | number; h: string | number; r?: number }) => (
     <div style={{ width: w, height: h, borderRadius: r, flexShrink: 0,
       background: 'linear-gradient(90deg,#ececec 25%,#e0e0e0 50%,#ececec 75%)',
@@ -78,36 +82,41 @@ export default function UserProfilePage() {
   );
 
   return (
-    <div style={{ minHeight: '100dvh', background: '#fff', fontFamily: 'system-ui, sans-serif', color: '#0a0a0a' }}>
+    <div style={{ minHeight: '100dvh', background: '#fff', fontFamily: F, color: '#0a0a0a', maxWidth: 600, margin: '0 auto' }}>
       <style>{`
         @keyframes shimmer { 0%,100%{background-position:200% 0} 50%{background-position:-200% 0} }
-        @keyframes fadeUp  { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
-        .fade-up { animation: fadeUp .35s cubic-bezier(.16,1,.3,1) forwards; }
-        .wp-card:active { transform: scale(0.97); }
+        @keyframes fadeUp  { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+        .fade-up { animation: fadeUp .3s cubic-bezier(.16,1,.3,1) forwards; }
         .wp-card { transition: transform .12s; }
+        .wp-card:active { transform: scale(0.97); }
+        .follow-btn:active { opacity: 0.75; }
       `}</style>
 
-      {/* ── Fixed header ── */}
-      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 30, display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-        <button onClick={() => router.back()} style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(0,0,0,0.05)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
+      {/* ── Fixed top bar — back + username ── */}
+      <div style={{ position: 'fixed', top: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 600, zIndex: 40, ...S.row, justifyContent: 'space-between', padding: '10px 12px', background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+        <button onClick={() => router.back()} style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(0,0,0,0.06)', border: 'none', ...S.row, justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
           <ChevronLeft size={18} color="#0a0a0a" strokeWidth={2.5} />
         </button>
         {!pageLoading && profile && (
-          <p style={{ fontSize: 15, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{profile.name}</p>
+          <p style={{ fontSize: 15, fontWeight: 700, flex: 1, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: '0 8px' }}>{profile.name}</p>
         )}
+        <div style={{ width: 34 }} />
       </div>
 
       {pageLoading ? (
-        // ── Skeleton ────────────────────────────────────────────────────────────
-        <div style={{ paddingTop: 70, maxWidth: 600, margin: '0 auto' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '28px 20px 20px', gap: 10 }}>
-            <Shimmer w={110} h={110} r={55} />
-            <Shimmer w={150} h={20} />
-            <Shimmer w={100} h={14} />
-            <Shimmer w={200} h={13} />
-            <div style={{ display: 'flex', gap: 0, width: '100%', marginTop: 8, borderRadius: 16, overflow: 'hidden', border: '1px solid #f0f0f0' }}>
-              {[1,2,3].map(i => <div key={i} style={{ flex: 1, padding: 16, borderRight: i < 3 ? '1px solid #f0f0f0' : 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}><Shimmer w={40} h={18} /><Shimmer w={55} h={11} /></div>)}
-            </div>
+        /* ── Skeleton ── */
+        <div style={{ paddingTop: 58 }}>
+          <Shimmer w="100%" h={200} r={0} />
+          <div style={{ padding: '0 16px 20px', marginTop: -42 }}>
+            <Shimmer w={120} h={120} r={60} />
+            <div style={{ height: 16 }} />
+            <Shimmer w={160} h={22} />
+            <div style={{ height: 8 }} />
+            <Shimmer w={110} h={14} />
+            <div style={{ height: 16 }} />
+            <Shimmer w="100%" h={72} r={12} />
+            <div style={{ height: 12 }} />
+            <Shimmer w="100%" h={42} r={8} />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 1 }}>
             {[...Array(9)].map((_,i) => <Shimmer key={i} w="100%" h={160} r={0} />)}
@@ -116,62 +125,106 @@ export default function UserProfilePage() {
       ) : profile ? (
         <div className="fade-up">
 
-          {/* ── Profile info ── */}
-          <div style={{ maxWidth: 600, margin: '0 auto', padding: '70px 20px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
-
-            {/* Avatar — large, 110px like Instagram mobile */}
-            <img
-              src={profile.avatar}
-              alt={profile.name}
-              style={{ width: 110, height: 110, borderRadius: '50%', objectFit: 'cover', border: '3px solid #fff', boxShadow: '0 2px 20px rgba(0,0,0,0.12)', marginBottom: 14, flexShrink: 0 }}
-            />
-
-            {/* Name + verified */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
-              <h2 style={{ fontSize: 22, fontWeight: 700, margin: 0, letterSpacing: '-0.02em' }}>{profile.name}</h2>
-              {profile.verified && <VerifiedBadge size="md" />}
+          {/* ── Cover photo — full width, tall ── */}
+          <div style={{ paddingTop: 58, position: 'relative' }}>
+            <div style={{
+              width: '100%', height: 220,
+              background: profile.cover_url
+                ? `url(${profile.cover_url}) center/cover no-repeat`
+                : 'linear-gradient(160deg, #1a1a1a 0%, #2d2d2d 100%)',
+              position: 'relative',
+            }}>
+              {/* dark gradient at bottom so avatar reads clearly */}
+              <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 80, background: 'linear-gradient(to top, rgba(0,0,0,0.35), transparent)' }} />
             </div>
 
-            {profile.username && (
-              <p style={{ fontSize: 13, color: 'rgba(0,0,0,0.38)', marginBottom: 8, margin: '0 0 8px' }}>@{profile.username}</p>
-            )}
-
-            {profile.bio && (
-              <p style={{ fontSize: 14, color: 'rgba(0,0,0,0.55)', lineHeight: 1.55, maxWidth: 280, margin: '0 0 16px' }}>{profile.bio}</p>
-            )}
-
-            {/* Stats */}
-            <div style={{ display: 'flex', width: '100%', maxWidth: 360, borderRadius: 18, border: '1px solid rgba(0,0,0,0.07)', overflow: 'hidden', marginBottom: 16, background: '#fafafa' }}>
-              {[
-                { label: 'Posts',     val: stats.posts     },
-                { label: 'Followers', val: stats.followers },
-                { label: 'Following', val: stats.following },
-              ].map(({ label, val }, i, arr) => (
-                <div key={label} style={{ flex: 1, padding: '14px 0', textAlign: 'center', borderRight: i < arr.length - 1 ? '1px solid rgba(0,0,0,0.07)' : 'none' }}>
-                  <p style={{ fontSize: 19, fontWeight: 700, margin: 0, letterSpacing: '-0.02em' }}>{fmt(val)}</p>
-                  <p style={{ fontSize: 11, color: 'rgba(0,0,0,0.38)', margin: '2px 0 0', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</p>
+            {/* ── Avatar — overlaps cover, bottom-left (Facebook style) ── */}
+            <div style={{ position: 'relative', padding: '0 16px' }}>
+              <div style={{ position: 'absolute', top: -54, left: 16 }}>
+                <div style={{ position: 'relative', display: 'inline-block' }}>
+                  <img
+                    src={profile.avatar}
+                    alt={profile.name}
+                    style={{ width: 120, height: 120, borderRadius: '50%', objectFit: 'cover', border: '4px solid #fff', display: 'block', boxShadow: '0 2px 12px rgba(0,0,0,0.15)', background: '#e8e8e8' }}
+                  />
+                  {/* Verified badge on avatar — bottom right */}
+                  {profile.verified && (
+                    <div style={{ position: 'absolute', bottom: 4, right: 4 }}>
+                      <VerifiedBadge size="md" />
+                    </div>
+                  )}
                 </div>
-              ))}
+              </div>
+
+              {/* ── Action buttons — top right, same row as avatar overlap ── */}
+              {session && !isOwn && (
+                <div style={{ ...S.row, justifyContent: 'flex-end', gap: 8, paddingTop: 12, paddingBottom: 0 }}>
+                  <button
+                    className="follow-btn"
+                    onClick={handleFollow}
+                    disabled={followLoading}
+                    style={{
+                      padding: '8px 22px',
+                      borderRadius: 8,
+                      border: isFollowing ? '1.5px solid rgba(0,0,0,0.14)' : 'none',
+                      background: isFollowing ? '#fff' : '#0a0a0a',
+                      color: isFollowing ? 'rgba(0,0,0,0.7)' : '#fff',
+                      fontSize: 14, fontWeight: 600,
+                      cursor: followLoading ? 'default' : 'pointer',
+                      opacity: followLoading ? 0.55 : 1,
+                      fontFamily: F,
+                      transition: 'all .18s',
+                    }}>
+                    {isFollowing ? 'Following' : 'Follow'}
+                  </button>
+                  <button style={{ width: 36, height: 36, borderRadius: 8, border: '1.5px solid rgba(0,0,0,0.12)', background: '#fff', ...S.row, justifyContent: 'center', cursor: 'pointer' }}>
+                    <MoreHorizontal size={17} color="rgba(0,0,0,0.6)" />
+                  </button>
+                </div>
+              )}
+
+              {/* Spacer below cover for avatar overlap */}
+              <div style={{ height: isOwn || !session ? 72 : 12 }} />
+
+              {/* ── Name + username + bio ── */}
+              <div style={{ paddingBottom: 16 }}>
+                <div style={{ ...S.row, gap: 6, marginBottom: 2 }}>
+                  <h2 style={{ fontSize: 22, fontWeight: 800, margin: 0, letterSpacing: '-0.03em', lineHeight: 1.2 }}>{profile.name}</h2>
+                  {profile.verified && <VerifiedBadge size="sm" />}
+                </div>
+
+                {profile.username && (
+                  <p style={{ fontSize: 13, color: 'rgba(0,0,0,0.4)', margin: '0 0 8px', fontWeight: 400 }}>@{profile.username}</p>
+                )}
+
+                {profile.bio && (
+                  <p style={{ fontSize: 14, color: 'rgba(0,0,0,0.6)', lineHeight: 1.55, margin: '0 0 0' }}>{profile.bio}</p>
+                )}
+              </div>
+
+              {/* ── Stats row — Facebook style: inline, text-based ── */}
+              <div style={{ ...S.row, gap: 20, paddingBottom: 16, borderBottom: '1px solid rgba(0,0,0,0.07)', flexWrap: 'wrap' }}>
+                {[
+                  { label: 'posts',     val: stats.posts     },
+                  { label: 'followers', val: stats.followers },
+                  { label: 'following', val: stats.following },
+                ].map(({ label, val }) => (
+                  <div key={label} style={{ ...S.row, gap: 4 }}>
+                    <span style={{ fontSize: 15, fontWeight: 700, color: '#0a0a0a' }}>{fmt(val)}</span>
+                    <span style={{ fontSize: 14, color: 'rgba(0,0,0,0.45)', fontWeight: 400 }}>{label}</span>
+                  </div>
+                ))}
+              </div>
             </div>
-
-            {/* Follow button */}
-            {session && !isOwn && (
-              <button
-                onClick={handleFollow}
-                disabled={followLoading}
-                style={{ padding: '10px 40px', borderRadius: 26, border: isFollowing ? '1.5px solid rgba(0,0,0,0.12)' : 'none', background: isFollowing ? 'transparent' : '#0a0a0a', color: isFollowing ? 'rgba(0,0,0,0.45)' : '#fff', fontSize: 14, fontWeight: 600, cursor: followLoading ? 'default' : 'pointer', opacity: followLoading ? 0.55 : 1, fontFamily: 'inherit', transition: 'all .18s', marginBottom: 4 }}>
-                {isFollowing ? 'Following' : 'Follow'}
-              </button>
-            )}
           </div>
 
-          {/* ── Posts divider ── */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '10px 20px 10px', maxWidth: 600, margin: '0 auto', borderTop: '1px solid rgba(0,0,0,0.07)' }}>
+          {/* ── Posts section header ── */}
+          <div style={{ ...S.row, gap: 7, padding: '12px 16px', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
             <Grid size={13} color="rgba(0,0,0,0.35)" />
-            <p style={{ fontSize: 12, fontWeight: 600, color: 'rgba(0,0,0,0.38)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: 0 }}>{fmt(stats.posts)} Posts</p>
+            <p style={{ fontSize: 12, fontWeight: 700, color: 'rgba(0,0,0,0.4)', textTransform: 'uppercase', letterSpacing: '0.07em', margin: 0 }}>Posts</p>
           </div>
 
-          {/* ── Grid — no gap, no radius, edge to edge ── */}
+          {/* ── Wallpaper grid ── */}
           {postsLoading ? (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 1 }}>
               {[...Array(9)].map((_,i) => (
@@ -182,33 +235,24 @@ export default function UserProfilePage() {
             <>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 1 }}>
                 {posts.map(wp => (
-                  <button
-                    key={wp.id}
-                    className="wp-card"
-                    onClick={() => router.push(`/details/${wp.id}`)}
-                    style={{ position: 'relative', aspectRatio: '3/4', border: 'none', padding: 0, cursor: 'pointer', background: '#e8e8e8', display: 'block', overflow: 'hidden' }}
-                  >
-                    <img
-                      src={wp.thumbnail || wp.url}
-                      alt={wp.title}
-                      loading="lazy"
-                      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                    />
+                  <button key={wp.id} className="wp-card" onClick={() => router.push(`/details/${wp.id}`)}
+                    style={{ position: 'relative', aspectRatio: '3/4', border: 'none', padding: 0, cursor: 'pointer', background: '#e8e8e8', display: 'block', overflow: 'hidden' }}>
+                    <img src={wp.thumbnail || wp.url} alt={wp.title} loading="lazy"
+                      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                   </button>
                 ))}
               </div>
-
               {hasMore && (
-                <div style={{ display: 'flex', justifyContent: 'center', padding: '20px 0 32px' }}>
-                  <button onClick={loadMore} style={{ padding: '10px 28px', borderRadius: 24, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', color: 'rgba(0,0,0,0.55)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                <div style={{ display: 'flex', justifyContent: 'center', padding: '24px 0 40px' }}>
+                  <button onClick={loadMore} style={{ padding: '10px 28px', borderRadius: 24, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', color: 'rgba(0,0,0,0.55)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: F }}>
                     Load more
                   </button>
                 </div>
               )}
             </>
           ) : (
-            <div style={{ textAlign: 'center', padding: '56px 0' }}>
-              <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#f5f5f5', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
+            <div style={{ textAlign: 'center', padding: '60px 0' }}>
+              <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#f5f5f5', ...S.row, justifyContent: 'center', margin: '0 auto 12px' }}>
                 <Grid size={22} color="rgba(0,0,0,0.18)" />
               </div>
               <p style={{ fontSize: 14, color: 'rgba(0,0,0,0.3)', margin: 0 }}>No posts yet</p>
