@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { WallpaperCard } from './WallpaperCard';
 import { usePrefetch } from '@/app/hooks/usePrefetch';
 import type { Wallpaper } from '../types';
 
-/* ─── Placeholder palette ─── */
+/* ─── Palette ─── */
 const COLORS = [
   { bg: '#e8eaf0', shimmer: '#d0d4e8' },
   { bg: '#ede8f0', shimmer: '#d8cce8' },
@@ -14,23 +14,19 @@ const COLORS = [
   { bg: '#f0ede8', shimmer: '#e8dcc8' },
 ];
 
-/* ─── Column counts per breakpoint ─── */
-const BREAKPOINTS = [
-  { minWidth: 1024, cols: 5 },
-  { minWidth: 768,  cols: 4 },
-  { minWidth: 480,  cols: 3 },
-  { minWidth: 0,    cols: 2 },
-];
+/* ─── Helpers ─── */
+const getColCount = (w: number) => w >= 1024 ? 5 : w >= 768 ? 4 : w >= 480 ? 3 : 2;
+const getGap      = (w: number) => w >= 1024 ? 12 : w >= 768 ? 10 : w >= 480 ? 8 : 6;
+const getPad      = (w: number) => w >= 1024 ? '12px 10px' : w >= 768 ? '10px 8px' : w >= 480 ? '8px 6px' : '6px 0px';
+const getItemGap  = (cols: number) => cols >= 4 ? 14 : cols >= 3 ? 12 : 10;
 
-const getColCount = (width: number) =>
-  (BREAKPOINTS.find(b => width >= b.minWidth) ?? BREAKPOINTS[BREAKPOINTS.length - 1]).cols;
-
-/* ─── Gap per breakpoint ─── */
-const getGap = (width: number) => {
-  if (width >= 1024) return 12;
-  if (width >= 768)  return 10;
-  if (width >= 480)  return 8;
-  return 6;
+/** Safe shortest-column finder — no spread operator, no stack risk */
+const shortestCol = (heights: number[]): number => {
+  let idx = 0;
+  for (let i = 1; i < heights.length; i++) {
+    if (heights[i] < heights[idx]) idx = i;
+  }
+  return idx;
 };
 
 const GLOBAL_CSS = `
@@ -44,8 +40,11 @@ const GLOBAL_CSS = `
 const ShimmerCard = ({ index, opacity = 1 }: { index: number; opacity?: number }) => {
   const c = COLORS[index % COLORS.length];
   return (
-    <div style={{ marginBottom: 10, opacity }}>
-      <div style={{ position: 'relative', width: '100%', borderRadius: 16, overflow: 'hidden', aspectRatio: '9/16', background: c.bg }}>
+    <div style={{ opacity }}>
+      <div style={{
+        position: 'relative', width: '100%', borderRadius: 16,
+        overflow: 'hidden', aspectRatio: '9/16', background: c.bg,
+      }}>
         <div style={{
           position: 'absolute', inset: 0,
           background: `linear-gradient(105deg,transparent 40%,${c.shimmer}80 50%,transparent 60%)`,
@@ -61,17 +60,19 @@ const ShimmerCard = ({ index, opacity = 1 }: { index: number; opacity?: number }
   );
 };
 
-/* ─── Shimmer grid (initial load) — still uses column-count, safe here because
-       it's a static placeholder count that never changes ─── */
-const ShimmerGrid = ({ count, opacity, cols, gap }: { count: number; opacity?: number; cols: number; gap: number }) => {
-  // Split shimmers evenly across columns
+const ShimmerGrid = ({ count, opacity, cols, gap, pad, itemGap }: {
+  count: number; opacity?: number; cols: number;
+  gap: number; pad: string; itemGap: number;
+}) => {
   const columns: number[][] = Array.from({ length: cols }, () => []);
   for (let i = 0; i < count; i++) columns[i % cols].push(i);
-
   return (
-    <div style={{ display: 'flex', gap, padding: '6px 0', alignItems: 'flex-start' }}>
+    <div style={{
+      width: '100%', boxSizing: 'border-box', overflow: 'hidden',
+      display: 'flex', gap: `${gap}px`, padding: pad, alignItems: 'flex-start',
+    }}>
       {columns.map((col, ci) => (
-        <div key={ci} style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+        <div key={ci} style={{ flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', gap: `${itemGap}px` }}>
           {col.map(i => <ShimmerCard key={i} index={i} opacity={opacity} />)}
         </div>
       ))}
@@ -96,93 +97,70 @@ export const WallpaperGrid = ({
   const [loadingMore,   setLoadingMore]   = useState(false);
   const [hasEverLoaded, setHasEverLoaded] = useState(false);
 
-  // Init from window immediately (client-only component, so window is available)
-  const [colCount, setColCount] = useState(() =>
-    typeof window !== 'undefined' ? getColCount(window.innerWidth) : 2
-  );
-  const [gap, setGap] = useState(() =>
-    typeof window !== 'undefined' ? getGap(window.innerWidth) : 6
-  );
+  const [dims, setDims] = useState(() => {
+    const w = typeof window !== 'undefined' ? window.innerWidth : 390;
+    return { cols: getColCount(w), gap: getGap(w), pad: getPad(w) };
+  });
 
-  const triggerRef   = useRef<HTMLDivElement>(null);
-  const loadingRef   = useRef(false);
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const loadingRef = useRef(false);
 
   /*
-   * colAssignment: permanent map of wallpaper.id → column index.
-   * Once assigned, a card's column NEVER changes, even across re-renders
-   * or when more wallpapers are appended. This eliminates reflow flicker.
+   * colMap:    wallpaper.id → column index (permanent, never reassigned)
+   * colCounts: item count per column (used only to balance new assignments)
+   * lastCols:  detects when col count changes so we can rebuild on resize
    */
-  const colAssignment = useRef<Map<string, number>>(new Map());
-
-  /*
-   * colHeights tracks the *count* of items per column so we can
-   * assign new items to the shortest column. This is purely for
-   * initial distribution balance — it's never used to re-sort
-   * already-assigned items.
-   */
-  const colHeights = useRef<number[]>([]);
+  const colMap    = useRef<Map<string, number>>(new Map());
+  const colCounts = useRef<number[]>([]);
+  const lastCols  = useRef(dims.cols);
 
   usePrefetch(useMemo(() => wallpapers.slice(20, 30).map(wp => wp.url), [wallpapers]));
 
-  /* ── Responsive column/gap tracking ── */
+  /* ── Window resize ── */
   useEffect(() => {
-    const update = () => {
+    const onResize = () => {
       const w = window.innerWidth;
-      setColCount(getColCount(w));
-      setGap(getGap(w));
+      setDims({ cols: getColCount(w), gap: getGap(w), pad: getPad(w) });
     };
-    window.addEventListener('resize', update);
-    return () => window.removeEventListener('resize', update);
+    window.addEventListener('resize', onResize, { passive: true });
+    return () => window.removeEventListener('resize', onResize);
   }, []);
 
-  /* ── When col count changes (resize), reset all assignments ── */
-  useEffect(() => {
-    colAssignment.current.clear();
-    colHeights.current = Array(colCount).fill(0);
-    // Re-assign all current wallpapers in order
+  const { cols, gap, pad } = dims;
+  const itemGap = getItemGap(cols);
+
+  /* ── On col-count change (resize): wipe and rebuild all assignments ── */
+  if (cols !== lastCols.current) {
+    colMap.current.clear();
+    colCounts.current = new Array(cols).fill(0);
+    lastCols.current  = cols;
+  }
+
+  /* ── Ensure colCounts is always sized correctly ── */
+  if (colCounts.current.length !== cols) {
+    colCounts.current = new Array(cols).fill(0);
+  }
+
+  /* ── Assign any new wallpapers not yet in the map ── */
+  for (const wp of wallpapers) {
+    if (colMap.current.has(wp.id)) continue;
+    const col = shortestCol(colCounts.current);
+    colMap.current.set(wp.id, col);
+    colCounts.current[col]++;
+  }
+
+  /* ── Build stable column arrays for render ── */
+  const columns = useMemo(() => {
+    const result: Wallpaper[][] = Array.from({ length: cols }, () => []);
     for (const wp of wallpapers) {
-      const shortest = colHeights.current.indexOf(Math.min(...colHeights.current));
-      colAssignment.current.set(wp.id, shortest);
-      colHeights.current[shortest]++;
+      const col = colMap.current.get(wp.id) ?? 0;
+      result[col].push(wp);
     }
+    return result;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [colCount]);
+  }, [wallpapers, cols]);
 
-  /* ── Assign column to any new wallpapers not yet in the map ── */
-  const assignNewWallpapers = useCallback((wps: Wallpaper[], cols: number) => {
-    if (colHeights.current.length !== cols) {
-      colHeights.current = Array(cols).fill(0);
-    }
-    // Recount heights from existing assignments to stay in sync
-    const counts = Array(cols).fill(0);
-    for (const col of colAssignment.current.values()) counts[col]++;
-    colHeights.current = counts;
-
-    for (const wp of wps) {
-      if (colAssignment.current.has(wp.id)) continue;
-      const shortest = colHeights.current.indexOf(Math.min(...colHeights.current));
-      colAssignment.current.set(wp.id, shortest);
-      colHeights.current[shortest]++;
-    }
-  }, []);
-
-  // Run assignment whenever wallpapers or colCount changes
-  useMemo(() => {
-    assignNewWallpapers(wallpapers, colCount);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wallpapers, colCount]);
-
-  /* ── Build stable column arrays ── */
-  const columns = useMemo<Wallpaper[][]>(() => {
-    const cols: Wallpaper[][] = Array.from({ length: colCount }, () => []);
-    for (const wp of wallpapers) {
-      const col = colAssignment.current.get(wp.id) ?? 0;
-      cols[col].push(wp);
-    }
-    return cols;
-  }, [wallpapers, colCount]);
-
-  /* ── Lifecycle ── */
+  /* ── hasEverLoaded ── */
   useEffect(() => {
     if (wallpapers.length > 0 && !hasEverLoaded) setHasEverLoaded(true);
   }, [wallpapers.length, hasEverLoaded]);
@@ -202,15 +180,11 @@ export const WallpaperGrid = ({
     return () => observer.disconnect();
   }, [onLoadMore, hasMore]);
 
-  /* ── Padding per breakpoint ── */
-  const padding = colCount >= 5 ? '12px 10px' : colCount >= 4 ? '10px 8px' : colCount >= 3 ? '8px 6px' : '6px 0';
-  const itemGap = colCount >= 4 ? 14 : colCount >= 3 ? 12 : 10;
-
   /* ── Render states ── */
   if (!hasEverLoaded && isLoading)
     return (
       <>
-        <ShimmerGrid count={10} cols={colCount} gap={gap} />
+        <ShimmerGrid count={10} cols={cols} gap={gap} pad={pad} itemGap={itemGap} />
         <style>{GLOBAL_CSS}</style>
       </>
     );
@@ -218,7 +192,7 @@ export const WallpaperGrid = ({
   if (hasEverLoaded && wallpapers.length === 0 && isLoading)
     return (
       <>
-        <ShimmerGrid count={6} opacity={0.5} cols={colCount} gap={gap} />
+        <ShimmerGrid count={6} opacity={0.5} cols={cols} gap={gap} pad={pad} itemGap={itemGap} />
         <style>{GLOBAL_CSS}</style>
       </>
     );
@@ -234,16 +208,29 @@ export const WallpaperGrid = ({
 
   return (
     <>
-      {/* ── Stable column layout ── */}
-      <div style={{ display: 'flex', gap, padding, alignItems: 'flex-start' }}>
+      <div style={{
+        width: '100%',
+        boxSizing: 'border-box',
+        overflow: 'hidden',        /* hard stops any child from bleeding outside */
+        display: 'flex',
+        gap: `${gap}px`,           /* gap must be a CSS string with px unit */
+        padding: pad,
+        alignItems: 'flex-start',
+      }}>
         {columns.map((col, ci) => (
-          <div key={ci} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: itemGap }}>
+          <div key={ci} style={{
+            flex: '1 1 0',
+            minWidth: 0,           /* critical: prevents flex child from overflowing */
+            display: 'flex',
+            flexDirection: 'column',
+            gap: `${itemGap}px`,
+          }}>
             {col.map((wp, idx) => (
               <WallpaperCard
                 key={wp.id}
                 wp={wp}
-                priority={ci * col.length + idx < 6}
-                placeholderIndex={ci * col.length + idx}
+                priority={ci + idx * cols < 6}
+                placeholderIndex={ci + idx * cols}
                 onClick={onWallpaperClick ? () => onWallpaperClick(wp) : undefined}
               />
             ))}
@@ -254,8 +241,8 @@ export const WallpaperGrid = ({
       {hasMore && <div ref={triggerRef} style={{ height: 1 }} />}
 
       {loadingMore && (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 0', gap: 8 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '32px 0', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 6 }}>
             {[0, 1, 2].map(i => (
               <div key={i} style={{
                 width: 8, height: 8, borderRadius: '50%', background: '#d1d5db',
