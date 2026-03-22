@@ -1,4 +1,4 @@
-import { X, LogIn } from 'lucide-react';
+import { X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 type LoginPromptModalProps = {
@@ -17,46 +17,133 @@ export const LoginPromptModal = ({ isOpen, onClose, action }: LoginPromptModalPr
   };
 
   return (
-    <div 
-      className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+    <div
+      className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-4"
+      style={{ backgroundColor: 'rgba(0,0,0,0.25)', backdropFilter: 'blur(4px)' }}
       onClick={onClose}
     >
-      <div 
-        className="bg-zinc-950 rounded-2xl p-6 max-w-sm w-full border border-white/10 shadow-2xl"
+      <div
         onClick={e => e.stopPropagation()}
+        style={{
+          backgroundColor: '#ffffff',
+          border: '1px solid rgba(0,0,0,0.07)',
+          borderRadius: '16px',
+          padding: '28px',
+          width: '100%',
+          maxWidth: '360px',
+          boxShadow: '0 8px 40px rgba(0,0,0,0.10)',
+          animation: 'slideUp 0.22s cubic-bezier(0.16, 1, 0.3, 1) both',
+        }}
       >
-        <div className="flex items-start justify-between mb-4">
-          <div className="w-12 h-12 bg-white/5 rounded-full flex items-center justify-center">
-            <LogIn className="w-6 h-6 text-white/70" />
-          </div>
-          <button 
+        <style>{`
+          @keyframes slideUp {
+            from { opacity: 0; transform: translateY(12px); }
+            to   { opacity: 1; transform: translateY(0); }
+          }
+        `}</style>
+
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
+          <span style={{
+            fontSize: '11px',
+            fontWeight: 500,
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+            color: 'rgba(0,0,0,0.3)',
+          }}>
+            Authentication
+          </span>
+          <button
             onClick={onClose}
-            className="p-2 hover:bg-white/5 rounded-lg transition-colors"
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '2px',
+              color: 'rgba(0,0,0,0.3)',
+              display: 'flex',
+              alignItems: 'center',
+              transition: 'color 0.15s',
+            }}
+            onMouseEnter={e => (e.currentTarget.style.color = 'rgba(0,0,0,0.7)')}
+            onMouseLeave={e => (e.currentTarget.style.color = 'rgba(0,0,0,0.3)')}
           >
-            <X className="w-5 h-5 text-white/50" />
+            <X size={16} strokeWidth={1.5} />
           </button>
         </div>
 
-        <h3 className="text-xl font-semibold text-white mb-2">
-          Login Required
-        </h3>
-        <p className="text-sm text-white/60 mb-6">
-          You need to be logged in to {action}. Please sign in to continue.
+        {/* Body */}
+        <p style={{
+          fontSize: '20px',
+          fontWeight: 500,
+          color: '#0a0a0a',
+          lineHeight: 1.3,
+          marginBottom: '8px',
+          letterSpacing: '-0.01em',
+        }}>
+          Sign in to continue
+        </p>
+        <p style={{
+          fontSize: '13.5px',
+          color: 'rgba(0,0,0,0.45)',
+          lineHeight: 1.55,
+          marginBottom: '28px',
+        }}>
+          You need to be signed in to {action}.
         </p>
 
-        <div className="flex gap-3">
+        {/* Divider */}
+        <div style={{
+          height: '1px',
+          backgroundColor: 'rgba(0,0,0,0.06)',
+          marginBottom: '20px',
+        }} />
+
+        {/* Actions */}
+        <div style={{ display: 'flex', gap: '10px' }}>
           <button
             onClick={onClose}
-            className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-white/70 hover:bg-white/5 border border-white/10 transition-colors"
+            style={{
+              flex: 1,
+              padding: '10px 16px',
+              borderRadius: '8px',
+              fontSize: '13.5px',
+              fontWeight: 500,
+              color: 'rgba(0,0,0,0.45)',
+              background: 'none',
+              border: '1px solid rgba(0,0,0,0.1)',
+              cursor: 'pointer',
+              transition: 'all 0.15s',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.color = 'rgba(0,0,0,0.75)';
+              e.currentTarget.style.borderColor = 'rgba(0,0,0,0.2)';
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.color = 'rgba(0,0,0,0.45)';
+              e.currentTarget.style.borderColor = 'rgba(0,0,0,0.1)';
+            }}
           >
             Cancel
           </button>
           <button
             onClick={handleLogin}
-            className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium bg-white text-black hover:bg-white/90 transition-colors flex items-center justify-center gap-2"
+            style={{
+              flex: 1,
+              padding: '10px 16px',
+              borderRadius: '8px',
+              fontSize: '13.5px',
+              fontWeight: 500,
+              color: '#fff',
+              background: '#0a0a0a',
+              border: 'none',
+              cursor: 'pointer',
+              transition: 'opacity 0.15s',
+            }}
+            onMouseEnter={e => (e.currentTarget.style.opacity = '0.82')}
+            onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
           >
-            <LogIn className="w-4 h-4" />
-            <span>Login</span>
+            Sign in
           </button>
         </div>
       </div>
