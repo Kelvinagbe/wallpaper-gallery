@@ -7,6 +7,7 @@ import { Header } from './components/Header';
 import { Navigation } from './components/Navigation';
 import { WallpaperGrid } from './components/WallpaperGrid';
 import { GlobalStyles } from './components/GlobalStyles';
+import { MonetizationInfoModal } from '@/app/components/MonetizationInfoModal';
 import type { Wallpaper, Filter } from './types';
 
 const ITEMS_PER_PAGE = 10;
@@ -23,7 +24,6 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
   const loadingMoreRef   = useRef(false);
   const filterChangedRef = useRef(false);
 
-  // Restore scroll or seed cache on first mount
   useEffect(() => {
     if (feedCache.populated) {
       requestAnimationFrame(() => requestAnimationFrame(() =>
@@ -34,7 +34,6 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
     Object.assign(feedCache, { wallpapers: initialWallpapers, page: 1, hasMore: initialHasMore, filter, populated: true });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Re-fetch when filter changes
   useEffect(() => {
     if (!filterChangedRef.current) { filterChangedRef.current = true; return; }
     let cancelled = false;
@@ -101,7 +100,7 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
           />
         </main>
       </div>
-
+      <MonetizationInfoModal />
     </div>
   );
 }
