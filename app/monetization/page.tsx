@@ -2,250 +2,236 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronLeft, TrendingUp, Download, Eye, Heart, Clock, Wallet, ChevronRight } from 'lucide-react';
+import { ChevronLeft, Check, X, Loader2, ArrowRight } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/app/components/AuthProvider';
-import { Navigation } from '@/app/components/Navigation';
 
-const fmt    = (n: number) => n >= 1_000_000 ? `${(n/1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n/1_000).toFixed(1)}k` : String(n);
-const fmtNgn = (n: number) => `₦${n.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
-const Shimmer = ({ w, h, r = 8 }: { w: string | number; h: string | number; r?: number }) => (
-  <div style={{ width: w, height: h, borderRadius: r, flexShrink: 0,
-    background: 'linear-gradient(90deg,#ececec 25%,#e0e0e0 50%,#ececec 75%)',
-    backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease infinite' }} />
-);
-
-interface MonthlyStats {
-  month: string; views: number; downloads: number; likes: number; score: number;
+interface Req { required: number; current: number; met: boolean }
+interface Eligibility {
+  eligible: boolean;
+  status:   string;
+  requirements: {
+    followers:   Req;
+    posts:       Req;
+    views:       Req;
+    downloads:   Req;
+    account_age: Req;
+  };
 }
 
-interface Earning {
-  id: string; amount: number; month: string; score: number; pool_amount: number; created_at: string;
-}
-
-export default function MonetizationPage() {
+export default function MonetizationApplyPage() {
   const router   = useRouter();
   const supabase = createClient();
   const { profile, isLoading: authLoading } = useAuth();
 
-  const [loading,      setLoading]      = useState(true);
-  const [balance,      setBalance]      = useState(0);
-  const [totalEarned,  setTotalEarned]  = useState(0);
-  const [thisMonth,    setThisMonth]    = useState<MonthlyStats | null>(null);
-  const [earnings,     setEarnings]     = useState<Earning[]>([]);
-  const [poolAmount,   setPoolAmount]   = useState(0);
-  const [estimatedEarnings, setEstimatedEarnings] = useState(0);
+  const [loading,     setLoading]     = useState(true);
+  const [eligibility, setEligibility] = useState<Eligibility | null>(null);
+  const [idType,      setIdType]      = useState<'nin' | 'bvn'>('nin');
+  const [idNumber,    setIdNumber]    = useState('');
+  const [submitting,  setSubmitting]  = useState(false);
+  const [submitted,   setSubmitted]   = useState(false);
+  const [error,       setError]       = useState('');
 
   useEffect(() => {
     if (authLoading) return;
     if (!profile?.id) { router.replace('/profile'); return; }
-    load();
+    (async () => {
+      try {
+        const { data } = await supabase.rpc('check_monetization_eligibility', { user_id: profile!.id });
+        setEligibility(data);
+        if (data?.status === 'approved') { router.replace('/monetization'); return; }
+      } catch (e) { console.error(e); }
+      finally { setLoading(false); }
+    })();
   }, [profile?.id, authLoading]);
 
-  const load = async () => {
+  const handleSubmit = async () => {
+    if (!idNumber.trim() || submitting) return;
+    const cleaned = idNumber.replace(/\s/g, '');
+    if (cleaned.length !== 11) { setError(`${idType.toUpperCase()} must be 11 digits`); return; }
+    setError('');
+    setSubmitting(true);
     try {
-      const currentMonth = new Date().toISOString().slice(0, 7); // 'YYYY-MM'
-
-      const [profileRes, statsRes, earningsRes, poolRes] = await Promise.all([
-        supabase.from('profiles').select('balance, total_earned, monetization_status').eq('id', profile!.id).single(),
-        supabase.from('monthly_stats').select('*').eq('user_id', profile!.id).eq('month', currentMonth),
-        supabase.from('earnings').select('*').eq('user_id', profile!.id).order('created_at', { ascending: false }).limit(12),
-        supabase.from('monthly_pools').select('amount').eq('month', currentMonth).eq('distributed', false).maybeSingle(),
-      ]);
-
-      // Redirect if not approved
-      if (profileRes.data?.monetization_status !== 'approved') {
-        router.replace('/monetization/apply'); return;
-      }
-
-      setBalance(profileRes.data?.balance ?? 0);
-      setTotalEarned(profileRes.data?.total_earned ?? 0);
-      setEarnings(earningsRes.data ?? []);
-
-      // Aggregate this month's stats across all wallpapers
-      const stats = statsRes.data ?? [];
-      const agg: MonthlyStats = {
-        month:     currentMonth,
-        views:     stats.reduce((s: number, r: MonthlyStats) => s + r.views, 0),
-        downloads: stats.reduce((s: number, r: MonthlyStats) => s + r.downloads, 0),
-        likes:     stats.reduce((s: number, r: MonthlyStats) => s + r.likes, 0),
-        score:     stats.reduce((s: number, r: MonthlyStats) => s + r.score, 0),
-      };
-      setThisMonth(agg);
-
-      // Calculate estimated earnings
-      const pool   = poolRes.data?.amount ?? 0;
-      const score  = (agg.views * 0.2) + (agg.downloads * 10) + (agg.likes * 5);
-      const raw    = score * 0.01;
-      setPoolAmount(pool);
-      setEstimatedEarnings(pool > 0 ? Math.min(raw, pool) : raw);
-
-    } catch (e) { console.error(e); }
-    finally { setLoading(false); }
+      const { data, error: rpcError } = await supabase.rpc('apply_for_monetization', { id_type: idType, id_number: cleaned });
+      if (rpcError || !data?.success) { setError(data?.error || rpcError?.message || 'Failed to submit. Try again.'); return; }
+      setSubmitted(true);
+    } catch (e: any) { setError(e.message || 'Something went wrong'); }
+    finally { setSubmitting(false); }
   };
 
-  const currentMonth = new Date().toLocaleString('default', { month: 'long', year: 'numeric' });
+  const reqItems = eligibility ? [
+    { label: 'Followers',   current: eligibility.requirements.followers.current,   required: eligibility.requirements.followers.required,   met: eligibility.requirements.followers.met,   suffix: '' },
+    { label: 'Posts',       current: eligibility.requirements.posts.current,       required: eligibility.requirements.posts.required,       met: eligibility.requirements.posts.met,       suffix: '' },
+    { label: 'Views',       current: eligibility.requirements.views.current,       required: eligibility.requirements.views.required,       met: eligibility.requirements.views.met,       suffix: '' },
+    { label: 'Downloads',   current: eligibility.requirements.downloads.current,   required: eligibility.requirements.downloads.required,   met: eligibility.requirements.downloads.met,   suffix: '' },
+    { label: 'Account Age', current: eligibility.requirements.account_age.current, required: eligibility.requirements.account_age.required, met: eligibility.requirements.account_age.met, suffix: 'd' },
+  ] : [];
+
+  const metCount = reqItems.filter(r => r.met).length;
+  const allMet   = eligibility?.eligible;
+
+  // ── CSS vars ──────────────────────────────────────────────────────────────
+  const C = {
+    border:  '1px solid rgba(0,0,0,0.08)',
+    muted:   'rgba(0,0,0,0.4)',
+    faint:   'rgba(0,0,0,0.22)',
+    surface: '#fafafa',
+    green:   '#16a34a',
+  };
+
+  if (loading) return (
+    <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff' }}>
+      <Loader2 size={18} color={C.faint} style={{ animation: 'spin .8s linear infinite' }} />
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    </div>
+  );
 
   return (
-    <div style={{ minHeight: '100dvh', background: '#fff', fontFamily: 'system-ui, sans-serif', color: '#0a0a0a', paddingBottom: 100 }}>
+    <div style={{ minHeight: '100dvh', background: '#fff', color: '#0a0a0a', fontFamily: "'Geist', 'Inter', system-ui, sans-serif" }}>
       <style>{`
-        @keyframes shimmer { 0%,100%{background-position:200% 0} 50%{background-position:-200% 0} }
-        @keyframes fadeUp  { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
-        .fade-up { animation: fadeUp .35s cubic-bezier(.16,1,.3,1) forwards; }
-        .row-btn:active { background: rgba(0,0,0,0.03) !important; }
-        .row-btn { transition: background .1s; }
+        @keyframes spin   { to { transform: rotate(360deg) } }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: translateY(0) } }
+        .page { animation: fadeIn .3s ease both; }
+        .tab:active  { opacity: .7; }
+        .tab         { transition: all .12s; }
+        .btn:active  { opacity: .8; transform: scale(.99); }
+        .btn         { transition: opacity .12s, transform .1s; }
+        input:focus  { outline: none; border-color: rgba(0,0,0,0.3) !important; }
       `}</style>
 
-      {/* Header */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <button onClick={() => router.back()} style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(0,0,0,0.05)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-            <ChevronLeft size={18} color="#0a0a0a" strokeWidth={2.5} />
-          </button>
-          <p style={{ fontSize: 15, fontWeight: 700 }}>My Earnings</p>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 20, background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)' }}>
-          <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} />
-          <span style={{ fontSize: 11, fontWeight: 600, color: '#10b981' }}>Active</span>
-        </div>
-      </div>
+      {/* ── Nav bar ── */}
+      <nav style={{ position: 'sticky', top: 0, zIndex: 10, borderBottom: C.border, background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center', height: 52, padding: '0 16px', gap: 10 }}>
+        <button onClick={() => router.back()} style={{ width: 28, height: 28, borderRadius: 6, border: C.border, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <ChevronLeft size={15} color="#0a0a0a" strokeWidth={2} />
+        </button>
+        <span style={{ fontSize: 13, fontWeight: 500, color: C.muted }}>Monetization</span>
+      </nav>
 
-      <div style={{ maxWidth: 600, margin: '0 auto', padding: '20px 16px' }}>
-
-        {loading ? (
-          <div className="fade-up" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <Shimmer w="100%" h={140} r={20} />
-            <Shimmer w="100%" h={180} r={20} />
-            <Shimmer w="100%" h={200} r={20} />
+      {/* ── Success ── */}
+      {submitted ? (
+        <div className="page" style={{ maxWidth: 400, margin: '80px auto', padding: '0 24px', textAlign: 'center' }}>
+          <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#0a0a0a', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
+            <Check size={18} color="#fff" strokeWidth={2.5} />
           </div>
-        ) : (
-          <div className="fade-up" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <p style={{ fontSize: 18, fontWeight: 600, letterSpacing: '-0.02em', margin: '0 0 8px' }}>Application submitted</p>
+          <p style={{ fontSize: 13, color: C.muted, lineHeight: 1.6, margin: '0 0 28px' }}>
+            We'll review your details and notify you within 24–48 hours.
+          </p>
+          <button className="btn" onClick={() => router.replace('/profile')}
+            style={{ padding: '8px 20px', borderRadius: 6, border: C.border, background: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', color: '#0a0a0a' }}>
+            Back to profile
+          </button>
+        </div>
 
-            {/* Balance card */}
-            <div style={{ borderRadius: 20, background: '#0a0a0a', padding: '24px 20px', color: '#fff' }}>
-              <p style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 8px' }}>Available Balance</p>
-              <p style={{ fontSize: 36, fontWeight: 700, letterSpacing: '-0.03em', margin: '0 0 16px' }}>{fmtNgn(balance)}</p>
-              <div style={{ height: 1, background: 'rgba(255,255,255,0.1)', marginBottom: 16 }} />
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div>
-                  <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', margin: '0 0 2px' }}>Total Earned</p>
-                  <p style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>{fmtNgn(totalEarned)}</p>
-                </div>
-                {/* Withdraw button — visible but coming soon */}
-                <button
-                  disabled
-                  style={{ padding: '10px 20px', borderRadius: 24, border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.4)', fontSize: 13, fontWeight: 600, cursor: 'not-allowed', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 7 }}>
-                  <Wallet size={14} />
-                  Withdraw · Soon
-                </button>
-              </div>
+      ) : eligibility?.status === 'pending' ? (
+        /* ── Pending ── */
+        <div className="page" style={{ maxWidth: 400, margin: '80px auto', padding: '0 24px', textAlign: 'center' }}>
+          <div style={{ width: 40, height: 40, borderRadius: '50%', border: C.border, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
+            <Loader2 size={17} color={C.muted} style={{ animation: 'spin 1.4s linear infinite' }} />
+          </div>
+          <p style={{ fontSize: 18, fontWeight: 600, letterSpacing: '-0.02em', margin: '0 0 8px' }}>Under review</p>
+          <p style={{ fontSize: 13, color: C.muted, lineHeight: 1.6, margin: '0 0 28px' }}>
+            Your application is being reviewed. We'll notify you when done.
+          </p>
+          <button className="btn" onClick={() => router.replace('/profile')}
+            style={{ padding: '8px 20px', borderRadius: 6, border: C.border, background: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', color: '#0a0a0a' }}>
+            Back to profile
+          </button>
+        </div>
+
+      ) : (
+        /* ── Main ── */
+        <div className="page" style={{ maxWidth: 480, margin: '0 auto', padding: '40px 20px 80px' }}>
+
+          {/* Title */}
+          <div style={{ marginBottom: 36 }}>
+            <p style={{ fontSize: 11, fontWeight: 500, color: C.faint, letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 10px' }}>Creator Program</p>
+            <h1 style={{ fontSize: 24, fontWeight: 600, letterSpacing: '-0.03em', lineHeight: 1.2, margin: '0 0 10px' }}>
+              Apply for Monetization
+            </h1>
+            <p style={{ fontSize: 13, color: C.muted, lineHeight: 1.65, margin: 0 }}>
+              Meet the requirements below and verify your identity to start earning from your wallpapers.
+            </p>
+          </div>
+
+          {/* Requirements card */}
+          <div style={{ marginBottom: 28, border: C.border, borderRadius: 8, overflow: 'hidden' }}>
+            {/* Card header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderBottom: C.border, background: C.surface }}>
+              <span style={{ fontSize: 12, fontWeight: 500, color: C.muted }}>Requirements</span>
+              <span style={{ fontSize: 12, fontWeight: 500, color: allMet ? C.green : C.faint }}>{metCount}/{reqItems.length} met</span>
             </div>
 
-            {/* This month */}
-            <div style={{ borderRadius: 20, border: '1px solid rgba(0,0,0,0.07)', background: '#fafafa', padding: '20px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                <div>
-                  <p style={{ fontSize: 13, fontWeight: 700, color: '#0a0a0a', margin: '0 0 2px' }}>{currentMonth}</p>
-                  <p style={{ fontSize: 11, color: 'rgba(0,0,0,0.4)', margin: 0 }}>Current month activity</p>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <p style={{ fontSize: 11, color: 'rgba(0,0,0,0.4)', margin: '0 0 2px' }}>Est. earnings</p>
-                  <p style={{ fontSize: 16, fontWeight: 700, color: '#10b981', margin: 0 }}>{fmtNgn(estimatedEarnings)}</p>
-                </div>
-              </div>
-
-              {/* Stats grid */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
-                {[
-                  { icon: Eye,      label: 'Views',     value: fmt(thisMonth?.views ?? 0),     pts: `+${((thisMonth?.views ?? 0) * 0.2).toFixed(0)} pts` },
-                  { icon: Download, label: 'Downloads', value: fmt(thisMonth?.downloads ?? 0), pts: `+${((thisMonth?.downloads ?? 0) * 10).toFixed(0)} pts` },
-                  { icon: Heart,    label: 'Likes',     value: fmt(thisMonth?.likes ?? 0),     pts: `+${((thisMonth?.likes ?? 0) * 5).toFixed(0)} pts` },
-                ].map(({ icon: Icon, label, value, pts }) => (
-                  <div key={label} style={{ background: '#fff', borderRadius: 14, border: '1px solid rgba(0,0,0,0.06)', padding: '12px 10px', textAlign: 'center' }}>
-                    <Icon size={16} color="rgba(0,0,0,0.35)" style={{ marginBottom: 6 }} />
-                    <p style={{ fontSize: 18, fontWeight: 700, margin: '0 0 2px', letterSpacing: '-0.02em' }}>{value}</p>
-                    <p style={{ fontSize: 10, color: 'rgba(0,0,0,0.4)', margin: '0 0 4px' }}>{label}</p>
-                    <p style={{ fontSize: 10, fontWeight: 600, color: '#10b981', margin: 0 }}>{pts}</p>
-                  </div>
-                ))}
-              </div>
-
-              {/* Total score */}
-              <div style={{ marginTop: 12, padding: '10px 14px', background: '#fff', borderRadius: 12, border: '1px solid rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                  <TrendingUp size={14} color="rgba(0,0,0,0.4)" />
-                  <span style={{ fontSize: 13, color: 'rgba(0,0,0,0.5)', fontWeight: 500 }}>Total score this month</span>
-                </div>
-                <span style={{ fontSize: 14, fontWeight: 700, color: '#0a0a0a' }}>
-                  {((thisMonth?.views ?? 0) * 0.2 + (thisMonth?.downloads ?? 0) * 10 + (thisMonth?.likes ?? 0) * 5).toFixed(1)} pts
+            {/* Rows */}
+            {reqItems.map(({ label, current, required, met, suffix }, i, arr) => (
+              <div key={label} style={{ display: 'flex', alignItems: 'center', padding: '10px 14px', background: '#fff', borderBottom: i < arr.length - 1 ? C.border : 'none' }}>
+                {met
+                  ? <Check size={13} color={C.green} strokeWidth={2.5} style={{ marginRight: 10, flexShrink: 0 }} />
+                  : <X     size={12} color={C.faint} strokeWidth={2}   style={{ marginRight: 10, flexShrink: 0 }} />
+                }
+                <span style={{ flex: 1, fontSize: 13, color: '#0a0a0a' }}>{label}</span>
+                <span style={{ fontSize: 12, color: met ? C.green : C.muted, fontVariantNumeric: 'tabular-nums' }}>
+                  {current}{suffix}
+                  <span style={{ color: C.faint }}> / {required}{suffix}</span>
                 </span>
               </div>
+            ))}
 
-              {poolAmount > 0 && (
-                <p style={{ fontSize: 11, color: 'rgba(0,0,0,0.35)', margin: '10px 0 0', textAlign: 'center' }}>
-                  Pool this month: {fmtNgn(poolAmount)} · ₦0.01 per point
-                </p>
-              )}
+            {/* Progress bar */}
+            <div style={{ height: 2, background: 'rgba(0,0,0,0.05)' }}>
+              <div style={{ height: '100%', background: allMet ? C.green : '#0a0a0a', width: `${reqItems.length > 0 ? (metCount / reqItems.length) * 100 : 0}%`, transition: 'width .5s ease' }} />
             </div>
+          </div>
 
-            {/* How scoring works */}
-            <div style={{ borderRadius: 20, border: '1px solid rgba(0,0,0,0.07)', background: '#fafafa', padding: '16px 20px' }}>
-              <p style={{ fontSize: 12, fontWeight: 700, color: 'rgba(0,0,0,0.4)', textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 12px' }}>How scoring works</p>
-              {[
-                { icon: Eye,      label: '1 View',     pts: '0.2 pts', note: 'Logged in users only' },
-                { icon: Download, label: '1 Download', pts: '10 pts',  note: 'Unique per user'       },
-                { icon: Heart,    label: '1 Like',     pts: '5 pts',   note: 'Unique per user'       },
-              ].map(({ icon: Icon, label, pts, note }, i, arr) => (
-                <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 12, paddingBottom: i < arr.length - 1 ? 10 : 0, marginBottom: i < arr.length - 1 ? 10 : 0, borderBottom: i < arr.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none' }}>
-                  <div style={{ width: 32, height: 32, borderRadius: 9, background: 'rgba(0,0,0,0.04)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <Icon size={14} color="rgba(0,0,0,0.5)" />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <p style={{ fontSize: 13, fontWeight: 600, color: '#0a0a0a', margin: '0 0 1px' }}>{label}</p>
-                    <p style={{ fontSize: 11, color: 'rgba(0,0,0,0.38)', margin: 0 }}>{note}</p>
-                  </div>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: '#10b981' }}>{pts}</span>
-                </div>
-              ))}
-            </div>
+          {/* ID form */}
+          {allMet ? (
+            <div>
+              {/* Section label */}
+              <p style={{ fontSize: 12, fontWeight: 500, color: C.muted, margin: '0 0 10px' }}>Identity Verification</p>
 
-            {/* Earnings history */}
-            {earnings.length > 0 && (
-              <div style={{ borderRadius: 20, border: '1px solid rgba(0,0,0,0.07)', background: '#fafafa', overflow: 'hidden' }}>
-                <p style={{ fontSize: 12, fontWeight: 700, color: 'rgba(0,0,0,0.4)', textTransform: 'uppercase', letterSpacing: '0.07em', margin: 0, padding: '16px 20px 12px' }}>Earnings History</p>
-                {earnings.map((e, i) => (
-                  <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', borderTop: i === 0 ? '1px solid rgba(0,0,0,0.06)' : 'none', borderBottom: i < earnings.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none' }}>
-                    <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(16,185,129,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <Clock size={15} color="#10b981" />
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <p style={{ fontSize: 13, fontWeight: 600, color: '#0a0a0a', margin: '0 0 2px' }}>
-                        {new Date(e.month + '-01').toLocaleString('default', { month: 'long', year: 'numeric' })}
-                      </p>
-                      <p style={{ fontSize: 11, color: 'rgba(0,0,0,0.38)', margin: 0 }}>{e.score.toFixed(1)} pts · Pool {fmtNgn(e.pool_amount)}</p>
-                    </div>
-                    <p style={{ fontSize: 15, fontWeight: 700, color: '#10b981', margin: 0 }}>{fmtNgn(e.amount)}</p>
-                  </div>
+              {/* NIN / BVN tabs */}
+              <div style={{ display: 'inline-flex', border: C.border, borderRadius: 6, overflow: 'hidden', marginBottom: 14 }}>
+                {(['nin', 'bvn'] as const).map(t => (
+                  <button key={t} className="tab" onClick={() => { setIdType(t); setIdNumber(''); setError(''); }}
+                    style={{ padding: '6px 18px', border: 'none', borderRight: t === 'nin' ? C.border : 'none', background: idType === t ? '#0a0a0a' : '#fff', color: idType === t ? '#fff' : C.muted, fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', letterSpacing: '0.03em' }}>
+                    {t.toUpperCase()}
+                  </button>
                 ))}
               </div>
-            )}
 
-            {earnings.length === 0 && (
-              <div style={{ textAlign: 'center', padding: '32px 20px', borderRadius: 20, border: '1px solid rgba(0,0,0,0.06)', background: '#fafafa' }}>
-                <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'rgba(0,0,0,0.04)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
-                  <Clock size={22} color="rgba(0,0,0,0.2)" />
-                </div>
-                <p style={{ fontSize: 14, fontWeight: 600, color: '#0a0a0a', margin: '0 0 4px' }}>No earnings yet</p>
-                <p style={{ fontSize: 12, color: 'rgba(0,0,0,0.38)', margin: 0, lineHeight: 1.5 }}>Earnings are calculated at the end of each month and credited to your balance.</p>
-              </div>
-            )}
+              {/* Input */}
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={11}
+                value={idNumber}
+                onChange={e => { setIdNumber(e.target.value.replace(/\D/g, '')); setError(''); }}
+                placeholder={`${idType.toUpperCase()} number`}
+                style={{ display: 'block', width: '100%', padding: '9px 12px', border: `1px solid ${error ? 'rgba(220,38,38,0.5)' : 'rgba(0,0,0,0.1)'}`, borderRadius: 6, fontSize: 13, color: '#0a0a0a', fontFamily: 'inherit', background: '#fff', boxSizing: 'border-box', letterSpacing: '0.04em', transition: 'border-color .12s' }}
+              />
+              {error && <p style={{ fontSize: 12, color: '#dc2626', margin: '5px 0 0' }}>{error}</p>}
 
-          </div>
-        )}
-      </div>
+              <p style={{ fontSize: 11, color: C.faint, margin: '8px 0 20px', lineHeight: 1.5 }}>
+                11 digits · Stored securely · Used for verification only
+              </p>
 
-      <Navigation />
+              <button className="btn" onClick={handleSubmit} disabled={submitting || idNumber.length !== 11}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, width: '100%', padding: '9px 0', borderRadius: 6, border: 'none', background: '#0a0a0a', color: '#fff', fontSize: 13, fontWeight: 500, cursor: submitting || idNumber.length !== 11 ? 'default' : 'pointer', fontFamily: 'inherit', opacity: submitting || idNumber.length !== 11 ? 0.35 : 1 }}>
+                {submitting
+                  ? <><Loader2 size={14} style={{ animation: 'spin .8s linear infinite' }} /> Submitting</>
+                  : <>Submit Application <ArrowRight size={14} /></>
+                }
+              </button>
+            </div>
+          ) : (
+            <div style={{ padding: '12px 14px', border: C.border, borderRadius: 6, background: C.surface }}>
+              <p style={{ fontSize: 12, color: C.muted, margin: 0, lineHeight: 1.6 }}>
+                Meet all {reqItems.length} requirements above to unlock the application form.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
