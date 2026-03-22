@@ -67,10 +67,10 @@ export default function MonetizationPage() {
       const stats = statsRes.data ?? [];
       const agg: MonthlyStats = {
         month:     currentMonth,
-        views:     stats.reduce((s, r) => s + r.views, 0),
-        downloads: stats.reduce((s, r) => s + r.downloads, 0),
-        likes:     stats.reduce((s, r) => s + r.likes, 0),
-        score:     stats.reduce((s, r) => s + r.score, 0),
+        views:     stats.reduce((s: number, r) => s + r.views, 0),
+        downloads: stats.reduce((s: number, r) => s + r.downloads, 0),
+        likes:     stats.reduce((s: number, r) => s + r.likes, 0),
+        score:     stats.reduce((s: number, r) => s + r.score, 0),
       };
       setThisMonth(agg);
 
