@@ -29,12 +29,12 @@ export const MonetizationInfoModal = () => {
           .select('monetization_status')
           .eq('id', session.user.id)
           .single();
-        if (data?.monetization_status === 'none') {
+        if (!data?.monetization_status || data?.monetization_status === 'none') {
           setShow(true);
           setTimeout(() => setVisible(true), 80);
         }
       } catch {}
-    }, 2000);
+    }, 500);
     return () => clearTimeout(t);
   }, [session?.user?.id]);
 
