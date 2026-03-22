@@ -7,52 +7,21 @@ import { Header } from './components/Header';
 import { Navigation } from './components/Navigation';
 import { WallpaperGrid } from './components/WallpaperGrid';
 import { GlobalStyles } from './components/GlobalStyles';
-import { MonetizationInfoModal } from './components/MonetizationInfoModal';
-import { createClient } from '@/lib/supabase/client';
-import { useAuth } from '@/app/components/AuthProvider';
 import type { Wallpaper, Filter } from './types';
 
 const ITEMS_PER_PAGE = 10;
-const MONET_SEEN_KEY = 'monet_announcement_seen';
-
 type Props = { initialWallpapers: Wallpaper[]; initialHasMore: boolean; };
 
 export default function WallpaperGallery({ initialWallpapers, initialHasMore }: Props) {
-  const supabase    = createClient();
-  const { session } = useAuth();
-
   const [wallpapers,    setWallpapers]    = useState<Wallpaper[]>(feedCache.populated ? feedCache.wallpapers : initialWallpapers);
   const [hasMore,       setHasMore]       = useState(feedCache.populated ? feedCache.hasMore : initialHasMore);
   const [page,          setPage]          = useState(feedCache.page);
   const [filter,        setFilter]        = useState<Filter>(feedCache.filter);
   const [isInitialLoad, setIsInitialLoad] = useState(false);
   const [sidebarOpen,   setSidebarOpen]   = useState(false);
-  const [showMonet,     setShowMonet]     = useState(false);
 
   const loadingMoreRef   = useRef(false);
   const filterChangedRef = useRef(false);
-
-  // Show monetization modal once to logged-in users who haven't applied
-  useEffect(() => {
-    if (!session?.user?.id) return;
-    if (localStorage.getItem(MONET_SEEN_KEY)) return;
-    const t = setTimeout(async () => {
-      try {
-        const { data } = await supabase
-          .from('profiles')
-          .select('monetization_status')
-          .eq('id', session.user.id)
-          .single();
-        if (data?.monetization_status === 'none') setShowMonet(true);
-      } catch {}
-    }, 2000);
-    return () => clearTimeout(t);
-  }, [session?.user?.id]);
-
-  const handleMonetClose = () => {
-    localStorage.setItem(MONET_SEEN_KEY, '1');
-    setShowMonet(false);
-  };
 
   // Restore scroll or seed cache on first mount
   useEffect(() => {
@@ -133,7 +102,6 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
         </main>
       </div>
 
-      {showMonet && <MonetizationInfoModal onClose={handleMonetClose} />}
     </div>
   );
 }
