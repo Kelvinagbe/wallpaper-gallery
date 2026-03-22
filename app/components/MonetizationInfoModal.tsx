@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { TrendingUp, X, ChevronRight, Download, Eye, Heart } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
@@ -15,6 +16,7 @@ export const MonetizationInfoModal = () => {
 
   const [show,    setShow]    = useState(false);
   const [visible, setVisible] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
   // Check if we should show — runs once after 2s
   useEffect(() => {
@@ -36,6 +38,8 @@ export const MonetizationInfoModal = () => {
     return () => clearTimeout(t);
   }, [session?.user?.id]);
 
+  useEffect(() => { setMounted(true); }, []);
+
   const close = () => {
     setVisible(false);
     localStorage.setItem(SEEN_KEY, '1');
@@ -47,9 +51,11 @@ export const MonetizationInfoModal = () => {
     setTimeout(() => router.push('/monetization/apply'), 320);
   };
 
-  if (!show) return null;
 
-  return (
+
+  if (!show || !mounted) return null;
+
+  return createPortal(
     <>
       <style>{`
         @keyframes monet-bd-in { from{opacity:0} to{opacity:1} }
@@ -121,6 +127,7 @@ export const MonetizationInfoModal = () => {
           </div>
         </div>
       </div>
-    </>
+    </>,
+    document.body
   );
 };
