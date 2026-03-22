@@ -95,8 +95,14 @@ export const WallpaperGrid = ({
 }: WallpaperGridProps) => {
   const [loadingMore,   setLoadingMore]   = useState(false);
   const [hasEverLoaded, setHasEverLoaded] = useState(false);
-  const [colCount,      setColCount]      = useState(2);
-  const [gap,           setGap]           = useState(6);
+
+  // Init from window immediately (client-only component, so window is available)
+  const [colCount, setColCount] = useState(() =>
+    typeof window !== 'undefined' ? getColCount(window.innerWidth) : 2
+  );
+  const [gap, setGap] = useState(() =>
+    typeof window !== 'undefined' ? getGap(window.innerWidth) : 6
+  );
 
   const triggerRef   = useRef<HTMLDivElement>(null);
   const loadingRef   = useRef(false);
@@ -125,10 +131,8 @@ export const WallpaperGrid = ({
       setColCount(getColCount(w));
       setGap(getGap(w));
     };
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(document.documentElement);
-    return () => ro.disconnect();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
   }, []);
 
   /* ── When col count changes (resize), reset all assignments ── */
