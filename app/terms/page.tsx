@@ -1,250 +1,102 @@
 // app/terms/page.tsx
 'use client';
 
-import Link from 'next/link';
-
-const CSS = `
-  @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap');
-  @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&display=swap');
-
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-  .tms-root {
-    min-height: 100vh;
-    background: #0a0a0a;
-    color: #fff;
-    font-family: 'Outfit', sans-serif;
-  }
-
-  .tms-header {
-    position: sticky; top: 0; z-index: 50;
-    background: rgba(10,10,10,0.92);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border-bottom: 1px solid rgba(255,255,255,0.06);
-  }
-  .tms-header-inner {
-    max-width: 700px; margin: 0 auto;
-    padding: 0 24px; height: 52px;
-    display: flex; align-items: center; justify-content: space-between;
-  }
-  .tms-logo {
-    display: flex; align-items: center; gap: 8px;
-    text-decoration: none;
-  }
-  .tms-logo-text {
-    font-family: 'Outfit', sans-serif;
-    font-weight: 800; font-size: 15px;
-    letter-spacing: -0.3px; color: #fff;
-  }
-  .tms-nav {
-    display: flex; align-items: center; gap: 2px;
-  }
-  .tms-nav a {
-    padding: 5px 11px; border-radius: 7px;
-    font-size: 12px; font-weight: 500;
-    color: rgba(255,255,255,0.32);
-    text-decoration: none;
-    transition: color .15s, background .15s;
-    white-space: nowrap;
-  }
-  .tms-nav a:hover { color: rgba(255,255,255,0.65); background: rgba(255,255,255,0.05); }
-  .tms-nav a.cur  { color: #fff; }
-
-  .tms-body {
-    max-width: 700px; margin: 0 auto;
-    padding: 72px 24px 120px;
-  }
-
-  .tms-eyebrow {
-    font-size: 11px; font-weight: 700;
-    letter-spacing: 0.12em; text-transform: uppercase;
-    color: rgba(255,255,255,0.22); margin-bottom: 18px;
-  }
-  .tms-h1 {
-    font-family: 'DM Serif Display', serif;
-    font-size: clamp(30px, 5vw, 46px);
-    line-height: 1.1; letter-spacing: -0.02em;
-    color: #fff; margin-bottom: 10px;
-  }
-  .tms-updated {
-    font-size: 12px; color: rgba(255,255,255,0.2);
-    margin-bottom: 60px;
-  }
-
-  /* Sections */
-  .tms-section {
-    padding-bottom: 44px;
-    margin-bottom: 44px;
-    border-bottom: 1px solid rgba(255,255,255,0.05);
-  }
-  .tms-section:last-of-type { border-bottom: none; }
-
-  .tms-sec-num {
-    font-size: 11px; font-weight: 700;
-    letter-spacing: 0.1em; text-transform: uppercase;
-    color: rgba(255,255,255,0.18); margin-bottom: 6px;
-  }
-  .tms-sec-title {
-    font-size: 15px; font-weight: 700;
-    color: rgba(255,255,255,0.78);
-    letter-spacing: -0.01em; margin-bottom: 12px;
-  }
-  .tms-sec-body {
-    font-size: 14px; line-height: 1.85;
-    color: rgba(255,255,255,0.38);
-    margin-bottom: 10px;
-  }
-  .tms-sec-body:last-child { margin-bottom: 0; }
-
-  .tms-list {
-    margin-top: 12px;
-    display: flex; flex-direction: column; gap: 9px;
-    list-style: none; padding: 0;
-  }
-  .tms-list li {
-    display: flex; gap: 12px;
-    font-size: 14px; line-height: 1.7;
-    color: rgba(255,255,255,0.36);
-  }
-  .tms-list li::before {
-    content: '—'; color: rgba(255,255,255,0.14);
-    flex-shrink: 0; margin-top: 1px;
-  }
-
-  .tms-note {
-    margin-top: 16px; padding: 15px 18px;
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 10px;
-    font-size: 13px; line-height: 1.7;
-    color: rgba(255,255,255,0.3);
-  }
-
-  .tms-footer {
-    border-top: 1px solid rgba(255,255,255,0.05);
-    max-width: 700px; margin: 0 auto; padding: 28px 24px;
-    display: flex; align-items: center; justify-content: space-between;
-    flex-wrap: wrap; gap: 10px;
-  }
-  .tms-footer-copy { font-size: 12px; color: rgba(255,255,255,0.18); }
-  .tms-footer-links { display: flex; gap: 18px; }
-  .tms-footer-links a {
-    font-size: 12px; color: rgba(255,255,255,0.22);
-    text-decoration: none; transition: color .15s;
-  }
-  .tms-footer-links a:hover { color: rgba(255,255,255,0.55); }
-`;
+import { LegalShell } from '@/lib/legal-shared';
 
 const SECTIONS = [
   {
-    num: '01', title: 'Acceptance',
-    body: 'By accessing or using WALLS you agree to these Terms. If you don\'t agree, please don\'t use the service.',
+    num: '01', title: 'Acceptance of Terms',
+    body: 'By accessing or using WALLS ("the Service"), you agree to be bound by these Terms of Service. If you do not agree to these terms, please do not use the Service. We may update these Terms at any time — continued use after changes are posted constitutes acceptance.',
   },
   {
-    num: '02', title: 'Permitted Use',
-    body: 'WALLS is for personal, non-commercial browsing and downloading. You agree not to:',
+    num: '02', title: 'Eligibility',
+    body: 'You must be at least 13 years old to use WALLS. By using the Service you represent that you meet this requirement. If you are under 18, you confirm you have parental consent.',
+  },
+  {
+    num: '03', title: 'Permitted Use',
+    body: 'WALLS is provided for personal, non-commercial browsing and downloading. You agree not to:',
     list: [
-      'Use the service for any unlawful purpose',
-      'Upload content you don\'t own or have rights to distribute',
-      'Scrape or bulk-download content systematically',
-      'Attempt to circumvent security or access controls',
-      'Impersonate other users or misrepresent your identity',
+      'Use the Service for any unlawful purpose or in violation of applicable laws',
+      'Upload, post, or share content you do not own or have rights to distribute',
+      'Scrape, crawl, or bulk-download content through automated means',
+      'Attempt to circumvent security controls, rate limits, or access restrictions',
+      'Impersonate another user, person, or entity',
+      'Use the Service to distribute spam, malware, or harmful content',
     ],
   },
   {
-    num: '03', title: 'Uploads & Content',
-    body: 'You keep ownership of what you upload. By uploading you grant WALLS a non-exclusive, royalty-free licence to display and distribute your content within the service. You\'re solely responsible for what you upload.',
-    note: 'Don\'t upload content that infringes third-party intellectual property rights.',
+    num: '04', title: 'User Accounts',
+    body: 'You are responsible for maintaining the confidentiality of your account credentials and for all activity that occurs under your account. Notify us immediately at support@walls.app if you suspect unauthorised access. We reserve the right to suspend or terminate accounts that violate these Terms.',
   },
   {
-    num: '04', title: 'Downloads',
-    body: 'Wallpapers are available for personal, non-commercial use unless stated otherwise. You may not:',
+    num: '05', title: 'Content You Upload',
+    body: 'You retain ownership of the content you upload. By uploading to WALLS, you grant us a non-exclusive, worldwide, royalty-free licence to store, display, distribute, and promote your content within the Service.',
     list: [
-      'Redistribute or resell wallpapers as your own work',
-      'Use wallpapers in commercial products without explicit creator permission',
-      'Remove credits or attribution from downloaded content',
+      'You must own or have the necessary rights to upload the content',
+      'Content must not infringe third-party intellectual property rights',
+      'Content must not contain nudity, violence, hate speech, or illegal material',
+      'We may remove content that violates these Terms without notice',
     ],
+    callout: 'You are solely responsible for the content you upload. WALLS is not liable for user-generated content.',
   },
   {
-    num: '05', title: 'Account Termination',
-    body: 'We may suspend or terminate accounts that violate these Terms, upload infringing content, or engage in abusive behaviour toward other users or the platform.',
+    num: '06', title: 'Downloads & Personal Use',
+    body: 'Wallpapers on WALLS are available for personal, non-commercial use unless the creator states otherwise. You may not:',
+    list: [
+      'Redistribute, resell, or sublicense wallpapers as your own work',
+      'Use wallpapers in commercial products, advertising, or for-profit contexts without explicit creator permission',
+      'Remove watermarks, credits, or attribution metadata from downloaded files',
+    ],
+    callout: 'For commercial licensing, contact the creator directly via their WALLS profile.',
   },
   {
-    num: '06', title: 'Disclaimer',
-    body: 'WALLS is provided "as is" without warranties of any kind. We\'re not liable for any loss of data or damages arising from your use of the service.',
+    num: '07', title: 'Intellectual Property',
+    body: 'The WALLS platform — including its design, code, branding, and non-user-generated content — is owned by WALLS and protected by applicable intellectual property laws. You may not copy, modify, or redistribute any part of the platform without written permission.',
   },
   {
-    num: '07', title: 'Changes',
-    body: 'We may update these Terms from time to time. Continued use after changes are posted means you accept them. We\'ll notify you of significant changes via email or an in-app notice.',
+    num: '08', title: 'Disclaimers',
+    body: 'WALLS is provided "as is" and "as available" without warranties of any kind, express or implied. We do not guarantee uninterrupted access, error-free operation, or that the Service will meet your requirements. We are not responsible for any loss of data, content, or revenue arising from use of the Service.',
   },
   {
-    num: '08', title: 'Contact',
+    num: '09', title: 'Limitation of Liability',
+    body: 'To the maximum extent permitted by law, WALLS and its team shall not be liable for any indirect, incidental, special, or consequential damages arising from your use of the Service, even if we have been advised of the possibility of such damages. Our total liability to you for any claim shall not exceed the amount you paid us in the 12 months preceding the claim, or $50 — whichever is greater.',
+  },
+  {
+    num: '10', title: 'Termination',
+    body: 'We may suspend or terminate your access to WALLS at any time, with or without notice, for conduct that we determine violates these Terms or is harmful to other users, us, or third parties. You may delete your account at any time from your account settings.',
+  },
+  {
+    num: '11', title: 'Governing Law',
+    body: 'These Terms are governed by and construed in accordance with applicable law. Any disputes arising from these Terms or use of the Service shall be resolved through good-faith negotiation, or if necessary, binding arbitration.',
+  },
+  {
+    num: '12', title: 'Contact',
     body: 'Questions about these Terms? Email legal@walls.app.',
   },
 ];
 
-const Logo = () => (
-  <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-    <rect width="9" height="9" rx="2" fill="white" />
-    <rect x="11" y="0" width="9" height="9" rx="2" fill="white" />
-    <rect x="0" y="11" width="9" height="9" rx="2" fill="white" />
-    <rect x="11" y="11" width="9" height="9" rx="2" fill="white" fillOpacity="0.28" />
-  </svg>
-);
-
 export default function TermsPage() {
   return (
-    <>
-      <style>{CSS}</style>
-      <div className="tms-root">
+    <LegalShell current="/terms">
 
-        <header className="tms-header">
-          <div className="tms-header-inner">
-            <Link href="/" className="tms-logo">
-              <Logo />
-              <span className="tms-logo-text">WALLS</span>
-            </Link>
-            <nav className="tms-nav">
-              <a href="/about">About</a>
-              <a href="/terms" className="cur">Terms</a>
-              <a href="/privacy">Privacy</a>
-            </nav>
-          </div>
-        </header>
+      <p className="lg-eyebrow">Terms of Service</p>
+      <h1 className="lg-h1">What you agree to<br />when you use WALLS.</h1>
+      <p className="lg-updated">Last updated: January 2025</p>
 
-        <div className="tms-body">
-          <p className="tms-eyebrow">Terms of Service</p>
-          <h1 className="tms-h1">What you agree to<br />when you use WALLS.</h1>
-          <p className="tms-updated">Last updated: January 2025</p>
-
-          {SECTIONS.map(({ num, title, body, list, note }) => (
-            <div key={num} className="tms-section">
-              <p className="tms-sec-num">{num}</p>
-              <p className="tms-sec-title">{title}</p>
-              <p className="tms-sec-body">{body}</p>
-              {list && (
-                <ul className="tms-list">
-                  {list.map(item => <li key={item}>{item}</li>)}
-                </ul>
-              )}
-              {note && <div className="tms-note">{note}</div>}
-            </div>
-          ))}
+      {SECTIONS.map(({ num, title, body, list, callout }) => (
+        <div key={num} className="lg-section">
+          <p className="lg-sec-num">{num}</p>
+          <p className="lg-sec-title">{title}</p>
+          <p className="lg-sec-body">{body}</p>
+          {list && (
+            <ul className="lg-list">
+              {list.map(item => <li key={item}>{item}</li>)}
+            </ul>
+          )}
+          {callout && <div className="lg-callout">{callout}</div>}
         </div>
+      ))}
 
-        <footer>
-          <div className="tms-footer">
-            <span className="tms-footer-copy">© {new Date().getFullYear()} WALLS</span>
-            <div className="tms-footer-links">
-              <a href="/about">About</a>
-              <a href="/terms">Terms</a>
-              <a href="/privacy">Privacy</a>
-            </div>
-          </div>
-        </footer>
-
-      </div>
-    </>
+    </LegalShell>
   );
 }
