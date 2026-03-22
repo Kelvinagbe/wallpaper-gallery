@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Settings, Share2, LogOut, Shield, Grid, ChevronRight, ChevronLeft } from 'lucide-react';
+import { Settings, Share2, LogOut, Shield, Grid, ChevronRight, ChevronLeft, TrendingUp } from 'lucide-react';
 import { useAuth } from '@/app/components/AuthProvider';
 import { SettingsModal } from '@/app/components/profile/SettingsModal';
 import { PrivacyModal } from '@/app/components/profile/PrivacyModal';
@@ -10,6 +10,7 @@ import { ViewAllPostsModal } from '@/app/components/profile/ViewAllPostsModal';
 import { VerifiedBadge } from '@/app/components/VerifiedBadge';
 import { Navigation } from '@/app/components/Navigation';
 import { signOut } from '@/lib/stores/userStore';
+import { createClient } from '@/lib/supabase/client';
 import type { Wallpaper } from '@/app/types';
 
 interface Props {
@@ -19,29 +20,56 @@ interface Props {
 
 const fmt = (n: number) => n >= 1_000_000 ? `${(n/1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n/1_000).toFixed(1)}k` : String(n);
 
-
-
 const Shimmer = ({ w, h, r = 8 }: { w: string | number; h: string | number; r?: number }) => (
   <div style={{ width: w, height: h, borderRadius: r, flexShrink: 0,
     background: 'linear-gradient(90deg,#ececec 25%,#e0e0e0 50%,#ececec 75%)',
     backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease infinite' }} />
 );
 
+const getMonetBtn = (status: string, eligible: boolean) => {
+  if (status === 'approved') return { label: '💰 My Earnings',             show: true, solid: true,  disabled: false };
+  if (status === 'pending')  return { label: '⏳ Application Pending',     show: true, solid: false, disabled: true  };
+  if (status === 'rejected') return { label: '↺ Reapply',                  show: true, solid: false, disabled: false };
+  if (eligible)              return { label: '🚀 Apply for Monetization',  show: true, solid: true,  disabled: false };
+  return { label: '', show: false, solid: false, disabled: true };
+};
+
 export default function ProfileClient({ initialStats, initialWallpapers }: Props) {
-  const router = useRouter();
+  const router   = useRouter();
+  const supabase = createClient();
   const { profile, isLoading: authLoading, refreshProfile } = useAuth();
 
-
-  const [stats]                           = useState(initialStats);
-  const [myWallpapers]                    = useState<Wallpaper[]>(initialWallpapers);
+  const [stats]        = useState(initialStats);
+  const [myWallpapers] = useState<Wallpaper[]>(initialWallpapers);
+  const [monetStatus,  setMonetStatus]  = useState('none');
+  const [eligible,     setEligible]     = useState(false);
+  const [monetLoading, setMonetLoading] = useState(true);
 
   const [modals, setModals] = useState({
     logout: false, settings: false, settingsClosing: false,
     privacy: false, privacyClosing: false, allPosts: false,
-    content: null as 'liked' | 'saved' | 'recent' | null, // kept for type compat
+    content: null as 'liked' | 'saved' | 'recent' | null,
   });
 
-
+  useEffect(() => {
+    if (!profile?.id) return;
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('profiles')
+          .select('monetization_status')
+          .eq('id', profile.id)
+          .single();
+        const status = data?.monetization_status || 'none';
+        setMonetStatus(status);
+        if (status === 'none' || status === 'rejected') {
+          const { data: el } = await supabase.rpc('check_monetization_eligibility', { user_id: profile.id });
+          setEligible(el?.eligible ?? false);
+        }
+      } catch {}
+      finally { setMonetLoading(false); }
+    })();
+  }, [profile?.id]);
 
   const refreshCounts = async () => {};
 
@@ -50,10 +78,7 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
     setTimeout(() => setModals(m => ({ ...m, [key]: false, [`${key}Closing`]: false })), 300);
   };
 
-  const handleLogout = async () => {
-    await signOut();
-    router.replace('/');
-  };
+  const handleLogout = async () => { await signOut(); router.replace('/'); };
 
   const handleShare = async () => {
     if (navigator.share) await navigator.share({ title: 'Gallery App', url: window.location.href }).catch(() => {});
@@ -62,8 +87,14 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
 
   const open = (key: string, val?: any) => setModals(m => ({ ...m, [key]: val ?? true }));
 
+  const handleMonetBtn = () => {
+    if (monetStatus === 'approved') router.push('/monetization');
+    else router.push('/monetization/apply');
+  };
+
   if (!authLoading && !profile) return null;
 
+  const monetBtn     = getMonetBtn(monetStatus, eligible);
   const displayStats = [
     { label: 'Posts',     value: fmt(stats.posts || myWallpapers.length) },
     { label: 'Followers', value: fmt(stats.followers) },
@@ -88,9 +119,11 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
         .wp-card { transition: transform .12s; }
         .menu-item:active { transform: scale(0.98); background: rgba(0,0,0,0.04) !important; }
         .menu-item { transition: all .12s; }
+        .monet-btn:active { transform: scale(0.97); }
+        .monet-btn { transition: transform .12s; }
       `}</style>
 
-      {/* ── Header ── */}
+      {/* Header */}
       <div style={{ position: 'sticky', top: 0, zIndex: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <button onClick={() => router.back()} style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(0,0,0,0.05)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
@@ -105,7 +138,7 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
 
       <div style={{ maxWidth: 600, margin: '0 auto' }}>
 
-        {/* ── Avatar + info ── */}
+        {/* Avatar + info */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '28px 20px 20px' }}>
           {authLoading ? (
             <>
@@ -118,7 +151,6 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
             </>
           ) : profile && (
             <div className="fade-up" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
-              {/* Avatar with settings badge */}
               <div style={{ position: 'relative', marginBottom: 14 }}>
                 <img src={profile.avatar} alt={profile.name} style={{ width: 110, height: 110, borderRadius: '50%', objectFit: 'cover', border: '3px solid #fff', boxShadow: '0 2px 20px rgba(0,0,0,0.12)', display: 'block' }} />
                 <button onClick={() => open('settings')} style={{ position: 'absolute', bottom: 2, right: 2, width: 28, height: 28, borderRadius: '50%', background: '#0a0a0a', border: '2px solid #fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
@@ -126,7 +158,6 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
                 </button>
               </div>
 
-              {/* Name + verified */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
                 <h2 style={{ fontSize: 22, fontWeight: 700, margin: 0, letterSpacing: '-0.02em' }}>{profile.name}</h2>
                 {profile.verified && <VerifiedBadge size="md" />}
@@ -145,7 +176,7 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
               </div>
 
               {/* Edit + Share */}
-              <div style={{ display: 'flex', gap: 10 }}>
+              <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
                 <button onClick={() => open('settings')} style={{ padding: '10px 28px', borderRadius: 26, border: 'none', background: '#0a0a0a', color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
                   Edit Profile
                 </button>
@@ -153,11 +184,34 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
                   <Share2 size={14} />Share
                 </button>
               </div>
+
+              {/* Monetization button */}
+              {monetLoading
+                ? <Shimmer w={200} h={40} r={24} />
+                : monetBtn.show && (
+                  <button
+                    className="monet-btn"
+                    onClick={handleMonetBtn}
+                    disabled={monetBtn.disabled}
+                    style={{
+                      padding: '10px 24px', borderRadius: 26, fontFamily: 'inherit',
+                      fontSize: 13, fontWeight: 600, cursor: monetBtn.disabled ? 'default' : 'pointer',
+                      display: 'flex', alignItems: 'center', gap: 7,
+                      opacity: monetBtn.disabled ? 0.6 : 1,
+                      border: monetBtn.solid ? 'none' : '1px solid rgba(0,0,0,0.1)',
+                      background: monetBtn.solid ? '#0a0a0a' : '#fafafa',
+                      color: monetBtn.solid ? '#fff' : 'rgba(0,0,0,0.6)',
+                    }}>
+                    <TrendingUp size={14} color={monetBtn.solid ? '#fff' : 'rgba(0,0,0,0.5)'} />
+                    {monetBtn.label}
+                  </button>
+                )
+              }
             </div>
           )}
         </div>
 
-        {/* ── Posts divider ── */}
+        {/* Posts */}
         {myWallpapers.length > 0 && (
           <>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 20px', borderTop: '1px solid rgba(0,0,0,0.07)' }}>
@@ -167,8 +221,6 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
               </div>
               <button onClick={() => open('allPosts')} style={{ fontSize: 12, fontWeight: 600, color: 'rgba(0,0,0,0.4)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>View all</button>
             </div>
-
-            {/* ── Grid — no gap, no radius ── */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 1 }}>
               {myWallpapers.slice(0, 9).map(wp => (
                 <button key={wp.id} className="wp-card" onClick={() => router.push(`/details/${wp.id}`)}
@@ -180,7 +232,7 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
           </>
         )}
 
-        {/* ── Menu sections ── */}
+        {/* Menu sections */}
         <div style={{ padding: '24px 16px 8px', display: 'flex', flexDirection: 'column', gap: 24 }}>
           {menuSections.map(section => (
             <div key={section.title}>
@@ -193,7 +245,6 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
                       <item.icon size={17} color="rgba(0,0,0,0.55)" />
                     </div>
                     <p style={{ flex: 1, fontSize: 14, fontWeight: 500, color: '#0a0a0a', margin: 0 }}>{item.label}</p>
-
                     <ChevronRight size={15} color="rgba(0,0,0,0.25)" />
                   </button>
                 ))}
@@ -202,7 +253,7 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
           ))}
         </div>
 
-        {/* ── Logout ── */}
+        {/* Logout */}
         <div style={{ padding: '8px 16px 24px' }}>
           <button onClick={() => open('logout')} className="menu-item"
             style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, padding: '14px', borderRadius: 16, border: '1px solid rgba(239,68,68,0.15)', background: 'rgba(239,68,68,0.04)', cursor: 'pointer', fontFamily: 'inherit' }}>
@@ -215,7 +266,7 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
 
       <Navigation />
 
-      {/* ── Logout confirm ── */}
+      {/* Logout confirm */}
       {modals.logout && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={() => setModals(m => ({ ...m, logout: false }))}>
           <div style={{ background: '#fff', borderRadius: 24, padding: 28, maxWidth: 320, width: '100%', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
@@ -232,7 +283,6 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
         </div>
       )}
 
-      {/* ── Modals ── */}
       {(modals.settings || modals.settingsClosing) && (
         <div className={modals.settingsClosing ? 'mc' : ''}>
           <SettingsModal onClose={() => closeModal('settings')} onProfileUpdate={async () => { await refreshProfile(); refreshCounts(); }} />
@@ -253,8 +303,6 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
           userName={profile.name}
         />
       )}
-
-
     </div>
   );
 }
