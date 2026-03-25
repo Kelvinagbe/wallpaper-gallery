@@ -1,14 +1,25 @@
-export type Ad = {
-  id: string;
-  type: 'ad';
-  adType: 'native' | 'banner';
-  title: string;
-  subtitle?: string;
-  imageUrl?: string;
-  ctaLabel?: string;
-  ctaUrl: string;
-  brandName: string;
-  brandLogoUrl?: string;
-  backgroundColor?: string;
-  accentColor?: string;
-};
+window.MY_ADS = [
+  {
+    id: 'ad_001',
+    type: 'ad',
+    adType: 'native',
+    title: 'Your Ad Title',
+    imageUrl: 'https://your-image.com/ad.jpg',
+    ctaLabel: 'Try Free',
+    ctaUrl: 'https://yourlink.com',
+    brandName: 'YourBrand',
+    brandLogoUrl: 'https://your-logo.com/logo.png',
+  },
+  {
+    id: 'ad_002',
+    type: 'ad',
+    adType: 'banner',
+    title: 'Upgrade to Pro',
+    subtitle: 'Ad-free + unlimited downloads',
+    ctaLabel: 'Get Pro',
+    ctaUrl: '/pro',
+    brandName: 'YourApp',
+    backgroundColor: '#1e1b4b',
+    accentColor: '#818cf8',
+  },
+];
