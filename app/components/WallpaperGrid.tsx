@@ -5,46 +5,57 @@ import { WallpaperCard, NativeAdCard, BannerAdCard } from './WallpaperCard';
 import { usePrefetch } from '@/app/hooks/usePrefetch';
 import type { Wallpaper, Ad } from '../types';
 
-/* ── responsive helpers ── */
-const cols  = (w: number) => w >= 1024 ? 5 : w >= 768 ? 4 : w >= 480 ? 3 : 2;
-const gap   = (w: number) => w >= 1024 ? 12 : w >= 768 ? 10 : w >= 480 ? 8 : 6;
-const iGap  = (c: number) => c >= 4 ? 14 : c >= 3 ? 12 : 10;
+/* ─── responsive helpers ─────────────────────────────────────────────── */
+const getColCount = (w: number) => w >= 1024 ? 5 : w >= 768 ? 4 : w >= 480 ? 3 : 2;
+const getGap      = (w: number) => w >= 1024 ? 12 : w >= 768 ? 10 : w >= 480 ? 8 : 6;
+const getPad      = (w: number) => w >= 1024 ? 12 : w >= 768 ? 10 : w >= 480 ? 8 : 6;
+const getItemGap  = (cols: number) => cols >= 4 ? 14 : cols >= 3 ? 12 : 10;
 
+/* ─── shimmer ─────────────────────────────────────────────────────────── */
 const COLORS = [
-  { bg: '#e8eaf0', sh: '#d0d4e8' }, { bg: '#ede8f0', sh: '#d8cce8' },
-  { bg: '#e8f0ea', sh: '#cce0d0' }, { bg: '#f0e8e8', sh: '#e8cccc' },
-  { bg: '#f0ede8', sh: '#e8dcc8' },
+  { bg: '#e8eaf0', shimmer: '#d0d4e8' },
+  { bg: '#ede8f0', shimmer: '#d8cce8' },
+  { bg: '#e8f0ea', shimmer: '#cce0d0' },
+  { bg: '#f0e8e8', shimmer: '#e8cccc' },
+  { bg: '#f0ede8', shimmer: '#e8dcc8' },
 ];
 
 const CSS = `
-  @keyframes shimmerSweep { 0% { background-position:-200% 0 } 100% { background-position:200% 0 } }
-  @keyframes dotBounce { 0%,80%,100% { transform:scale(0.6);opacity:.4 } 40% { transform:scale(1);opacity:1 } }
+  @keyframes shimmerSweep {
+    0%   { background-position: -200% 0 }
+    100% { background-position:  200% 0 }
+  }
+  @keyframes dotBounce {
+    0%,80%,100% { transform: scale(0.6); opacity: 0.4 }
+    40%         { transform: scale(1);   opacity: 1   }
+  }
 `;
 
-/* ── shimmer placeholder ── */
 const Shimmer = ({ i, o = 1 }: { i: number; o?: number }) => {
   const c = COLORS[i % COLORS.length];
-  const sw = { backgroundSize: '200% 100%', animation: 'shimmerSweep 1.6s ease-in-out infinite' };
+  const anim = { backgroundSize: '200% 100%', animation: 'shimmerSweep 1.6s ease-in-out infinite' };
   return (
     <div style={{ opacity: o }}>
       <div style={{ position: 'relative', width: '100%', borderRadius: 16, overflow: 'hidden', aspectRatio: '9/16', background: c.bg }}>
-        <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(105deg,transparent 40%,${c.sh}80 50%,transparent 60%)`, ...sw }} />
+        <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(105deg,transparent 40%,${c.shimmer}80 50%,transparent 60%)`, ...anim }} />
       </div>
       <div style={{ padding: '6px 2px 0', display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <div style={{ height: 10, borderRadius: 4, background: c.bg, width: '80%', ...sw }} />
-        <div style={{ height: 8, borderRadius: 4, background: c.bg, width: '50%', ...sw, animationDelay: '.1s' }} />
+        <div style={{ height: 10, borderRadius: 4, background: c.bg, width: '80%', ...anim }} />
+        <div style={{ height: 8, borderRadius: 4, background: c.bg, width: '50%', ...anim, animationDelay: '0.1s' }} />
       </div>
     </div>
   );
 };
 
-const ShimmerGrid = ({ count, opacity, numCols, g, pad, ig }: { count: number; opacity?: number; numCols: number; g: number; pad: number; ig: number }) => {
-  const columns: number[][] = Array.from({ length: numCols }, () => []);
-  for (let i = 0; i < count; i++) columns[i % numCols].push(i);
+const ShimmerGrid = ({ count, opacity, cols, gap, pad, itemGap }: {
+  count: number; opacity?: number; cols: number; gap: number; pad: number; itemGap: number;
+}) => {
+  const columns: number[][] = Array.from({ length: cols }, () => []);
+  for (let i = 0; i < count; i++) columns[i % cols].push(i);
   return (
-    <div style={{ display: 'flex', gap: g, padding: `12px ${pad}px`, alignItems: 'flex-start' }}>
+    <div style={{ width: '100%', boxSizing: 'border-box', overflow: 'hidden', display: 'flex', gap: `${gap}px`, padding: `12px ${pad}px`, alignItems: 'flex-start' }}>
       {columns.map((col, ci) => (
-        <div key={ci} style={{ flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', gap: ig }}>
+        <div key={ci} style={{ flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', gap: `${itemGap}px` }}>
           {col.map(i => <Shimmer key={i} i={i} o={opacity} />)}
         </div>
       ))}
@@ -52,29 +63,53 @@ const ShimmerGrid = ({ count, opacity, numCols, g, pad, ig }: { count: number; o
   );
 };
 
-/* ── feed types ── */
+/* ─── feed types ──────────────────────────────────────────────────────── */
 type MasonryItem = { kind: 'wallpaper'; wp: Wallpaper } | { kind: 'native'; ad: Ad };
-type Chunk = { items: MasonryItem[]; banner: Ad | null };
+type Chunk = {
+  items: MasonryItem[];  // enters masonry columns
+  banner: Ad | null;     // rendered below the chunk, full-width — NEVER in columns
+};
 
-/* ── masonry block ── */
-const MasonryBlock = ({ items, numCols, g, pad, ig, offset, onWallpaperClick }: {
-  items: MasonryItem[]; numCols: number; g: number; pad: number; ig: number;
-  offset: number; onWallpaperClick?: (w: Wallpaper) => void;
+/* ─── masonry block ───────────────────────────────────────────────────── */
+const MasonryBlock = ({
+  items, cols, gap, pad, itemGap, chunkOffset, onWallpaperClick,
+}: {
+  items: MasonryItem[];
+  cols: number; gap: number; pad: number; itemGap: number;
+  chunkOffset: number;
+  onWallpaperClick?: (w: Wallpaper) => void;
 }) => {
   const columns = useMemo(() => {
-    const res: MasonryItem[][] = Array.from({ length: numCols }, () => []);
-    items.forEach((item, i) => res[i % numCols].push(item));
-    return res;
-  }, [items, numCols]);
+    const result: MasonryItem[][] = Array.from({ length: cols }, () => []);
+    items.forEach((item, i) => result[i % cols].push(item));
+    return result;
+  }, [items, cols]);
 
   return (
-    <div style={{ display: 'flex', gap: g, padding: `0 ${pad}px`, alignItems: 'flex-start' }}>
+    <div style={{
+      width: '100%', boxSizing: 'border-box', overflow: 'hidden',
+      display: 'flex', gap: `${gap}px`, padding: `0 ${pad}px`, alignItems: 'flex-start',
+    }}>
       {columns.map((col, ci) => (
-        <div key={ci} style={{ flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', gap: ig }}>
+        <div key={ci} style={{ flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', gap: `${itemGap}px` }}>
           {col.map((entry, idx) =>
             entry.kind === 'native'
-              ? <NativeAdCard key={`na_${entry.ad.id}_${ci}`} ad={entry.ad} placeholderIndex={ci + idx * numCols} />
-              : <WallpaperCard key={entry.wp.id} wp={entry.wp} priority={offset + ci + idx * numCols < 6} placeholderIndex={ci + idx * numCols} onClick={onWallpaperClick ? () => onWallpaperClick(entry.wp) : undefined} />
+              ? (
+                <NativeAdCard
+                  key={`native_${entry.ad.id}_${ci}`}
+                  ad={entry.ad}
+                  placeholderIndex={ci + idx * cols}
+                />
+              )
+              : (
+                <WallpaperCard
+                  key={entry.wp.id}
+                  wp={entry.wp}
+                  priority={chunkOffset + ci + idx * cols < 6}
+                  placeholderIndex={ci + idx * cols}
+                  onClick={onWallpaperClick ? () => onWallpaperClick(entry.wp) : undefined}
+                />
+              )
           )}
         </div>
       ))}
@@ -82,85 +117,105 @@ const MasonryBlock = ({ items, numCols, g, pad, ig, offset, onWallpaperClick }: 
   );
 };
 
-/* ── props ── */
+/* ─── props ───────────────────────────────────────────────────────────── */
 type Props = {
-  wallpapers: Wallpaper[];
-  isLoading: boolean;
-  ads?: Ad[];                        // ← pass ads as a prop; no window.MY_ADS reads
-  onWallpaperClick?: (w: Wallpaper) => void;
-  onLoadMore?: () => Promise<void>;
-  hasMore?: boolean;
-  bannerEvery?: number;              // wallpapers per chunk before banner. default 14
-  nativeEvery?: number;              // 1 native per N wallpapers inside chunk. default 7
+  wallpapers:         Wallpaper[];
+  isLoading:          boolean;
+  onWallpaperClick?:  (w: Wallpaper) => void;
+  onLoadMore?:        () => Promise<void>;
+  hasMore?:           boolean;
+  /** Wallpapers per masonry chunk before a full-width banner appears. Default 14 */
+  bannerEvery?:       number;
+  /** Native ad frequency within a chunk (1 per N wallpapers). Default 7 */
+  nativeEvery?:       number;
 };
 
-/* ── main ── */
+/* ─── main component ──────────────────────────────────────────────────── */
 export const WallpaperGrid = ({
-  wallpapers, isLoading, ads = [],
-  onWallpaperClick, onLoadMore, hasMore = true,
-  bannerEvery = 14, nativeEvery = 7,
+  wallpapers,
+  isLoading,
+  onWallpaperClick,
+  onLoadMore,
+  hasMore = true,
+  bannerEvery = 14,
+  nativeEvery = 7,
 }: Props) => {
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [everLoaded,  setEverLoaded]  = useState(false);
-  const [dim, setDim] = useState(() => {
+  const [loadingMore, setLoadingMore]     = useState(false);
+  const [hasEverLoaded, setHasEverLoaded] = useState(false);
+  const [dims, setDims] = useState(() => {
     const w = typeof window !== 'undefined' ? window.innerWidth : 390;
-    return { c: cols(w), g: gap(w) };
+    return { cols: getColCount(w), gap: getGap(w), pad: getPad(w) };
   });
-  const triggerRef  = useRef<HTMLDivElement>(null);
-  const loadingRef  = useRef(false);
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const loadingRef = useRef(false);
 
-  /* ads split by type — only when ads array is non-empty, so no blank during hydration */
-  const nativeAds = useMemo(() => ads.filter(a => a.adType === 'native'), [ads]);
-  const bannerAds = useMemo(() => ads.filter(a => a.adType === 'banner'), [ads]);
+  const nativeAds = useMemo<Ad[]>(() =>
+    typeof window === 'undefined' ? [] : ((window as any).MY_ADS ?? []).filter((a: Ad) => a.adType === 'native'), []);
+  const bannerAds = useMemo<Ad[]>(() =>
+    typeof window === 'undefined' ? [] : ((window as any).MY_ADS ?? []).filter((a: Ad) => a.adType === 'banner'), []);
 
   usePrefetch(useMemo(() => wallpapers.slice(20, 30).map(w => w.url), [wallpapers]));
 
   useEffect(() => {
-    const fn = () => { const w = window.innerWidth; setDim({ c: cols(w), g: gap(w) }); };
+    const fn = () => { const w = window.innerWidth; setDims({ cols: getColCount(w), gap: getGap(w), pad: getPad(w) }); };
     window.addEventListener('resize', fn, { passive: true });
     return () => window.removeEventListener('resize', fn);
   }, []);
 
-  useEffect(() => { if (wallpapers.length > 0 && !everLoaded) setEverLoaded(true); }, [wallpapers.length]);
+  useEffect(() => {
+    if (wallpapers.length > 0 && !hasEverLoaded) setHasEverLoaded(true);
+  }, [wallpapers.length, hasEverLoaded]);
 
   useEffect(() => {
     if (!triggerRef.current || !onLoadMore || !hasMore) return;
     const ob = new IntersectionObserver(async ([e]) => {
       if (!e.isIntersecting || loadingRef.current || !hasMore) return;
       loadingRef.current = true; setLoadingMore(true);
-      try { await onLoadMore(); } catch { console.error('loadMore failed'); }
+      try { await onLoadMore(); }
+      catch { console.error('Load more failed'); }
       finally { loadingRef.current = false; setLoadingMore(false); }
     }, { threshold: 0.1, rootMargin: '600px' });
     ob.observe(triggerRef.current);
     return () => ob.disconnect();
   }, [onLoadMore, hasMore]);
 
-  const { c: numCols, g } = dim;
-  const pad = gap(typeof window !== 'undefined' ? window.innerWidth : 390);
-  const ig  = iGap(numCols);
+  const { cols, gap, pad } = dims;
+  const itemGap = getItemGap(cols);
 
-  /* build chunks — native ads only injected when nativeAds.length > 0 */
+  /**
+   * Build chunks.
+   * Native ads → injected inside masonry columns (same 9/16 card, blends with wallpapers).
+   * Banner ads → attached to chunk.banner, rendered OUTSIDE columns as a full-width strip.
+   */
   const chunks = useMemo<Chunk[]>(() => {
     const result: Chunk[] = [];
-    let ni = 0, bi = 0;
+    let nativeIdx = 0, bannerIdx = 0;
+
     for (let base = 0; base < wallpapers.length; base += bannerEvery) {
+      const slice = wallpapers.slice(base, base + bannerEvery);
       const items: MasonryItem[] = [];
-      wallpapers.slice(base, base + bannerEvery).forEach((wp, i) => {
+
+      slice.forEach((wp, i) => {
         items.push({ kind: 'wallpaper', wp });
         if (nativeAds.length && (i + 1) % nativeEvery === 0)
-          items.push({ kind: 'native', ad: nativeAds[ni++ % nativeAds.length] });
+          items.push({ kind: 'native', ad: nativeAds[nativeIdx++ % nativeAds.length] });
       });
-      result.push({ items, banner: bannerAds.length ? bannerAds[bi++ % bannerAds.length] : null });
+
+      result.push({
+        items,
+        banner: bannerAds.length ? bannerAds[bannerIdx++ % bannerAds.length] : null,
+      });
     }
+
     return result;
   }, [wallpapers, nativeAds, bannerAds, bannerEvery, nativeEvery]);
 
-  /* ── early states ── */
-  if (!everLoaded && isLoading)
-    return <><ShimmerGrid count={10} numCols={numCols} g={g} pad={pad} ig={ig} /><style>{CSS}</style></>;
+  /* ─── early states ─── */
+  if (!hasEverLoaded && isLoading)
+    return <><ShimmerGrid count={10} cols={cols} gap={gap} pad={pad} itemGap={itemGap} /><style>{CSS}</style></>;
 
-  if (everLoaded && !wallpapers.length && isLoading)
-    return <><ShimmerGrid count={6} opacity={0.5} numCols={numCols} g={g} pad={pad} ig={ig} /><style>{CSS}</style></>;
+  if (hasEverLoaded && wallpapers.length === 0 && isLoading)
+    return <><ShimmerGrid count={6} opacity={0.5} cols={cols} gap={gap} pad={pad} itemGap={itemGap} /><style>{CSS}</style></>;
 
   if (!wallpapers.length && !isLoading)
     return (
@@ -171,24 +226,37 @@ export const WallpaperGrid = ({
       </div>
     );
 
-  /* ── main render ── */
-  let wpOffset = 0;
+  /* ─── main render ─── */
+  let wallpaperOffset = 0;
+
   return (
     <>
       <div style={{ paddingTop: 12 }}>
         {chunks.map((chunk, ci) => {
-          const el = (
+          const block = (
             <div key={`chunk_${ci}`}>
-              <MasonryBlock items={chunk.items} numCols={numCols} g={g} pad={pad} ig={ig} offset={wpOffset} onWallpaperClick={onWallpaperClick} />
+              {/* Masonry grid — native ad cards live here at 9/16 aspect ratio */}
+              <MasonryBlock
+                items={chunk.items}
+                cols={cols}
+                gap={gap}
+                pad={pad}
+                itemGap={itemGap}
+                chunkOffset={wallpaperOffset}
+                onWallpaperClick={onWallpaperClick}
+              />
+
+              {/* Full-width banner strip — outside masonry, zero effect on column heights */}
               {chunk.banner && (
-                <div style={{ marginTop: ig }}>
+                <div style={{ marginTop: itemGap }}>
                   <BannerAdCard ad={chunk.banner} horizontalPadding={pad} />
                 </div>
               )}
             </div>
           );
-          wpOffset += chunk.items.filter(i => i.kind === 'wallpaper').length;
-          return el;
+
+          wallpaperOffset += chunk.items.filter(i => i.kind === 'wallpaper').length;
+          return block;
         })}
       </div>
 
@@ -197,13 +265,15 @@ export const WallpaperGrid = ({
       {loadingMore && (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '48px 0 32px', gap: 10 }}>
           <div style={{ display: 'flex', gap: 6 }}>
-            {[0, 1, 2].map(i => <div key={i} style={{ width: 10, height: 10, borderRadius: '50%', background: '#d1d5db', animation: `dotBounce 1.2s ease-in-out ${i * 0.2}s infinite` }} />)}
+            {[0, 1, 2].map(i => (
+              <div key={i} style={{ width: 10, height: 10, borderRadius: '50%', background: '#d1d5db', animation: `dotBounce 1.2s ease-in-out ${i * 0.2}s infinite` }} />
+            ))}
           </div>
           <span style={{ color: '#6b7280', fontSize: 15, fontWeight: 500 }}>Loading more...</span>
         </div>
       )}
 
-      {!hasMore && !!wallpapers.length && (
+      {!hasMore && wallpapers.length > 0 && (
         <div style={{ textAlign: 'center', padding: '48px 0 32px', color: '#6b7280', fontSize: 15, fontWeight: 500 }}>
           You've seen all wallpapers ✨
         </div>
