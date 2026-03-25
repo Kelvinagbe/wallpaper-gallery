@@ -13,7 +13,7 @@ window.MY_ADS = [
   {
     id: 'ad_002',
     type: 'ad',
-    adType: 'banner',
+    adType: 'native',
     title: 'Get Fit Today',
     imageUrl: 'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=800&fm=jpg',  // Fitness / Health
     ctaLabel: 'Start Now',
