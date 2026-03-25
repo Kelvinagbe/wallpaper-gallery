@@ -2,6 +2,7 @@ import './globals.css';
 import { Suspense } from 'react';
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
+import Script from 'next/script';                          // ← add this
 import { AuthProvider } from '@/app/components/AuthProvider';
 import { UploadModalProvider } from '@/app/components/UploadModalProvider';
 import { TopLoader } from '@/app/components/TopLoader';
@@ -24,6 +25,9 @@ export default async function RootLayout({
 
   return (
     <html lang="en">
+      <head>
+        <Script src="/ads.js" strategy="beforeInteractive" />  {/* ← add this */}
+      </head>
       <body className={inter.className}>
         <Suspense fallback={null}>
           <TopLoader />
