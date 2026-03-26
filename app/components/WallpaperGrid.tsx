@@ -67,7 +67,7 @@ const ShimmerGrid = ({ count, opacity, cols, gap, pad, itemGap }: {
 type MasonryItem = { kind: 'wallpaper'; wp: Wallpaper } | { kind: 'native'; ad: Ad };
 type Chunk = {
   items: MasonryItem[];  // enters masonry columns
-  banner: Ad | null;     // rendered below the chunk, full-width — NEVER in columns
+       // rendered below the chunk, full-width — NEVER in columns
 };
 
 /* ─── masonry block ───────────────────────────────────────────────────── */
@@ -124,8 +124,7 @@ type Props = {
   onWallpaperClick?:  (w: Wallpaper) => void;
   onLoadMore?:        () => Promise<void>;
   hasMore?:           boolean;
-  /** Wallpapers per masonry chunk before a full-width banner appears. Default 14 */
-  bannerEvery?:       number;
+  
   /** Native ad frequency within a chunk (1 per N wallpapers). Default 7 */
   nativeEvery?:       number;
 };
@@ -137,7 +136,7 @@ export const WallpaperGrid = ({
   onWallpaperClick,
   onLoadMore,
   hasMore = true,
-  bannerEvery = 14,
+ 
   nativeEvery = 7,
 }: Props) => {
   const [loadingMore, setLoadingMore]     = useState(false);
@@ -151,8 +150,6 @@ export const WallpaperGrid = ({
 
   const nativeAds = useMemo<Ad[]>(() =>
     typeof window === 'undefined' ? [] : ((window as any).MY_ADS ?? []).filter((a: Ad) => a.adType === 'native'), []);
-  const bannerAds = useMemo<Ad[]>(() =>
-    typeof window === 'undefined' ? [] : ((window as any).MY_ADS ?? []).filter((a: Ad) => a.adType === 'banner'), []);
 
   usePrefetch(useMemo(() => wallpapers.slice(20, 30).map(w => w.url), [wallpapers]));
 
@@ -246,10 +243,7 @@ export const WallpaperGrid = ({
                 onWallpaperClick={onWallpaperClick}
               />
 
-              {/* Full-width banner strip — outside masonry, zero effect on column heights */}
-              {chunk.banner && (
-                <div style={{ marginTop: itemGap }}>
-                  <BannerAdCard ad={chunk.banner} horizontalPadding={pad} />
+             
                 </div>
               )}
             </div>
