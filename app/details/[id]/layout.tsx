@@ -1,3 +1,4 @@
+import Script from 'next/script';
 import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
@@ -10,11 +11,10 @@ function getBaseUrl(): string {
   const host =
     headersList.get('x-forwarded-host') ??
     headersList.get('host') ??
-    'localhost:3000';
+    '';
 
   const protocol =
-    headersList.get('x-forwarded-proto') ??
-    (host.startsWith('localhost') ? 'http' : 'https');
+    headersList.get('x-forwarded-proto') ?? 'https';
 
   return `${protocol}://${host}`;
 }
@@ -61,5 +61,10 @@ export async function generateMetadata(
 }
 
 export default function DetailsLayout({ children }: { children: React.ReactNode }) {
-  return <>{children}</>;
+  return (
+    <>
+      <Script src="/ads.js" strategy="beforeInteractive" />
+      <main>{children}</main>
+    </>
+  );
 }
