@@ -65,10 +65,6 @@ const ShimmerGrid = ({ count, opacity, cols, gap, pad, itemGap }: {
 
 /* ─── feed types ──────────────────────────────────────────────────────── */
 type MasonryItem = { kind: 'wallpaper'; wp: Wallpaper } | { kind: 'native'; ad: Ad };
-type Chunk = {
-  items: MasonryItem[];  // enters masonry columns
-       // rendered below the chunk, full-width — NEVER in columns
-};
 
 /* ─── masonry block ───────────────────────────────────────────────────── */
 const MasonryBlock = ({
@@ -119,14 +115,13 @@ const MasonryBlock = ({
 
 /* ─── props ───────────────────────────────────────────────────────────── */
 type Props = {
-  wallpapers:         Wallpaper[];
-  isLoading:          boolean;
-  onWallpaperClick?:  (w: Wallpaper) => void;
-  onLoadMore?:        () => Promise<void>;
-  hasMore?:           boolean;
-  
-  /** Native ad frequency within a chunk (1 per N wallpapers). Default 7 */
-  nativeEvery?:       number;
+  wallpapers:        Wallpaper[];
+  isLoading:         boolean;
+  onWallpaperClick?: (w: Wallpaper) => void;
+  onLoadMore?:       () => Promise<void>;
+  hasMore?:          boolean;
+  /** Native ad frequency (1 per N wallpapers). Default 7 */
+  nativeEvery?:      number;
 };
 
 /* ─── main component ──────────────────────────────────────────────────── */
@@ -136,7 +131,6 @@ export const WallpaperGrid = ({
   onWallpaperClick,
   onLoadMore,
   hasMore = true,
- 
   nativeEvery = 7,
 }: Props) => {
   const [loadingMore, setLoadingMore]     = useState(false);
@@ -149,12 +143,18 @@ export const WallpaperGrid = ({
   const loadingRef = useRef(false);
 
   const nativeAds = useMemo<Ad[]>(() =>
-    typeof window === 'undefined' ? [] : ((window as any).MY_ADS ?? []).filter((a: Ad) => a.adType === 'native'), []);
+    typeof window === 'undefined'
+      ? []
+      : ((window as any).MY_ADS ?? []).filter((a: Ad) => a.adType === 'native'),
+  []);
 
   usePrefetch(useMemo(() => wallpapers.slice(20, 30).map(w => w.url), [wallpapers]));
 
   useEffect(() => {
-    const fn = () => { const w = window.innerWidth; setDims({ cols: getColCount(w), gap: getGap(w), pad: getPad(w) }); };
+    const fn = () => {
+      const w = window.innerWidth;
+      setDims({ cols: getColCount(w), gap: getGap(w), pad: getPad(w) });
+    };
     window.addEventListener('resize', fn, { passive: true });
     return () => window.removeEventListener('resize', fn);
   }, []);
@@ -167,7 +167,8 @@ export const WallpaperGrid = ({
     if (!triggerRef.current || !onLoadMore || !hasMore) return;
     const ob = new IntersectionObserver(async ([e]) => {
       if (!e.isIntersecting || loadingRef.current || !hasMore) return;
-      loadingRef.current = true; setLoadingMore(true);
+      loadingRef.current = true;
+      setLoadingMore(true);
       try { await onLoadMore(); }
       catch { console.error('Load more failed'); }
       finally { loadingRef.current = false; setLoadingMore(false); }
@@ -179,33 +180,17 @@ export const WallpaperGrid = ({
   const { cols, gap, pad } = dims;
   const itemGap = getItemGap(cols);
 
-  /**
-   * Build chunks.
-   * Native ads → injected inside masonry columns (same 9/16 card, blends with wallpapers).
-   * Banner ads → attached to chunk.banner, rendered OUTSIDE columns as a full-width strip.
-   */
-  const chunks = useMemo<Chunk[]>(() => {
-    const result: Chunk[] = [];
-    let nativeIdx = 0, bannerIdx = 0;
-
-    for (let base = 0; base < wallpapers.length; base += bannerEvery) {
-      const slice = wallpapers.slice(base, base + bannerEvery);
-      const items: MasonryItem[] = [];
-
-      slice.forEach((wp, i) => {
-        items.push({ kind: 'wallpaper', wp });
-        if (nativeAds.length && (i + 1) % nativeEvery === 0)
-          items.push({ kind: 'native', ad: nativeAds[nativeIdx++ % nativeAds.length] });
-      });
-
-      result.push({
-        items,
-        banner: bannerAds.length ? bannerAds[bannerIdx++ % bannerAds.length] : null,
-      });
-    }
-
+  /* Build flat masonry item list — native ads injected every N wallpapers */
+  const items = useMemo<MasonryItem[]>(() => {
+    const result: MasonryItem[] = [];
+    let nativeIdx = 0;
+    wallpapers.forEach((wp, i) => {
+      result.push({ kind: 'wallpaper', wp });
+      if (nativeAds.length && (i + 1) % nativeEvery === 0)
+        result.push({ kind: 'native', ad: nativeAds[nativeIdx++ % nativeAds.length] });
+    });
     return result;
-  }, [wallpapers, nativeAds, bannerAds, bannerEvery, nativeEvery]);
+  }, [wallpapers, nativeAds, nativeEvery]);
 
   /* ─── early states ─── */
   if (!hasEverLoaded && isLoading)
@@ -224,34 +209,18 @@ export const WallpaperGrid = ({
     );
 
   /* ─── main render ─── */
-  let wallpaperOffset = 0;
-
   return (
     <>
       <div style={{ paddingTop: 12 }}>
-        {chunks.map((chunk, ci) => {
-          const block = (
-            <div key={`chunk_${ci}`}>
-              {/* Masonry grid — native ad cards live here at 9/16 aspect ratio */}
-              <MasonryBlock
-                items={chunk.items}
-                cols={cols}
-                gap={gap}
-                pad={pad}
-                itemGap={itemGap}
-                chunkOffset={wallpaperOffset}
-                onWallpaperClick={onWallpaperClick}
-              />
-
-             
-                </div>
-              )}
-            </div>
-          );
-
-          wallpaperOffset += chunk.items.filter(i => i.kind === 'wallpaper').length;
-          return block;
-        })}
+        <MasonryBlock
+          items={items}
+          cols={cols}
+          gap={gap}
+          pad={pad}
+          itemGap={itemGap}
+          chunkOffset={0}
+          onWallpaperClick={onWallpaperClick}
+        />
       </div>
 
       {hasMore && <div ref={triggerRef} style={{ height: 1 }} />}
