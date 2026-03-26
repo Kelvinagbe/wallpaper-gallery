@@ -1,7 +1,7 @@
 import { fetchWallpaperById } from '@/lib/stores/wallpaperStore';
 import { notFound } from 'next/navigation';
 import WallpaperDetail from './WallpaperDetails';
-import { BANNER_ADS } from '@/lib/adsData';
+import { BANNER_ADS } from '@/lib/adData';
 
 export const revalidate = 60;
 
