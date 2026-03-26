@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { WallpaperCard, NativeAdCard, BannerAdCard } from './WallpaperCard';
+import { WallpaperCard, NativeAdCard } from './WallpaperCard';
 import { usePrefetch } from '@/app/hooks/usePrefetch';
 import type { Wallpaper, Ad } from '../types';
 
