@@ -11,7 +11,7 @@ import {
 import { VerifiedBadge } from '@/app/components/VerifiedBadge';
 import { LoginPromptModal } from '@/app/components/LoginPromptModal';
 import { TopLoader, startLoader } from '@/app/components/TopLoader';
-import { BannerAdCard } from './AdCards';
+import { BannerAdCard } from '@/app/components/AdCards';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/app/components/AuthProvider';
 import { incrementViews, incrementDownloads } from '@/lib/stores/wallpaperStore';
