@@ -8,7 +8,7 @@ window.MY_ADS = [
     ctaLabel: 'Try Free',
     ctaUrl: 'https://yourlink.com',
     brandName: 'TechLife',
-    brandLogoUrl: 'https://ui-avatars.com/api/?name=TechLife&background=6366f1&color=fff&size=64',
+    brandLogoUrl: 'https://images.unsplash.com/photo-1468495244123-6c6c332eeece?w=800&fm=jpg',
   },
   {
     id: 'ad_002',
