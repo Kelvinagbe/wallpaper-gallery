@@ -80,6 +80,36 @@ const FloatingHearts = ({ hearts }: { hearts: Array<{ id: number; x: number; y: 
 };
 
 
+// ── Banner Ad Card ───────────────────────────────────────────────
+const BannerAdCard = ({ ad, horizontalPadding = 0 }: { ad: Ad; horizontalPadding?: number }) => {
+  const [imgLoaded, setImgLoaded] = useState(false);
+  const [imgError,  setImgError]  = useState(false);
+  const bg     = ad.backgroundColor ?? '#0f0f1a';
+  const accent = ad.accentColor ?? '#6366f1';
+  const hasImg = !!ad.imageUrl && !imgError;
+  const trackClick = () => fetch('/api/ads/click', { method: 'POST', body: JSON.stringify({ adId: ad.id }), headers: { 'Content-Type': 'application/json' } }).catch(() => {});
+  return (
+    <div style={{ padding: `8px ${horizontalPadding}px` }}>
+      <a href={ad.ctaUrl} target="_blank" rel="noopener noreferrer sponsored" onClick={trackClick} style={{ display: 'block', textDecoration: 'none' }}>
+        <div style={{ position: 'relative', borderRadius: 20, overflow: 'hidden', minHeight: 86, background: bg, boxShadow: '0 2px 20px rgba(0,0,0,.14),0 0 0 1px rgba(255,255,255,.04) inset' }}>
+          {ad.imageUrl && <img src={ad.imageUrl} alt="" aria-hidden draggable={false} onLoad={() => setImgLoaded(true)} onError={() => setImgError(true)} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: imgLoaded ? 1 : 0, transition: 'opacity .5s ease', pointerEvents: 'none', zIndex: 0 }} />}
+          <div style={{ position: 'absolute', inset: 0, zIndex: 1, background: hasImg ? 'linear-gradient(90deg,rgba(0,0,0,.78) 0%,rgba(0,0,0,.48) 55%,rgba(0,0,0,.2) 100%)' : `linear-gradient(135deg,${bg} 0%,${bg}dd 100%)` }} />
+          <div style={{ position: 'absolute', top: -30, right: 60, width: 100, height: 100, borderRadius: '50%', background: `${accent}28`, filter: 'blur(20px)', zIndex: 1, pointerEvents: 'none' }} />
+          <div style={{ position: 'absolute', bottom: -20, right: 20, width: 70, height: 70, borderRadius: '50%', background: `${accent}18`, filter: 'blur(14px)', zIndex: 1, pointerEvents: 'none' }} />
+          <div style={{ position: 'relative', zIndex: 2, display: 'flex', alignItems: 'center', gap: 12, padding: 14 }}>
+            {ad.brandLogoUrl ? <img src={ad.brandLogoUrl} alt={ad.brandName} style={{ width: 42, height: 42, borderRadius: 13, objectFit: 'cover', flexShrink: 0, border: '1.5px solid rgba(255,255,255,.15)', boxShadow: '0 2px 12px rgba(0,0,0,.3)' }} /> : <div style={{ width: 42, height: 42, borderRadius: 13, flexShrink: 0, background: `${accent}33`, backdropFilter: 'blur(10px)', border: `1.5px solid ${accent}55`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17, fontWeight: 900, color: accent }}>{ad.brandName?.[0]?.toUpperCase() ?? 'A'}</div>}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ margin: 0, fontWeight: 800, color: '#fff', fontSize: 13.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', letterSpacing: '-.01em', lineHeight: 1.2, textShadow: '0 1px 8px rgba(0,0,0,.5)' }}>{ad.title}</p>
+              {ad.subtitle && <p style={{ margin: '3px 0 0', color: `${accent}cc`, fontSize: 11, fontWeight: 500, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ad.subtitle}</p>}
+              <span style={{ display: 'inline-block', marginTop: 5, fontSize: 8, fontWeight: 700, color: 'rgba(255,255,255,.35)', letterSpacing: '.12em', textTransform: 'uppercase' }}>Sponsored</span>
+            </div>
+            <span style={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0, fontSize: 11, fontWeight: 800, color: '#fff', background: accent, borderRadius: 50, padding: '9px 16px', boxShadow: `0 4px 14px ${accent}55,0 0 0 1px ${accent}44 inset`, whiteSpace: 'nowrap' }}>{ad.ctaLabel ?? 'Learn More'}</span>
+          </div>
+        </div>
+      </a>
+    </div>
+  );
+};
 // ── Main Component ───────────────────────────────────────────────
 export default function WallpaperDetail({ initialWallpaper, ad }: { initialWallpaper: Wallpaper; ad?: Ad }) {
   const router      = useRouter();
@@ -262,26 +292,9 @@ export default function WallpaperDetail({ initialWallpaper, ad }: { initialWallp
         </div>
       </div>
 
-     {/* Info section */}
-      <div className="fade-in" style={{ padding: '16px 16px 48px' }}>
-
-        {/* Title + description */}
-        <h1 style={{ fontFamily: "'DM Serif Display', serif", fontSize: 22, fontWeight: 400, color: '#0a0a0a', letterSpacing: '-0.02em', lineHeight: 1.25, marginBottom: 5 }}>{wp.title}</h1>
-        {wp.description && <p style={{ fontSize: 13, color: 'rgba(0,0,0,0.45)', lineHeight: 1.6, fontWeight: 300, marginBottom: 12 }}>{wp.description}</p>}
-
-        {/* Stats */}
-        <div style={{ display: 'flex', gap: 14, marginBottom: 14 }}>
-          {[{ icon: <Eye size={12} />, label: `${fmt(views)} views` }, { icon: <Download size={12} />, label: `${fmt(wp.downloads)} downloads` }, { icon: <Heart size={12} />, label: `${fmt(likes)} likes` }]
-            .map(({ icon, label }) => (
-              <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'rgba(0,0,0,0.4)', fontWeight: 500 }}>
-                <span style={{ opacity: 0.55 }}>{icon}</span>{label}
-              </div>
-            ))}
-        </div>
-
-        <div style={{ height: 1, background: 'rgba(0,0,0,0.07)', marginBottom: 14 }} />
-
-       
+      
+        {/* ── Banner ad — sits between stats and user row ── */}
+        {ad && <div style={{ marginBottom: 14 }}><BannerAdCard ad={ad} horizontalPadding={0} /></div>}
 
         {/* User row */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
