@@ -281,8 +281,7 @@ export default function WallpaperDetail({ initialWallpaper, ad }: { initialWallp
 
         <div style={{ height: 1, background: 'rgba(0,0,0,0.07)', marginBottom: 14 }} />
 
-        {/* ── Banner ad — sits between stats and user row ── */}
-        {ad && <div style={{ marginBottom: 14 }}><BannerAdCard ad={ad} horizontalPadding={0} /></div>}
+       
 
         {/* User row */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
