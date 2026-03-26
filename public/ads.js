@@ -24,7 +24,7 @@ window.MY_ADS = [
   {
     id: 'ad_003',
     type: 'ad',
-    adType: 'native',
+    adType: 'banner',
     title: 'Fresh & Delicious',
     imageUrl: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=800&fm=jpg',  // Food / Lifestyle
     ctaLabel: 'Order Now',
