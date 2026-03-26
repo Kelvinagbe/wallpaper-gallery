@@ -1,43 +1,70 @@
-import './globals.css';
-import { Suspense } from 'react';
+import Script from 'next/script';
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
-import Script from 'next/script';                          // ← add this
-import { AuthProvider } from '@/app/components/AuthProvider';
-import { UploadModalProvider } from '@/app/components/UploadModalProvider';
-import { TopLoader } from '@/app/components/TopLoader';
+import { headers } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
 
-const inter = Inter({ subsets: ['latin'] });
+const APP_NAME = 'Wallpapers';
 
-export const metadata: Metadata = {
-  title: 'Wallpaper Gallery',
-  description: 'Discover and share amazing wallpapers',
-};
+function getBaseUrl(): string {
+  const headersList = headers();
 
-export default async function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+  const host =
+    headersList.get('x-forwarded-host') ??
+    headersList.get('host') ??
+    '';
+
+  const protocol =
+    headersList.get('x-forwarded-proto') ?? 'https';
+
+  return `${protocol}://${host}`;
+}
+
+export async function generateMetadata(
+  { params }: { params: { id: string } }
+): Promise<Metadata> {
   const supabase = await createClient();
-  const { data: { session } } = await supabase.auth.getSession();
 
+  const { data: wp } = await supabase
+    .from('wallpapers')
+    .select('title, description, url, uploaded_by, likes, downloads, views')
+    .eq('id', params.id)
+    .single();
+
+  const baseUrl    = getBaseUrl();
+  const pageUrl    = `${baseUrl}/details/${params.id}`;
+  const ogImageUrl = `${baseUrl}/api/og?id=${params.id}`;
+
+  if (!wp) return { title: APP_NAME };
+
+  const title = `${wp.title} — ${APP_NAME}`;
+  const desc  = wp.description || `Wallpaper by ${wp.uploaded_by} · ${wp.likes ?? 0} likes`;
+
+  return {
+    title,
+    description: desc,
+    openGraph: {
+      title,
+      description: desc,
+      url: pageUrl,
+      siteName: APP_NAME,
+      type: 'website',
+      images: [{ url: ogImageUrl, width: 1200, height: 630, alt: wp.title }],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title,
+      description: desc,
+      images: [ogImageUrl],
+    },
+    alternates: { canonical: pageUrl },
+  };
+}
+
+export default function DetailsLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <head>
-        <Script src="/ads.js" strategy="beforeInteractive" />  {/* ← add this */}
-      </head>
-      <body className={inter.className}>
-        <Suspense fallback={null}>
-          <TopLoader />
-        </Suspense>
-        <AuthProvider initialSession={session}>
-          <UploadModalProvider>
-            {children}
-          </UploadModalProvider>
-        </AuthProvider>
-      </body>
-    </html>
+    <>
+      <Script src="/ads.js" strategy="beforeInteractive" />
+      <main>{children}</main>
+    </>
   );
 }
