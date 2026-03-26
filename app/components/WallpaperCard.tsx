@@ -9,16 +9,20 @@ import { toggleLike, isWallpaperLiked, toggleSave, isWallpaperSaved } from '@/li
 import { useAuth } from '@/app/components/AuthProvider';
 import { saveFeedScroll } from '@/lib/feedCache';
 import { startLoader } from '@/app/components/TopLoader';
-import type { Wallpaper } from '../types';
+import type { Wallpaper, Ad } from '../types';
 
-/* ── re-export native ad card so the grid only needs one import source ── */
-export { NativeAdCard } from './AdCards';
-
-/* ── constants ── */
 const COLORS = [
   { bg: '#e8eaf0', shimmer: '#d0d4e8' }, { bg: '#ede8f0', shimmer: '#d8cce8' },
   { bg: '#e8f0ea', shimmer: '#cce0d0' }, { bg: '#f0e8e8', shimmer: '#e8cccc' },
   { bg: '#f0ede8', shimmer: '#e8dcc8' },
+];
+
+const GRADIENTS = [
+  'linear-gradient(145deg,#0f0c29,#302b63,#24243e)',
+  'linear-gradient(145deg,#0a0a0a,#1a1a2e,#16213e)',
+  'linear-gradient(145deg,#1a0533,#2d1b69,#11998e)',
+  'linear-gradient(145deg,#0d0d0d,#1a1a1a,#2c2c54)',
+  'linear-gradient(145deg,#160a2c,#0f3460,#533483)',
 ];
 
 const imgCache = (() => {
@@ -31,6 +35,69 @@ const imgCache = (() => {
 })();
 
 const fmt = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n / 1_000).toFixed(1)}k` : String(n);
+
+const trackAdClick = (id: string) =>
+  fetch('/api/ads/click', { method: 'POST', body: JSON.stringify({ adId: id }), headers: { 'Content-Type': 'application/json' } }).catch(() => {});
+
+/* ════════════════════════════════════════
+   NATIVE AD CARD
+════════════════════════════════════════ */
+export const NativeAdCard = ({ ad, placeholderIndex = 0 }: { ad: Ad; placeholderIndex?: number }) => {
+  const [imgLoaded, setImgLoaded] = useState(false);
+  const [imgError,  setImgError]  = useState(false);
+  const ph       = COLORS[placeholderIndex % COLORS.length];
+  const hasImage = !!ad.imageUrl && !imgError;
+  const gradBg   = GRADIENTS[(ad.brandName?.charCodeAt(0) ?? 65) % GRADIENTS.length];
+
+  return (
+    <a href={ad.ctaUrl} target="_blank" rel="noopener noreferrer sponsored" onClick={() => trackAdClick(ad.id)} style={{ display: 'block', textDecoration: 'none' }}>
+      <div style={{ position: 'relative', width: '100%', borderRadius: 16, overflow: 'hidden', aspectRatio: '9/16', background: hasImage ? ph.bg : gradBg }}>
+
+        {!imgLoaded && !imgError && ad.imageUrl && (
+          <div style={{ position: 'absolute', inset: 0, zIndex: 1, background: `linear-gradient(105deg,transparent 40%,${ph.shimmer}99 50%,transparent 60%)`, backgroundSize: '200% 100%', animation: 'shimmerSweep 1.8s ease-in-out infinite' }} />
+        )}
+
+        {ad.imageUrl && (
+          <img src={ad.imageUrl} alt={ad.title} draggable={false}
+            onLoad={() => setImgLoaded(true)} onError={() => setImgError(true)}
+            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', zIndex: 2, opacity: imgLoaded ? 1 : 0, transition: 'opacity .4s ease', pointerEvents: 'none', WebkitUserDrag: 'none' } as React.CSSProperties}
+          />
+        )}
+
+        {!hasImage && (
+          <div style={{ position: 'absolute', inset: 0, zIndex: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+            <div style={{ position: 'absolute', width: 180, height: 180, borderRadius: '50%', border: '1px solid rgba(255,255,255,.07)', top: '20%', left: '50%', transform: 'translateX(-50%)' }} />
+            <div style={{ position: 'absolute', width: 120, height: 120, borderRadius: '50%', border: '1px solid rgba(255,255,255,.1)', top: '30%', left: '50%', transform: 'translateX(-50%)' }} />
+            <div style={{ width: 52, height: 52, borderRadius: 16, background: 'rgba(255,255,255,.1)', backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 900, color: 'rgba(255,255,255,.9)', marginBottom: 60 }}>
+              {ad.brandName?.[0]?.toUpperCase() ?? 'A'}
+            </div>
+          </div>
+        )}
+
+        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '65%', background: 'linear-gradient(to top,rgba(0,0,0,.88) 0%,rgba(0,0,0,.4) 55%,transparent 100%)', zIndex: 3 }} />
+
+        <div style={{ position: 'absolute', bottom: 10, left: 8, right: 8, zIndex: 4, display: 'flex', alignItems: 'center', gap: 7 }}>
+          {ad.brandLogoUrl
+            ? <img src={ad.brandLogoUrl} alt={ad.brandName} style={{ width: 24, height: 24, borderRadius: 7, objectFit: 'cover', flexShrink: 0, border: '1.5px solid rgba(255,255,255,.2)' }} />
+            : <div style={{ width: 24, height: 24, borderRadius: 7, flexShrink: 0, background: 'rgba(255,255,255,.15)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 800, color: '#fff' }}>{ad.brandName?.[0]?.toUpperCase() ?? 'A'}</div>
+          }
+          <span style={{ flex: 1, fontSize: 11, fontWeight: 700, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textShadow: '0 1px 6px rgba(0,0,0,.7)' }}>{ad.title}</span>
+          <span style={{ fontSize: 9, fontWeight: 800, color: '#fff', background: 'rgba(255,255,255,.15)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,.28)', borderRadius: 7, padding: '4px 9px', flexShrink: 0, letterSpacing: '.03em', whiteSpace: 'nowrap' }}>{ad.ctaLabel ?? 'View'}</span>
+        </div>
+
+        <div style={{ position: 'absolute', top: 8, left: 8, zIndex: 4, padding: '3px 7px', borderRadius: 6, background: 'rgba(0,0,0,.5)', backdropFilter: 'blur(8px)', fontSize: 8, fontWeight: 800, color: 'rgba(255,255,255,.75)', letterSpacing: '.08em', border: '1px solid rgba(255,255,255,.1)' }}>AD</div>
+      </div>
+
+      <div style={{ padding: '6px 2px 0', display: 'flex', flexDirection: 'column', gap: 3 }}>
+        <p style={{ fontSize: 11, fontWeight: 600, color: '#0a0a0a', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.3 }}>{ad.title}</p>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
+          <span style={{ fontSize: 10, color: 'rgba(0,0,0,.4)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ad.brandName}</span>
+          <span style={{ display: 'inline-flex', alignSelf: 'flex-start', fontSize: 9, fontWeight: 800, color: '#fff', background: '#1d4ed8', borderRadius: 4, padding: '2px 6px', flexShrink: 0, letterSpacing: '.04em' }}>SPONSORED</span>
+        </div>
+      </div>
+    </a>
+  );
+};
 
 /* ════════════════════════════════════════
    BOTTOM SHEET
@@ -128,7 +195,7 @@ export const WallpaperCard = ({ wp, onClick, priority = false, placeholderIndex 
       .then(([liked, saved]) => { if (mounted.current) upd({ liked, saved }); });
   }, [wp.id, user?.id]);
 
-  const openMenu = useCallback(() => upd({ showMenu: true }), []);
+  const openMenu    = useCallback(() => upd({ showMenu: true }), []);
   const onTouchStart = useCallback((e: React.TouchEvent) => {
     didLongPress.current = false;
     longTimer.current = setTimeout(() => { didLongPress.current = true; navigator.vibrate?.(40); openMenu(); }, 500);
