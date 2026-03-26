@@ -292,7 +292,25 @@ export default function WallpaperDetail({ initialWallpaper, ad }: { initialWallp
         </div>
       </div>
 
-      
+      {/* Info section */}
+      <div className="fade-in" style={{ padding: '16px 16px 48px' }}>
+
+        {/* Title + description */}
+        <h1 style={{ fontFamily: "'DM Serif Display', serif", fontSize: 22, fontWeight: 400, color: '#0a0a0a', letterSpacing: '-0.02em', lineHeight: 1.25, marginBottom: 5 }}>{wp.title}</h1>
+        {wp.description && <p style={{ fontSize: 13, color: 'rgba(0,0,0,0.45)', lineHeight: 1.6, fontWeight: 300, marginBottom: 12 }}>{wp.description}</p>}
+
+        {/* Stats */}
+        <div style={{ display: 'flex', gap: 14, marginBottom: 14 }}>
+          {[{ icon: <Eye size={12} />, label: `${fmt(views)} views` }, { icon: <Download size={12} />, label: `${fmt(wp.downloads)} downloads` }, { icon: <Heart size={12} />, label: `${fmt(likes)} likes` }]
+            .map(({ icon, label }) => (
+              <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'rgba(0,0,0,0.4)', fontWeight: 500 }}>
+                <span style={{ opacity: 0.55 }}>{icon}</span>{label}
+              </div>
+            ))}
+        </div>
+
+        <div style={{ height: 1, background: 'rgba(0,0,0,0.07)', marginBottom: 14 }} />
+
         {/* ── Banner ad — sits between stats and user row ── */}
         {ad && <div style={{ marginBottom: 14 }}><BannerAdCard ad={ad} horizontalPadding={0} /></div>}
 
