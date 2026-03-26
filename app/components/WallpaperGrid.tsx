@@ -141,6 +141,7 @@ export const WallpaperGrid = ({
   });
   const triggerRef = useRef<HTMLDivElement>(null);
   const loadingRef = useRef(false);
+  const failedRef  = useRef(false); // true when last fetch failed (e.g. network dropped)
 
   const nativeAds = useMemo<Ad[]>(() =>
     typeof window === 'undefined'
@@ -163,17 +164,42 @@ export const WallpaperGrid = ({
     if (wallpapers.length > 0 && !hasEverLoaded) setHasEverLoaded(true);
   }, [wallpapers.length, hasEverLoaded]);
 
+  // Auto-retry when network comes back after a failed fetch
+  useEffect(() => {
+    if (!onLoadMore || !hasMore) return;
+    const retry = async () => {
+      if (!failedRef.current || loadingRef.current) return;
+      failedRef.current = false;
+      loadingRef.current = true;
+      setLoadingMore(true);
+      try { await onLoadMore(); }
+      catch { failedRef.current = true; console.error('Retry on reconnect failed'); }
+      finally { loadingRef.current = false; setLoadingMore(false); }
+    };
+    window.addEventListener('online', retry);
+    return () => window.removeEventListener('online', retry);
+  }, [onLoadMore, hasMore]);
+
   useEffect(() => {
     if (!triggerRef.current || !onLoadMore || !hasMore) return;
+    const el = triggerRef.current;
     const ob = new IntersectionObserver(async ([e]) => {
       if (!e.isIntersecting || loadingRef.current || !hasMore) return;
       loadingRef.current = true;
       setLoadingMore(true);
-      try { await onLoadMore(); }
-      catch { console.error('Load more failed'); }
+      try {
+        await onLoadMore();
+        failedRef.current = false;
+        ob.unobserve(el);
+        ob.observe(el);
+      }
+      catch {
+        failedRef.current = true;
+        console.error('Load more failed');
+      }
       finally { loadingRef.current = false; setLoadingMore(false); }
-    }, { threshold: 0.1, rootMargin: '600px' });
-    ob.observe(triggerRef.current);
+    }, { threshold: 0, rootMargin: '1200px' });
+    ob.observe(el);
     return () => ob.disconnect();
   }, [onLoadMore, hasMore]);
 
