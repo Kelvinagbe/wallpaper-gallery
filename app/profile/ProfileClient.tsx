@@ -2,7 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Settings, Share2, LogOut, Shield, Grid, ChevronRight, TrendingUp } from 'lucide-react';
+import {
+  ChevronLeft, Settings, Share2, LogOut, Shield,
+  Grid, ChevronRight, TrendingUp, Clock,
+} from 'lucide-react';
 import { useAuth } from '@/app/components/AuthProvider';
 import { SettingsModal } from '@/app/components/profile/SettingsModal';
 import { PrivacyModal } from '@/app/components/profile/PrivacyModal';
@@ -13,33 +16,47 @@ import { signOut } from '@/lib/stores/userStore';
 import { createClient } from '@/lib/supabase/client';
 import type { Wallpaper } from '@/app/types';
 
-/* ─── types ─────────────────────────────────────────────── */
+/* ─── types ─────────────────────────────────────────── */
 interface Props {
   initialStats:      { followers: number; following: number; posts: number };
   initialWallpapers: Wallpaper[];
 }
 
-/* ─── helpers ────────────────────────────────────────────── */
+/* ─── helpers ────────────────────────────────────────── */
 const fmt = (n: number) =>
   n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M`
   : n >= 1_000   ? `${(n / 1_000).toFixed(1)}k`
   : String(n);
 
 const Shimmer = ({ w, h, r = 8 }: { w: string | number; h: string | number; r?: number }) => (
-  <div style={{ width: w, height: h, borderRadius: r, flexShrink: 0,
-    background: 'linear-gradient(90deg,#f0f0f0 25%,#e8e8e8 50%,#f0f0f0 75%)',
-    backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease infinite' }} />
+  <div style={{
+    width: w, height: h, borderRadius: r, flexShrink: 0,
+    background: 'linear-gradient(90deg,#2a2a2a 25%,#333 50%,#2a2a2a 75%)',
+    backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease infinite',
+  }} />
 );
 
 const getMonetBtn = (status: string, eligible: boolean) => {
-  if (status === 'approved') return { label: 'My Earnings',           show: true,  solid: true,  disabled: false };
-  if (status === 'pending')  return { label: 'Application Pending',  show: true,  solid: false, disabled: true  };
-  if (status === 'rejected') return { label: 'Reapply',              show: true,  solid: false, disabled: false };
-  if (eligible)              return { label: 'Apply for Monetization', show: true, solid: true,  disabled: false };
-  return { show: false, label: '', solid: false, disabled: true };
+  if (status === 'approved') return { label: 'Creator Studio · My Earnings', sub: 'Tap to view balance & payouts',         show: true, disabled: false };
+  if (status === 'pending')  return { label: 'Application Pending',          sub: 'Under review — check back soon',        show: true, disabled: true  };
+  if (status === 'rejected') return { label: 'Reapply for Monetization',     sub: 'Your previous application was rejected', show: true, disabled: false };
+  if (eligible)              return { label: 'Apply for Monetization',       sub: 'You meet the requirements',              show: true, disabled: false };
+  return { show: false, label: '', sub: '', disabled: true };
 };
 
-/* ═══════════════════════════════════════════════════════════ */
+/* ─── design tokens ──────────────────────────────────── */
+const S = {
+  bg:      '#0e0e0e',
+  surface: '#1a1a1a',
+  border:  'rgba(255,255,255,.08)',
+  ink:     '#f5f5f3',
+  ink2:    'rgba(245,245,243,.45)',
+  ink3:    'rgba(245,245,243,.2)',
+  green:   '#4ade80',
+  red:     '#f87171',
+};
+
+/* ═══════════════════════════════════════════════════════ */
 export default function ProfileClient({ initialStats, initialWallpapers }: Props) {
   const router   = useRouter();
   const supabase = createClient();
@@ -51,8 +68,10 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
   const [eligible,     setEligible]     = useState(false);
   const [monetLoading, setMonetLoading] = useState(true);
   const [modals, setModals] = useState({
-    logout: false, settings: false, settingsClosing: false,
-    privacy: false, privacyClosing: false, allPosts: false,
+    logout: false,
+    settings: false, settingsClosing: false,
+    privacy:  false, privacyClosing:  false,
+    allPosts: false,
   });
 
   useEffect(() => {
@@ -77,17 +96,17 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
   };
   const open = (key: string) => setModals(m => ({ ...m, [key]: true }));
 
-  const handleLogout = async () => { await signOut(); router.replace('/'); };
-  const handleShare  = async () => {
-    if (navigator.share) await navigator.share({ title: 'Gallery App', url: window.location.href }).catch(() => {});
+  const handleLogout   = async () => { await signOut(); router.replace('/'); };
+  const handleShare    = async () => {
+    if (navigator.share) await navigator.share({ title: 'WALLS', url: window.location.href }).catch(() => {});
     else navigator.clipboard.writeText(window.location.href).catch(() => {});
   };
   const handleMonetBtn = () => router.push(monetStatus === 'approved' ? '/monetization' : '/monetization/apply');
 
   if (!authLoading && !profile) return null;
 
-  const monetBtn    = getMonetBtn(monetStatus, eligible);
-  const statItems   = [
+  const monetBtn  = getMonetBtn(monetStatus, eligible);
+  const statItems = [
     { label: 'Posts',     value: fmt(stats.posts || walls.length) },
     { label: 'Followers', value: fmt(stats.followers) },
     { label: 'Following', value: fmt(stats.following) },
@@ -99,127 +118,170 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
   ];
 
   return (
-    <div style={{ minHeight: '100dvh', background: '#f7f7f7', fontFamily: "'DM Sans', system-ui, sans-serif", color: '#111', paddingBottom: 100 }}>
+    <div style={{ minHeight: '100dvh', background: S.bg, fontFamily: "'DM Sans', system-ui, sans-serif", color: S.ink, paddingBottom: 100 }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600;700&display=swap');
         @keyframes shimmer { 0%,100%{background-position:200% 0} 50%{background-position:-200% 0} }
-        @keyframes up { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
-        .up { animation: up .38s cubic-bezier(.16,1,.3,1) both; }
-        .tap:active { opacity: .6; }
-        .wp:active  { transform: scale(0.96); }
-        .wp { transition: transform .12s; }
+        @keyframes up      { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes fadeIn  { from{opacity:0} to{opacity:1} }
+        .up { animation: up .42s cubic-bezier(.16,1,.3,1) both }
+        .d1 { animation-delay:.06s } .d2 { animation-delay:.12s }
+        .d3 { animation-delay:.18s } .d4 { animation-delay:.24s }
+        .d5 { animation-delay:.30s }
+        .tap:active  { opacity:.55 }
+        .cell:active { opacity:.75 }
+        .mrow:active { background: rgba(255,255,255,.04) !important }
       `}</style>
 
       {/* ── header ── */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '13px 16px', background: 'rgba(247,247,247,0.94)', backdropFilter: 'blur(18px)', WebkitBackdropFilter: 'blur(18px)', borderBottom: '1px solid rgba(0,0,0,0.07)' }}>
-        <span style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.01em' }}>Profile</span>
-        <button className="tap" onClick={() => open('settings')} style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(0,0,0,0.06)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-          <Settings size={16} color="#111" />
+      <div style={{ position: 'sticky', top: 0, zIndex: 30, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '13px 16px', background: 'rgba(14,14,14,.88)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', borderBottom: `1px solid ${S.border}` }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button className="tap" onClick={() => router.back()} style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(255,255,255,.07)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+            <ChevronLeft size={18} color={S.ink} strokeWidth={2.5} />
+          </button>
+          <span style={{ fontFamily: "'Syne', sans-serif", fontSize: 15, fontWeight: 700, letterSpacing: '.01em' }}>Profile</span>
+        </div>
+        <button className="tap" onClick={() => open('settings')} style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(255,255,255,.07)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <Settings size={16} color={S.ink} />
         </button>
       </div>
 
-      <div style={{ maxWidth: 600, margin: '0 auto' }}>
+      <div style={{ maxWidth: 430, margin: '0 auto' }}>
 
-        {/* ── avatar + info ── */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '28px 20px 20px', textAlign: 'center' }}>
+        {/* ── hero section ── */}
+        <div className="up d1" style={{ padding: '24px 18px 20px', borderBottom: `1px solid ${S.border}` }}>
+
           {authLoading ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-              <Shimmer w={96} h={96} r={48} />
-              <Shimmer w={140} h={20} />
-              <Shimmer w={90} h={14} />
-              <Shimmer w={200} h={13} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end' }}>
+                <Shimmer w={90} h={90} r={24} />
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, paddingBottom: 4 }}>
+                  <Shimmer w="70%" h={22} />
+                  <Shimmer w="45%" h={14} />
+                  <Shimmer w={120} h={22} r={20} />
+                </div>
+              </div>
+              <Shimmer w="80%" h={14} />
+              <Shimmer w="100%" h={52} r={16} />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <Shimmer w="100%" h={42} r={14} />
+                <Shimmer w="100%" h={42} r={14} />
+              </div>
             </div>
           ) : profile && (
-            <div className="up" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', gap: 0 }}>
+            <>
+              {/* avatar left, name right */}
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16, marginBottom: 14 }}>
+                <div style={{ position: 'relative', flexShrink: 0 }}>
+                  <img
+                    src={profile.avatar} alt={profile.name}
+                    style={{ width: 90, height: 90, borderRadius: 24, objectFit: 'cover', display: 'block', border: `1.5px solid ${S.border}` }}
+                  />
+                  <div style={{ position: 'absolute', bottom: 6, right: 6, width: 11, height: 11, borderRadius: '50%', background: S.green, border: `2px solid ${S.bg}` }} />
+                </div>
 
-              {/* avatar */}
-              <div style={{ position: 'relative', marginBottom: 14 }}>
-                <img
-                  src={profile.avatar} alt={profile.name}
-                  style={{ width: 96, height: 96, borderRadius: '50%', objectFit: 'cover', display: 'block', border: '3px solid #fff', boxShadow: '0 2px 16px rgba(0,0,0,0.10)' }}
-                />
-                <button
-                  className="tap" onClick={() => open('settings')}
-                  style={{ position: 'absolute', bottom: 0, right: 0, width: 28, height: 28, borderRadius: '50%', background: '#111', border: '2.5px solid #f7f7f7', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                  <Settings size={12} color="#fff" />
-                </button>
+                <div style={{ flex: 1, paddingBottom: 4 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                    <span style={{ fontFamily: "'Syne', sans-serif", fontSize: 20, fontWeight: 800, letterSpacing: '-.01em', lineHeight: 1 }}>{profile.name}</span>
+                    {profile.verified && <VerifiedBadge size="md" />}
+                  </div>
+                  {profile.username && (
+                    <p style={{ fontSize: 13, color: S.ink2, margin: '0 0 8px' }}>@{profile.username}</p>
+                  )}
+                  {monetStatus === 'approved' && (
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 9px', borderRadius: 20, background: 'rgba(74,222,128,.1)', border: '1px solid rgba(74,222,128,.2)' }}>
+                      <TrendingUp size={10} color={S.green} />
+                      <span style={{ fontSize: 10, fontWeight: 600, color: S.green, letterSpacing: '.03em' }}>Monetized Creator</span>
+                    </div>
+                  )}
+                </div>
               </div>
 
-              {/* name + username */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 2 }}>
-                <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0, letterSpacing: '-0.025em' }}>{profile.name}</h2>
-                {profile.verified && <VerifiedBadge size="md" />}
-              </div>
-              {profile.username && (
-                <p style={{ fontSize: 13, color: 'rgba(0,0,0,0.38)', margin: '0 0 10px' }}>@{profile.username}</p>
-              )}
+              {/* bio */}
               {profile.bio && (
-                <p style={{ fontSize: 13, color: 'rgba(0,0,0,0.5)', lineHeight: 1.6, maxWidth: 260, margin: '0 0 20px' }}>{profile.bio}</p>
+                <p style={{ fontSize: 13, color: S.ink2, lineHeight: 1.6, margin: '0 0 16px' }}>{profile.bio}</p>
               )}
 
               {/* stats */}
-              <div style={{ display: 'flex', width: '100%', maxWidth: 340, background: '#fff', borderRadius: 18, border: '1px solid rgba(0,0,0,0.07)', overflow: 'hidden', marginBottom: 18 }}>
+              <div style={{ display: 'flex', background: S.surface, borderRadius: 16, border: `1px solid ${S.border}`, overflow: 'hidden', marginBottom: 16 }}>
                 {statItems.map(({ label, value }, i, arr) => (
-                  <div key={label} style={{ flex: 1, padding: '13px 0', textAlign: 'center', borderRight: i < arr.length - 1 ? '1px solid rgba(0,0,0,0.07)' : 'none' }}>
-                    <p style={{ fontSize: 18, fontWeight: 700, margin: 0, letterSpacing: '-0.025em', lineHeight: 1 }}>{value}</p>
-                    <p style={{ fontSize: 10, color: 'rgba(0,0,0,0.35)', margin: '4px 0 0', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 500 }}>{label}</p>
+                  <div key={label} style={{ flex: 1, padding: '12px 0', textAlign: 'center', borderRight: i < arr.length - 1 ? `1px solid ${S.border}` : 'none' }}>
+                    <p style={{ fontFamily: "'Syne', sans-serif", fontSize: 17, fontWeight: 700, margin: 0, letterSpacing: '-.02em', lineHeight: 1 }}>{value}</p>
+                    <p style={{ fontSize: 9, color: S.ink3, margin: '4px 0 0', textTransform: 'uppercase', letterSpacing: '.07em', fontWeight: 600 }}>{label}</p>
                   </div>
                 ))}
               </div>
 
-              {/* action row */}
-              <div style={{ display: 'flex', gap: 8, marginBottom: monetBtn.show ? 10 : 0 }}>
-                <button className="tap" onClick={() => open('settings')}
-                  style={{ padding: '9px 24px', borderRadius: 24, border: 'none', background: '#111', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+              {/* edit + share */}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="tap" onClick={() => open('settings')} style={{ flex: 1, padding: '11px 0', borderRadius: 14, border: 'none', background: S.ink, color: S.bg, fontFamily: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                  <Settings size={13} color={S.bg} />
                   Edit Profile
                 </button>
-                <button className="tap" onClick={handleShare}
-                  style={{ padding: '9px 18px', borderRadius: 24, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', color: 'rgba(0,0,0,0.55)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Share2 size={13} /> Share
+                <button className="tap" onClick={handleShare} style={{ flex: 1, padding: '11px 0', borderRadius: 14, border: `1px solid ${S.border}`, background: 'transparent', color: S.ink2, fontFamily: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                  <Share2 size={13} />
+                  Share
                 </button>
               </div>
-
-              {/* monetization button */}
-              {monetLoading ? (
-                <Shimmer w={180} h={38} r={22} />
-              ) : monetBtn.show && (
-                <button className="tap" onClick={handleMonetBtn} disabled={monetBtn.disabled}
-                  style={{
-                    padding: '9px 20px', borderRadius: 24, fontFamily: 'inherit', fontSize: 13, fontWeight: 600,
-                    cursor: monetBtn.disabled ? 'default' : 'pointer',
-                    opacity: monetBtn.disabled ? 0.5 : 1,
-                    display: 'flex', alignItems: 'center', gap: 7,
-                    border: monetBtn.solid ? 'none' : '1px solid rgba(0,0,0,0.1)',
-                    background: monetBtn.solid ? '#111' : '#fff',
-                    color: monetBtn.solid ? '#fff' : 'rgba(0,0,0,0.55)',
-                  }}>
-                  <TrendingUp size={13} color={monetBtn.solid ? '#fff' : 'rgba(0,0,0,0.45)'} />
-                  {monetBtn.label}
-                </button>
-              )}
-            </div>
+            </>
           )}
         </div>
 
+        {/* ── monetization row ── */}
+        {!authLoading && profile && (
+          <div className="up d2">
+            {monetLoading ? (
+              <div style={{ padding: '0 18px', marginTop: 2 }}>
+                <Shimmer w="100%" h={64} r={0} />
+              </div>
+            ) : monetBtn.show && (
+              <button
+                className="tap"
+                onClick={handleMonetBtn}
+                disabled={monetBtn.disabled}
+                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 13, padding: '14px 18px', background: S.surface, border: 'none', borderBottom: `1px solid ${S.border}`, cursor: monetBtn.disabled ? 'default' : 'pointer', fontFamily: 'inherit', opacity: monetBtn.disabled ? 0.5 : 1, textAlign: 'left' }}>
+                <div style={{ width: 38, height: 38, borderRadius: 11, background: 'rgba(74,222,128,.1)', border: '1px solid rgba(74,222,128,.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <TrendingUp size={16} color={S.green} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: S.ink, margin: '0 0 1px' }}>{monetBtn.label}</p>
+                  <p style={{ fontSize: 11, color: S.ink3, margin: 0 }}>{monetBtn.sub}</p>
+                </div>
+                {monetBtn.disabled
+                  ? <Clock size={14} color={S.ink3} />
+                  : <ChevronRight size={15} color={S.ink} style={{ opacity: 0.2 }} />
+                }
+              </button>
+            )}
+          </div>
+        )}
+
         {/* ── wallpaper grid ── */}
         {walls.length > 0 && (
-          <div style={{ borderTop: '1px solid rgba(0,0,0,0.07)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px' }}>
+          <div className="up d3">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 18px 10px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Grid size={13} color="rgba(0,0,0,0.3)" />
-                <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(0,0,0,0.35)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                  {fmt(stats.posts || walls.length)} Posts
+                <Grid size={13} color={S.ink3} />
+                <span style={{ fontSize: 11, fontWeight: 600, color: S.ink3, textTransform: 'uppercase', letterSpacing: '.07em' }}>
+                  {fmt(stats.posts || walls.length)} Wallpapers
                 </span>
               </div>
-              <button className="tap" onClick={() => open('allPosts')}
-                style={{ fontSize: 12, fontWeight: 600, color: 'rgba(0,0,0,0.38)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
+              <button className="tap" onClick={() => open('allPosts')} style={{ fontSize: 12, fontWeight: 600, color: S.ink2, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
                 View all
               </button>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 1.5 }}>
-              {walls.slice(0, 9).map(wp => (
-                <button key={wp.id} className="wp" onClick={() => router.push(`/details/${wp.id}`)}
-                  style={{ position: 'relative', aspectRatio: '3/4', border: 'none', padding: 0, cursor: 'pointer', background: '#e8e8e8', overflow: 'hidden', display: 'block' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 2 }}>
+              {walls.slice(0, 9).map((wp, i) => (
+                <button
+                  key={wp.id}
+                  className="cell"
+                  onClick={() => router.push(`/details/${wp.id}`)}
+                  style={{
+                    aspectRatio: '3/4', border: 'none', padding: 0, cursor: 'pointer',
+                    background: '#1a1a1a', overflow: 'hidden', display: 'block',
+                    transition: 'opacity .12s',
+                    borderRadius: i === 0 ? '12px 0 0 0' : i === 2 ? '0 12px 0 0' : i === 6 ? '0 0 0 12px' : i === 8 ? '0 0 12px 0' : 0,
+                  }}>
                   <img src={wp.thumbnail || wp.url} alt={wp.title} loading="lazy"
                     style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                 </button>
@@ -228,55 +290,56 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
           </div>
         )}
 
-        {/* ── menu ── */}
-        <div style={{ padding: '20px 14px 8px' }}>
-          <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(0,0,0,0.3)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 8px 4px' }}>Account</p>
-          <div style={{ background: '#fff', borderRadius: 18, border: '1px solid rgba(0,0,0,0.07)', overflow: 'hidden' }}>
+        {/* ── account menu ── */}
+        <div className="up d4" style={{ padding: '20px 18px 0' }}>
+          <p style={{ fontSize: 10, fontWeight: 700, color: S.ink3, textTransform: 'uppercase', letterSpacing: '.09em', margin: '0 0 8px 2px' }}>Account</p>
+          <div style={{ background: S.surface, borderRadius: 18, border: `1px solid ${S.border}`, overflow: 'hidden' }}>
             {menuItems.map(({ icon: Icon, label, action }, i) => (
-              <button key={label} className="tap" onClick={action}
-                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 13, padding: '14px 16px', background: 'transparent', border: 'none', borderBottom: i < menuItems.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
-                <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(0,0,0,0.04)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <Icon size={16} color="rgba(0,0,0,0.5)" />
+              <button key={label} className="tap mrow" onClick={action}
+                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 13, padding: '14px 16px', background: 'transparent', border: 'none', borderBottom: i < menuItems.length - 1 ? `1px solid ${S.border}` : 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', transition: 'background .1s' }}>
+                <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(255,255,255,.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Icon size={15} color={S.ink} style={{ opacity: 0.55 }} />
                 </div>
-                <span style={{ flex: 1, fontSize: 14, fontWeight: 500, color: '#111' }}>{label}</span>
-                <ChevronRight size={15} color="rgba(0,0,0,0.2)" />
+                <span style={{ flex: 1, fontSize: 14, fontWeight: 500, color: S.ink }}>{label}</span>
+                <ChevronRight size={15} color={S.ink} style={{ opacity: 0.2 }} />
               </button>
             ))}
           </div>
         </div>
 
         {/* ── logout + footer ── */}
-        <div style={{ padding: '8px 14px 28px' }}>
+        <div className="up d5" style={{ padding: '12px 18px 28px' }}>
           <button className="tap" onClick={() => open('logout')}
-            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9, padding: '14px', borderRadius: 16, border: '1px solid rgba(239,68,68,0.14)', background: 'rgba(239,68,68,0.04)', cursor: 'pointer', fontFamily: 'inherit' }}>
-            <LogOut size={15} color="#ef4444" />
-            <span style={{ fontSize: 14, fontWeight: 600, color: '#ef4444' }}>Log Out</span>
+            style={{ width: '100%', padding: 14, borderRadius: 16, border: '1px solid rgba(248,113,113,.15)', background: 'rgba(248,113,113,.06)', color: S.red, fontFamily: 'inherit', fontSize: 14, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, transition: 'opacity .12s' }}>
+            <LogOut size={15} color={S.red} />
+            Log Out
           </button>
-          <p style={{ textAlign: 'center', fontSize: 11, color: 'rgba(0,0,0,0.18)', marginTop: 18 }}>WALLS v1.0.0 · Made with ❤️ for wallpaper lovers</p>
+          <p style={{ textAlign: 'center', fontSize: 11, color: S.ink3, marginTop: 20 }}>
+            WALLS v1.0.0 · Made with ❤️ for wallpaper lovers
+          </p>
         </div>
       </div>
 
       <Navigation />
 
-      {/* ── logout confirm modal ── */}
+      {/* ── logout modal ── */}
       {modals.logout && (
-        <div
-          onClick={() => setModals(m => ({ ...m, logout: false }))}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.38)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+        <div onClick={() => setModals(m => ({ ...m, logout: false }))}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, animation: 'fadeIn .2s ease' }}>
           <div onClick={e => e.stopPropagation()}
-            style={{ background: '#fff', borderRadius: 24, padding: '28px 24px', maxWidth: 300, width: '100%', textAlign: 'center' }}>
-            <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'rgba(239,68,68,0.07)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
-              <LogOut size={22} color="#ef4444" />
+            style={{ background: '#1e1e1e', borderRadius: 26, border: `1px solid ${S.border}`, padding: '28px 24px', maxWidth: 300, width: '100%', textAlign: 'center' }}>
+            <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'rgba(248,113,113,.1)', border: '1px solid rgba(248,113,113,.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
+              <LogOut size={22} color={S.red} />
             </div>
-            <p style={{ fontSize: 17, fontWeight: 700, margin: '0 0 6px', letterSpacing: '-0.01em' }}>Log out?</p>
-            <p style={{ fontSize: 13, color: 'rgba(0,0,0,0.4)', margin: '0 0 22px', lineHeight: 1.5 }}>You'll need to sign in again to access your account.</p>
+            <p style={{ fontFamily: "'Syne', sans-serif", fontSize: 18, fontWeight: 700, margin: '0 0 7px' }}>Log out?</p>
+            <p style={{ fontSize: 13, color: S.ink2, lineHeight: 1.55, margin: '0 0 22px' }}>You'll need to sign in again to access your account.</p>
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="tap" onClick={() => setModals(m => ({ ...m, logout: false }))}
-                style={{ flex: 1, padding: '12px 0', borderRadius: 14, border: '1px solid rgba(0,0,0,0.1)', background: 'transparent', fontSize: 14, fontWeight: 600, color: 'rgba(0,0,0,0.45)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                style={{ flex: 1, padding: '13px 0', borderRadius: 14, border: `1px solid ${S.border}`, background: 'transparent', fontFamily: 'inherit', fontSize: 14, fontWeight: 600, color: S.ink2, cursor: 'pointer' }}>
                 Cancel
               </button>
               <button className="tap" onClick={handleLogout}
-                style={{ flex: 1, padding: '12px 0', borderRadius: 14, border: 'none', background: '#ef4444', fontSize: 14, fontWeight: 600, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+                style={{ flex: 1, padding: '13px 0', borderRadius: 14, border: 'none', background: S.red, fontFamily: 'inherit', fontSize: 14, fontWeight: 600, color: '#fff', cursor: 'pointer' }}>
                 Log Out
               </button>
             </div>
@@ -284,7 +347,8 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
         </div>
       )}
 
-      {/* ── other modals ── */}
+      
+      {/* ── settings / privacy / all posts modals ── */}
       {(modals.settings || modals.settingsClosing) && (
         <div className={modals.settingsClosing ? 'mc' : ''}>
           <SettingsModal onClose={() => closeModal('settings')} onProfileUpdate={async () => { await refreshProfile(); }} />
