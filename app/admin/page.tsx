@@ -1,350 +1,392 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import {
+  ChevronLeft, TrendingUp, Download, Eye, Heart, Wallet,
+  Clock, BarChart2, History, Sparkles, ChevronRight,
+} from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
-import { Check, X, ChevronDown, ChevronUp, AlertTriangle, LayoutDashboard, Users, DollarSign, Flag, Power, LogOut, RefreshCw, Plus, Menu, ArrowRight } from 'lucide-react';
+import { useAuth } from '@/app/components/AuthProvider';
+import { Navigation } from '@/app/components/Navigation';
 
-const sb       = createClient();
-const PASS     = process.env.NEXT_PUBLIC_ADMIN_PASSWORD!;
-const fmtNgn   = (n: number) => `₦${Number(n).toLocaleString('en-NG', { minimumFractionDigits: 2 })}`;
-const fmtDate  = (s: string) => new Date(s).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' });
-const sColor   = (s: string) => ({ approved: '#4ade80', rejected: '#f87171', banned: '#f87171', pending: '#fbbf24' }[s] ?? '#6b7280');
-const bd       = '1px solid rgba(0,0,0,0.08)';
-const card     = { background: '#fff', border: bd, borderRadius: 10, overflow: 'hidden' as const };
-const label11  = { fontSize: 11, fontWeight: 600, color: 'rgba(0,0,0,0.35)', textTransform: 'uppercase' as const, letterSpacing: '0.05em' };
-type Tab = 'overview' | 'applications' | 'pool' | 'flagged';
+/* ─── helpers ─────────────────────────────────────────────── */
+const fmt    = (n: number) =>
+  n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M`
+  : n >= 1_000   ? `${(n / 1_000).toFixed(1)}k`
+  : String(n);
 
-// ── Sub-components ────────────────────────────────────────────────────────────
-const Empty = ({ text }: { text: string }) => <div style={{ textAlign: 'center', padding: '60px 0', color: 'rgba(0,0,0,0.3)', fontSize: 13 }}>{text}</div>;
+const fmtNgn = (n: number) =>
+  `₦${n.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-const Info = ({ label, value, mono }: { label: string; value: string; mono?: boolean }) => (
-  <div>
-    <p style={{ ...label11, fontSize: 10, margin: '0 0 3px' }}>{label}</p>
-    <p style={{ fontSize: 12, fontWeight: 500, color: '#0a0a0a', margin: 0, fontFamily: mono ? 'monospace' : 'inherit', letterSpacing: mono ? '0.06em' : 'normal' }}>{value || '—'}</p>
-  </div>
+/* ─── shimmer ─────────────────────────────────────────────── */
+const Shimmer = ({ w, h, r = 10 }: { w: string | number; h: string | number; r?: number }) => (
+  <div style={{
+    width: w, height: h, borderRadius: r, flexShrink: 0,
+    background: 'linear-gradient(90deg,#f0f0f0 25%,#e4e4e4 50%,#f0f0f0 75%)',
+    backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease infinite',
+  }} />
 );
 
-const Btn = ({ label, icon, onClick, loading, solid, danger }: { label: string; icon?: React.ReactNode; onClick: () => void; loading?: boolean; solid?: boolean; danger?: boolean }) => (
-  <button className="btn-act" onClick={onClick} disabled={loading}
-    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 12px', borderRadius: 7, border: solid ? 'none' : `1px solid ${danger ? 'rgba(248,113,113,0.3)' : 'rgba(0,0,0,0.09)'}`, background: solid ? '#0a0a0a' : danger ? 'rgba(248,113,113,0.06)' : '#fff', color: solid ? '#fff' : danger ? '#f87171' : '#0a0a0a', fontSize: 12, fontWeight: 500, cursor: loading ? 'default' : 'pointer', fontFamily: 'inherit', opacity: loading ? 0.5 : 1 }}>
-    {loading ? <RefreshCw size={11} style={{ animation: 'spin .7s linear infinite' }} /> : icon}{label}
-  </button>
-);
+/* ─── types ───────────────────────────────────────────────── */
+interface MonthlyStats { month: string; views: number; downloads: number; likes: number; score: number; }
+interface Earning      { id: string; amount: number; month: string; score: number; pool_amount: number; created_at: string; }
 
-const Avatar = ({ src }: { src: string }) => (
-  <img src={src || 'https://avatar.iran.liara.run/public'} alt="" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, border: bd }} />
-);
+/* ═══════════════════════════════════════════════════════════ */
+export default function MonetizationPage() {
+  const router   = useRouter();
+  const supabase = createClient();
+  const { profile, isLoading: authLoading } = useAuth();
 
-const Badge = ({ text, color }: { text: string; color?: string }) => (
-  <span style={{ fontSize: 11, fontWeight: 500, padding: '2px 8px', borderRadius: 20, background: color ? `${color}15` : 'rgba(0,0,0,0.04)', color: color ?? 'rgba(0,0,0,0.35)', border: `1px solid ${color ? `${color}30` : 'rgba(0,0,0,0.08)'}` }}>{text}</span>
-);
-
-// ── Main ──────────────────────────────────────────────────────────────────────
-export default function AdminPage() {
-  const [authed,   setAuthed]   = useState(false);
-  const [pass,     setPass]     = useState('');
-  const [passErr,  setPassErr]  = useState(false);
-  const [tab,      setTab]      = useState<Tab>('overview');
-  const [apps,     setApps]     = useState<any[]>([]);
-  const [pools,    setPools]    = useState<any[]>([]);
-  const [flagged,  setFlagged]  = useState<any[]>([]);
-  const [loading,  setLoading]  = useState(true);
-  const [monetOn,  setMonetOn]  = useState(true);
-  const [amount,   setAmount]   = useState('');
-  const [month,    setMonth]    = useState(() => new Date().toISOString().slice(0, 7));
-  const [saving,   setSaving]   = useState(false);
-  const [notes,    setNotes]    = useState<Record<string, string>>({});
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const [sideOpen, setSideOpen] = useState(false);
-  const [acting,   setActing]   = useState<string | null>(null);
+  const [tab,        setTab]       = useState<'overview' | 'history'>('overview');
+  const [loading,    setLoading]   = useState(true);
+  const [balance,    setBalance]   = useState(0);
+  const [totalEarned, setTotalEarned] = useState(0);
+  const [thisMonth,  setThisMonth] = useState<MonthlyStats | null>(null);
+  const [earnings,   setEarnings]  = useState<Earning[]>([]);
+  const [poolAmount, setPoolAmount] = useState(0);
+  const [estimated,  setEstimated] = useState(0);
 
   useEffect(() => {
-    if (localStorage.getItem('admin_auth') === '1') setAuthed(true);
-    setMonetOn(localStorage.getItem('monetization_enabled') !== '0');
-  }, []);
+    if (authLoading) return;
+    if (!profile?.id) { router.replace('/profile'); return; }
+    load();
+  }, [profile?.id, authLoading]);
 
-  useEffect(() => { if (authed) load(); }, [authed]);
+  const load = async () => {
+    try {
+      const currentMonth = new Date().toISOString().slice(0, 7);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const [a, p, f] = await Promise.all([
-      sb.from('monetization_applications').select('*, profiles:user_id(full_name,username,avatar_url,monetization_status)').order('created_at', { ascending: false }),
-      sb.from('monthly_pools').select('*').order('month', { ascending: false }),
-      sb.from('profiles').select('id,full_name,username,avatar_url,flagged,monetization_status').eq('flagged', true),
-    ]);
-    setApps(a.data ?? []); setPools(p.data ?? []); setFlagged(f.data ?? []);
-    setLoading(false);
-  }, []);
+      const [profileRes, statsRes, earningsRes, poolRes] = await Promise.all([
+        supabase.from('profiles').select('balance, total_earned, monetization_status').eq('id', profile!.id).single(),
+        supabase.from('monthly_stats').select('*').eq('user_id', profile!.id).eq('month', currentMonth),
+        supabase.from('earnings').select('*').eq('user_id', profile!.id).order('created_at', { ascending: false }).limit(12),
+        supabase.from('monthly_pools').select('amount').eq('month', currentMonth).eq('distributed', false).maybeSingle(),
+      ]);
 
-  const login = () => {
-    if (pass === PASS) { setAuthed(true); localStorage.setItem('admin_auth', '1'); }
-    else { setPassErr(true); setTimeout(() => setPassErr(false), 600); }
+      if (profileRes.data?.monetization_status !== 'approved') {
+        router.replace('/monetization/apply'); return;
+      }
+
+      setBalance(profileRes.data?.balance ?? 0);
+      setTotalEarned(profileRes.data?.total_earned ?? 0);
+      setEarnings(earningsRes.data ?? []);
+
+      const stats = statsRes.data ?? [];
+      const agg: MonthlyStats = {
+        month:     currentMonth,
+        views:     stats.reduce((s: number, r: MonthlyStats) => s + r.views, 0),
+        downloads: stats.reduce((s: number, r: MonthlyStats) => s + r.downloads, 0),
+        likes:     stats.reduce((s: number, r: MonthlyStats) => s + r.likes, 0),
+        score:     stats.reduce((s: number, r: MonthlyStats) => s + r.score, 0),
+      };
+      setThisMonth(agg);
+
+      const pool  = poolRes.data?.amount ?? 0;
+      const score = (agg.views * 0.2) + (agg.downloads * 10) + (agg.likes * 5);
+      const raw   = score * 0.01;
+      setPoolAmount(pool);
+      setEstimated(pool > 0 ? Math.min(raw, pool) : raw);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
   };
 
-  const act = async (key: string, fn: () => Promise<void>) => { setActing(key); await fn(); setActing(null); };
+  const monthLabel = new Date().toLocaleString('default', { month: 'long', year: 'numeric' });
 
-  const reviewApp  = (uid: string, d: 'approved' | 'rejected') => act(uid, async () => {
-    await sb.rpc('review_monetization', { applicant_id: uid, decision: d, note: notes[uid] || null });
-    setApps(p => p.map(a => a.user_id === uid ? { ...a, status: d } : a));
-    setExpanded(null);
-  });
-
-  const banUser = (uid: string) => act(uid + '_ban', async () => {
-    await sb.from('profiles').update({ monetization_status: 'banned' }).eq('id', uid);
-    const upd = (arr: any[]) => arr.map(x => x.user_id === uid || x.id === uid ? { ...x, monetization_status: 'banned', profiles: x.profiles ? { ...x.profiles, monetization_status: 'banned' } : x.profiles } : x);
-    setApps(upd); setFlagged(upd);
-  });
-
-  const unbanUser = (uid: string) => act(uid + '_unban', async () => {
-    await sb.from('profiles').update({ monetization_status: 'none' }).eq('id', uid);
-    await sb.from('monetization_applications').update({ status: 'none' }).eq('user_id', uid);
-    const upd = (arr: any[]) => arr.map(x => x.user_id === uid || x.id === uid ? { ...x, status: 'none', monetization_status: 'none', profiles: x.profiles ? { ...x.profiles, monetization_status: 'none' } : x.profiles } : x);
-    setApps(upd); setFlagged(upd);
-  });
-
-  const unflagUser = (uid: string) => act(uid + '_unflag', async () => {
-    await sb.from('profiles').update({ flagged: false }).eq('id', uid);
-    setFlagged(p => p.filter(u => u.id !== uid));
-  });
-
-  const addPool = async () => {
-    if (!amount || saving) return;
-    setSaving(true);
-    await sb.from('monthly_pools').upsert({ month, amount: parseFloat(amount), distributed: false }, { onConflict: 'month' });
-    await load(); setAmount(''); setSaving(false);
-  };
-
-  const toggleMonet = () => {
-    const next = !monetOn; setMonetOn(next);
-    localStorage.setItem('monetization_enabled', next ? '1' : '0');
-    sb.from('app_settings').upsert({ key: 'monetization_enabled', value: String(next) }, { onConflict: 'key' });
-  };
-
-  const pending   = apps.filter(a => a.status === 'pending').length;
-  const approved  = apps.filter(a => a.status === 'approved').length;
-  const totalPool = pools.reduce((s, p) => s + Number(p.amount), 0);
-
-  const navItems = [
-    { id: 'overview'     as Tab, label: 'Overview',     icon: LayoutDashboard },
-    { id: 'applications' as Tab, label: 'Applications', icon: Users,     badge: pending },
-    { id: 'pool'         as Tab, label: 'Pool',         icon: DollarSign },
-    { id: 'flagged'      as Tab, label: 'Flagged',      icon: Flag,      badge: flagged.length },
+  /* ── stat cards data ── */
+  const statCards = [
+    { icon: Eye,      label: 'Views',     value: fmt(thisMonth?.views ?? 0) },
+    { icon: Download, label: 'Downloads', value: fmt(thisMonth?.downloads ?? 0) },
+    { icon: Heart,    label: 'Likes',     value: fmt(thisMonth?.likes ?? 0) },
   ];
 
-  // ── Login ──────────────────────────────────────────────────────────────────
-  if (!authed) return (
-    <div style={{ minHeight: '100dvh', background: '#0a0a0a', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: 'system-ui,sans-serif' }}>
-      <style>{`@keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}} @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}} .li{animation:fadeIn .4s ease both} .shake{animation:shake .4s ease} input:focus{outline:none!important;border-color:rgba(255,255,255,0.3)!important}`}</style>
-      <div className={`li ${passErr ? 'shake' : ''}`} style={{ width: '100%', maxWidth: 320 }}>
-        <div style={{ width: 36, height: 36, borderRadius: 8, background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 24 }}>
-          <LayoutDashboard size={16} color="rgba(255,255,255,0.6)" />
-        </div>
-        <p style={{ fontSize: 18, fontWeight: 600, color: '#fff', margin: '0 0 4px', letterSpacing: '-0.02em' }}>Admin</p>
-        <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', margin: '0 0 24px' }}>Enter your password to continue</p>
-        <input type="password" value={pass} onChange={e => setPass(e.target.value)} onKeyDown={e => e.key === 'Enter' && login()} placeholder="Password"
-          style={{ display: 'block', width: '100%', padding: '10px 12px', background: 'rgba(255,255,255,0.05)', border: `1px solid ${passErr ? 'rgba(248,113,113,0.6)' : 'rgba(255,255,255,0.1)'}`, borderRadius: 8, fontSize: 14, color: '#fff', fontFamily: 'inherit', marginBottom: 10, boxSizing: 'border-box', transition: 'border-color .2s' }} />
-        <button onClick={login} style={{ width: '100%', padding: '10px', borderRadius: 8, border: 'none', background: '#fff', color: '#0a0a0a', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
-          Continue <ArrowRight size={14} />
-        </button>
-      </div>
-    </div>
-  );
+  /* ── how it works rows ── */
+  const howRows = [
+    { icon: Eye,      label: '1 View',     note: 'Logged-in users only' },
+    { icon: Download, label: '1 Download', note: 'Unique per user'      },
+    { icon: Heart,    label: '1 Like',     note: 'Unique per user'      },
+  ];
 
-  // ── Dashboard ──────────────────────────────────────────────────────────────
   return (
-    <div style={{ minHeight: '100dvh', background: '#f5f5f4', fontFamily: 'system-ui,sans-serif', display: 'flex' }}>
+    <div style={{
+      minHeight: '100dvh', background: '#f7f7f7',
+      fontFamily: "'DM Sans', system-ui, sans-serif",
+      color: '#111', paddingBottom: 110,
+    }}>
       <style>{`
-        @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
-        @keyframes spin{to{transform:rotate(360deg)}}
-        .panel{animation:fadeUp .3s cubic-bezier(.16,1,.3,1) both}
-        .s1{animation-delay:.05s}.s2{animation-delay:.1s}.s3{animation-delay:.15s}.s4{animation-delay:.2s}
-        .ri{transition:background .12s}.ri:hover{background:#f0f0ef!important}
-        .ni{transition:all .12s;cursor:pointer}.ni:hover{background:rgba(255,255,255,0.06)!important}
-        .btn-act{transition:opacity .12s,transform .1s}.btn-act:active{opacity:.75;transform:scale(.98)}
-        .ov{position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:40;backdrop-filter:blur(4px)}
-        input:focus,textarea:focus{outline:none;border-color:rgba(0,0,0,0.3)!important}
-        @media(min-width:768px){.sb{position:relative!important;transform:none!important}.ov{display:none!important}}
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+        @keyframes shimmer { 0%,100%{background-position:200% 0} 50%{background-position:-200% 0} }
+        @keyframes up { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
+        .up { animation: up .38s cubic-bezier(.16,1,.3,1) both; }
+        .up-1 { animation-delay:.04s }
+        .up-2 { animation-delay:.08s }
+        .up-3 { animation-delay:.12s }
+        .up-4 { animation-delay:.16s }
+        .up-5 { animation-delay:.20s }
+        .tab-pill { transition: background .18s, color .18s; cursor: pointer; border: none; font-family: inherit; }
+        .tap:active { opacity: .65 !important; }
       `}</style>
 
-      {sideOpen && <div className="ov" onClick={() => setSideOpen(false)} />}
-
-      {/* Sidebar */}
-      <aside className="sb" style={{ position: 'fixed', top: 0, left: 0, bottom: 0, width: 220, background: '#0a0a0a', zIndex: 50, display: 'flex', flexDirection: 'column', transform: sideOpen ? 'translateX(0)' : 'translateX(-100%)', transition: 'transform .25s cubic-bezier(.16,1,.3,1)' }}>
-        <div style={{ padding: '20px 16px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ width: 28, height: 28, borderRadius: 6, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <LayoutDashboard size={14} color="#0a0a0a" />
+      {/* ── sticky header ── */}
+      <div style={{
+        position: 'sticky', top: 0, zIndex: 30,
+        background: 'rgba(247,247,247,0.94)',
+        backdropFilter: 'blur(18px)', WebkitBackdropFilter: 'blur(18px)',
+        borderBottom: '1px solid rgba(0,0,0,0.07)',
+      }}>
+        {/* top bar */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '13px 16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button
+              onClick={() => router.back()}
+              className="tap"
+              style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(0,0,0,0.06)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+              <ChevronLeft size={18} strokeWidth={2.5} color="#111" />
+            </button>
+            <span style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.01em' }}>Creator Studio</span>
           </div>
-          <span style={{ fontSize: 14, fontWeight: 600, color: '#fff', letterSpacing: '-0.01em' }}>WALLS Admin</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px', borderRadius: 20, background: 'rgba(22,163,74,0.09)', border: '1px solid rgba(22,163,74,0.22)' }}>
+            <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#16a34a' }} />
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#16a34a', letterSpacing: '0.01em' }}>Monetized</span>
+          </div>
         </div>
 
-        <nav style={{ flex: 1, padding: '12px 8px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {navItems.map(({ id, label, icon: Icon, badge }) => {
-            const active = tab === id;
-            return (
-              <button key={id} className="ni" onClick={() => { setTab(id); setSideOpen(false); }}
-                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 7, border: 'none', background: active ? 'rgba(255,255,255,0.1)' : 'transparent', color: active ? '#fff' : 'rgba(255,255,255,0.45)', fontFamily: 'inherit', fontSize: 13, fontWeight: active ? 500 : 400, width: '100%', textAlign: 'left' }}>
-                <Icon size={15} /><span style={{ flex: 1 }}>{label}</span>
-                {!!badge && <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 10, background: active ? '#fff' : 'rgba(255,255,255,0.15)', color: active ? '#0a0a0a' : 'rgba(255,255,255,0.7)' }}>{badge}</span>}
-              </button>
-            );
-          })}
-        </nav>
-
-        <div style={{ padding: '12px 8px', borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <button className="ni btn-act" onClick={toggleMonet}
-            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 7, border: 'none', background: 'transparent', color: monetOn ? '#4ade80' : 'rgba(255,255,255,0.35)', fontFamily: 'inherit', fontSize: 13, width: '100%', textAlign: 'left' }}>
-            <Power size={15} /><span style={{ flex: 1 }}>Monetization</span>
-            <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 6px', borderRadius: 10, background: monetOn ? 'rgba(74,222,128,0.15)' : 'rgba(255,255,255,0.08)', color: monetOn ? '#4ade80' : 'rgba(255,255,255,0.35)' }}>{monetOn ? 'ON' : 'OFF'}</span>
-          </button>
-          <button className="ni btn-act" onClick={() => { localStorage.removeItem('admin_auth'); setAuthed(false); }}
-            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 7, border: 'none', background: 'transparent', color: 'rgba(255,255,255,0.3)', fontFamily: 'inherit', fontSize: 13, width: '100%', textAlign: 'left' }}>
-            <LogOut size={15} />Sign out
-          </button>
+        {/* tab switcher */}
+        <div style={{ display: 'flex', padding: '0 16px 12px', gap: 6 }}>
+          {(['overview', 'history'] as const).map(t => (
+            <button
+              key={t}
+              className="tab-pill"
+              onClick={() => setTab(t)}
+              style={{
+                padding: '7px 16px', borderRadius: 20, fontSize: 13, fontWeight: 600,
+                background: tab === t ? '#111' : 'rgba(0,0,0,0.06)',
+                color: tab === t ? '#fff' : 'rgba(0,0,0,0.45)',
+                display: 'flex', alignItems: 'center', gap: 6,
+              }}>
+              {t === 'overview' ? <BarChart2 size={13} /> : <History size={13} />}
+              {t === 'overview' ? 'Overview' : 'History'}
+            </button>
+          ))}
         </div>
-      </aside>
+      </div>
 
-    {/* Main */}
-      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-        {/* Topbar */}
-        <header style={{ background: '#fff', borderBottom: bd, height: 52, display: 'flex', alignItems: 'center', padding: '0 20px', gap: 12, position: 'sticky', top: 0, zIndex: 30 }}>
-          <button className="btn-act" onClick={() => setSideOpen(v => !v)} style={{ width: 32, height: 32, borderRadius: 6, border: bd, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-            <Menu size={15} color="rgba(0,0,0,0.5)" />
-          </button>
-          <span style={{ fontSize: 14, fontWeight: 600, color: '#0a0a0a', letterSpacing: '-0.01em', flex: 1 }}>{navItems.find(n => n.id === tab)?.label}</span>
-          <button className="btn-act" onClick={load} style={{ width: 32, height: 32, borderRadius: 6, border: bd, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-            <RefreshCw size={13} color="rgba(0,0,0,0.4)" style={loading ? { animation: 'spin .8s linear infinite' } : {}} />
-          </button>
-          {!monetOn && <Badge text="Monetization Off" color="#f87171" />}
-        </header>
+      <div style={{ maxWidth: 600, margin: '0 auto', padding: '16px 14px' }}>
 
-        <main style={{ flex: 1, padding: '24px 20px', maxWidth: 860, width: '100%', margin: '0 auto' }}>
-          {loading
-            ? <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '80px 0', color: 'rgba(0,0,0,0.3)', fontSize: 13, gap: 8 }}><RefreshCw size={14} style={{ animation: 'spin .8s linear infinite' }} />Loading...</div>
+        {/* ─── loading ─── */}
+        {loading ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <Shimmer w="100%" h={130} r={18} />
+            <Shimmer w="100%" h={170} r={18} />
+            <Shimmer w="100%" h={160} r={18} />
+          </div>
 
-            : tab === 'overview'
-            ? <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(160px,1fr))', gap: 12 }}>
-                {[
-                  { label: 'Pending',    value: pending,        color: '#fbbf24', cls: 's1' },
-                  { label: 'Approved',   value: approved,       color: '#4ade80', cls: 's2' },
-                  { label: 'Flagged',    value: flagged.length, color: '#f87171', cls: 's3' },
-                  { label: 'Pool Total', value: fmtNgn(totalPool), color: '#60a5fa', cls: 's4' },
-                ].map(({ label, value, color, cls }) => (
-                  <div key={label} className={`panel ${cls}`} style={{ ...card, padding: '18px 16px' }}>
-                    <p style={{ ...label11, fontSize: 11, margin: '0 0 8px' }}>{label}</p>
-                    <p style={{ fontSize: 26, fontWeight: 700, color, margin: 0, letterSpacing: '-0.03em', lineHeight: 1 }}>{value}</p>
+        ) : tab === 'overview' ? (
+          /* ══════════════ OVERVIEW TAB ══════════════ */
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+            {/* balance card */}
+            <div className="up" style={{
+              borderRadius: 20, background: '#111', color: '#fff',
+              padding: '22px 20px', position: 'relative', overflow: 'hidden',
+            }}>
+              {/* decorative circle */}
+              <div style={{ position: 'absolute', right: -30, top: -30, width: 140, height: 140, borderRadius: '50%', background: 'rgba(255,255,255,0.04)', pointerEvents: 'none' }} />
+              <div style={{ position: 'absolute', right: 20, top: 20, width: 70, height: 70, borderRadius: '50%', background: 'rgba(255,255,255,0.04)', pointerEvents: 'none' }} />
+
+              <p style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.45)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 6px' }}>Available Balance</p>
+              <p style={{ fontSize: 34, fontWeight: 700, letterSpacing: '-0.03em', margin: '0 0 18px', lineHeight: 1 }}>{fmtNgn(balance)}</p>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.38)', margin: '0 0 2px' }}>Total Earned</p>
+                  <p style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>{fmtNgn(totalEarned)}</p>
+                </div>
+                <button
+                  disabled
+                  style={{
+                    padding: '9px 18px', borderRadius: 22, border: '1px solid rgba(255,255,255,0.14)',
+                    background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.35)',
+                    fontSize: 12, fontWeight: 600, cursor: 'not-allowed', fontFamily: 'inherit',
+                    display: 'flex', alignItems: 'center', gap: 6,
+                  }}>
+                  <Wallet size={13} />
+                  Withdraw · Soon
+                </button>
+              </div>
+            </div>
+
+            {/* this month performance */}
+            <div className="up up-1" style={{ borderRadius: 20, background: '#fff', border: '1px solid rgba(0,0,0,0.07)', overflow: 'hidden' }}>
+              {/* section head */}
+              <div style={{ padding: '16px 18px 14px', borderBottom: '1px solid rgba(0,0,0,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <p style={{ fontSize: 13, fontWeight: 700, margin: '0 0 2px', letterSpacing: '-0.01em' }}>{monthLabel}</p>
+                  <p style={{ fontSize: 11, color: 'rgba(0,0,0,0.4)', margin: 0 }}>Your performance this month</p>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <p style={{ fontSize: 10, color: 'rgba(0,0,0,0.38)', margin: '0 0 2px' }}>Est. earnings</p>
+                  <p style={{ fontSize: 17, fontWeight: 700, color: '#16a34a', margin: 0, letterSpacing: '-0.02em' }}>{fmtNgn(estimated)}</p>
+                </div>
+              </div>
+
+              {/* 3 stat tiles */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 1, background: 'rgba(0,0,0,0.05)' }}>
+                {statCards.map(({ icon: Icon, label, value }) => (
+                  <div key={label} style={{ background: '#fff', padding: '14px 10px', textAlign: 'center' }}>
+                    <Icon size={15} color="rgba(0,0,0,0.3)" style={{ marginBottom: 7 }} />
+                    <p style={{ fontSize: 20, fontWeight: 700, margin: '0 0 3px', letterSpacing: '-0.03em', lineHeight: 1 }}>{value}</p>
+                    <p style={{ fontSize: 10, color: 'rgba(0,0,0,0.38)', margin: 0, fontWeight: 500 }}>{label}</p>
                   </div>
                 ))}
               </div>
 
-            : tab === 'applications'
-            ? <div className="panel">
-                {apps.length === 0 ? <Empty text="No applications yet" /> :
-                  <div style={card}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 90px 40px', gap: 12, padding: '10px 16px', borderBottom: bd, background: '#fafaf9' }}>
-                      {['User', 'ID Type', 'Status', ''].map(h => <span key={h} style={label11}>{h}</span>)}
-                    </div>
-                    {apps.map((app, i) => (
-                      <div key={app.id}>
-                        <div className="ri" onClick={() => setExpanded(expanded === app.id ? null : app.id)}
-                          style={{ display: 'grid', gridTemplateColumns: '1fr 80px 90px 40px', gap: 12, padding: '12px 16px', borderBottom: i < apps.length - 1 && expanded !== app.id ? bd : 'none', cursor: 'pointer', alignItems: 'center', background: '#fff' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-                            <Avatar src={app.profiles?.avatar_url} />
-                            <div style={{ minWidth: 0 }}>
-                              <p style={{ fontSize: 13, fontWeight: 500, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{app.profiles?.full_name || '—'}</p>
-                              <p style={{ fontSize: 11, color: 'rgba(0,0,0,0.38)', margin: 0 }}>@{app.profiles?.username}</p>
-                            </div>
-                          </div>
-                          <span style={{ fontSize: 12, fontWeight: 500, color: 'rgba(0,0,0,0.5)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{app.id_type}</span>
-                          <Badge text={app.status} color={sColor(app.status)} />
-                          {expanded === app.id ? <ChevronUp size={14} color="rgba(0,0,0,0.3)" /> : <ChevronDown size={14} color="rgba(0,0,0,0.3)" />}
-                        </div>
-                        {expanded === app.id && (
-                          <div style={{ padding: '14px 16px', background: '#fafaf9', borderBottom: i < apps.length - 1 ? bd : 'none', animation: 'fadeUp .2s ease both' }}>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginBottom: 12 }}>
-                              <Info label="ID Number" value={app.id_number} mono />
-                              <Info label="Applied" value={fmtDate(app.created_at)} />
-                              <Info label="Status" value={app.profiles?.monetization_status} />
-                            </div>
-                            {app.status === 'pending' && <>
-                              <textarea value={notes[app.id] || ''} onChange={e => setNotes(p => ({ ...p, [app.id]: e.target.value }))} placeholder="Rejection note (optional)…" rows={2}
-                                style={{ display: 'block', width: '100%', padding: '8px 10px', border: bd, borderRadius: 7, fontSize: 12, fontFamily: 'inherit', resize: 'none', background: '#fff', marginBottom: 10, boxSizing: 'border-box', color: '#0a0a0a' }} />
-                              <div style={{ display: 'flex', gap: 8 }}>
-                                <Btn label="Approve" icon={<Check size={12} />} onClick={() => reviewApp(app.user_id, 'approved')} loading={acting === app.user_id} solid />
-                                <Btn label="Reject"  icon={<X size={12} />}     onClick={() => reviewApp(app.user_id, 'rejected')} loading={acting === app.user_id} danger />
-                                <Btn label="Ban"     icon={<AlertTriangle size={12} />} onClick={() => banUser(app.user_id)} loading={acting === app.user_id + '_ban'} danger />
-                              </div>
-                            </>}
-                            {app.status !== 'pending' && (
-                              app.profiles?.monetization_status === 'banned'
-                                ? <Btn label="Unban" icon={<Check size={12} />} onClick={() => unbanUser(app.user_id)} loading={acting === app.user_id + '_unban'} />
-                                : <Btn label="Ban from monetization" icon={<AlertTriangle size={12} />} onClick={() => banUser(app.user_id)} loading={acting === app.user_id + '_ban'} danger />
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                }
-              </div>
+              {/* pool note */}
+              {poolAmount > 0 && (
+                <div style={{ padding: '11px 18px', background: 'rgba(22,163,74,0.04)', borderTop: '1px solid rgba(22,163,74,0.09)', display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <Sparkles size={13} color="#16a34a" />
+                  <p style={{ fontSize: 11, color: '#16a34a', margin: 0, fontWeight: 600 }}>
+                    Monthly pool: {fmtNgn(poolAmount)} · Distributed at month end
+                  </p>
+                </div>
+              )}
+            </div>
 
-            : tab === 'pool'
-            ? <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <div className="panel" style={{ ...card, padding: '18px 16px' }}>
-                  <p style={{ ...label11, margin: '0 0 14px' }}>Set Pool Amount</p>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                    <input type="month" value={month} onChange={e => setMonth(e.target.value)}
-                      style={{ padding: '9px 11px', border: bd, borderRadius: 7, fontSize: 13, fontFamily: 'inherit', background: '#fff', color: '#0a0a0a' }} />
-                    <input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="Amount in ₦"
-                      style={{ flex: 1, minWidth: 120, padding: '9px 11px', border: bd, borderRadius: 7, fontSize: 13, fontFamily: 'inherit', background: '#fff', color: '#0a0a0a' }} />
-                    <button className="btn-act" onClick={addPool} disabled={saving || !amount}
-                      style={{ padding: '9px 18px', borderRadius: 7, border: 'none', background: '#0a0a0a', color: '#fff', fontSize: 13, fontWeight: 500, cursor: saving || !amount ? 'default' : 'pointer', fontFamily: 'inherit', opacity: saving || !amount ? 0.4 : 1, display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <Plus size={13} />{saving ? 'Saving…' : 'Set Pool'}
-                    </button>
+            {/* how scoring works */}
+            <div className="up up-2" style={{ borderRadius: 20, background: '#fff', border: '1px solid rgba(0,0,0,0.07)', padding: '16px 18px' }}>
+              <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(0,0,0,0.35)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 14px' }}>How it works</p>
+              {howRows.map(({ icon: Icon, label, note }, i, arr) => (
+                <div key={label} style={{
+                  display: 'flex', alignItems: 'center', gap: 13,
+                  paddingBottom: i < arr.length - 1 ? 12 : 0,
+                  marginBottom:  i < arr.length - 1 ? 12 : 0,
+                  borderBottom:  i < arr.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none',
+                }}>
+                  <div style={{
+                    width: 34, height: 34, borderRadius: 10,
+                    background: 'rgba(0,0,0,0.04)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                  }}>
+                    <Icon size={14} color="rgba(0,0,0,0.45)" />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ fontSize: 13, fontWeight: 600, margin: '0 0 1px', color: '#111' }}>{label}</p>
+                    <p style={{ fontSize: 11, color: 'rgba(0,0,0,0.38)', margin: 0 }}>{note}</p>
+                  </div>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(0,0,0,0.3)', letterSpacing: '-0.01em' }}>contributes</span>
+                </div>
+              ))}
+              <div style={{ marginTop: 14, padding: '11px 14px', background: '#f7f7f7', borderRadius: 12 }}>
+                <p style={{ fontSize: 11, color: 'rgba(0,0,0,0.45)', margin: 0, lineHeight: 1.6 }}>
+                  Earnings are based on your engagement relative to all creators in the monthly pool. Higher activity = larger share.
+                </p>
+              </div>
+            </div>
+
+            {/* quick link to history */}
+            {earnings.length > 0 && (
+              <button
+                className="up up-3 tap"
+                onClick={() => setTab('history')}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  width: '100%', padding: '14px 18px', borderRadius: 20,
+                  background: '#fff', border: '1px solid rgba(0,0,0,0.07)',
+                  cursor: 'pointer', fontFamily: 'inherit',
+                }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(0,0,0,0.04)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <History size={15} color="rgba(0,0,0,0.4)" />
+                  </div>
+                  <div style={{ textAlign: 'left' }}>
+                    <p style={{ fontSize: 13, fontWeight: 600, margin: '0 0 1px', color: '#111' }}>Earnings History</p>
+                    <p style={{ fontSize: 11, color: 'rgba(0,0,0,0.38)', margin: 0 }}>{earnings.length} payout{earnings.length !== 1 ? 's' : ''} recorded</p>
                   </div>
                 </div>
-                {pools.length > 0 && (
-                  <div className="panel s1" style={card}>
-                    <div style={{ padding: '10px 16px', borderBottom: bd, background: '#fafaf9', display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={label11}>History</span>
-                      <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.3)' }}>{pools.length} months</span>
-                    </div>
-                    {pools.map((p, i) => (
-                      <div key={p.id} className="ri" style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', borderBottom: i < pools.length - 1 ? bd : 'none', background: '#fff', gap: 12 }}>
-                        <span style={{ flex: 1, fontSize: 13, fontWeight: 500 }}>{p.month}</span>
-                        <span style={{ fontSize: 14, fontWeight: 700, letterSpacing: '-0.02em' }}>{fmtNgn(p.amount)}</span>
-                        <Badge text={p.distributed ? 'Paid' : 'Pending'} color={p.distributed ? '#4ade80' : undefined} />
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+                <ChevronRight size={16} color="rgba(0,0,0,0.25)" />
+              </button>
+            )}
+          </div>
 
-            : /* flagged */
-              <div className="panel">
-                {flagged.length === 0 ? <Empty text="No flagged accounts" /> :
-                  <div style={card}>
-                    {flagged.map((u, i) => (
-                      <div key={u.id} className="ri" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: i < flagged.length - 1 ? bd : 'none', background: '#fff' }}>
-                        <Avatar src={u.avatar_url} />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <p style={{ fontSize: 13, fontWeight: 500, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.full_name || '—'}</p>
-                          <p style={{ fontSize: 11, color: 'rgba(0,0,0,0.38)', margin: 0 }}>@{u.username} · <span style={{ color: sColor(u.monetization_status) }}>{u.monetization_status}</span></p>
-                        </div>
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          <Btn label="Unflag" onClick={() => unflagUser(u.id)} loading={acting === u.id + '_unflag'} />
-                          {u.monetization_status !== 'banned'
-                            ? <Btn label="Ban"   icon={<AlertTriangle size={11} />} onClick={() => banUser(u.id)}   loading={acting === u.id + '_ban'}   danger />
-                            : <Btn label="Unban" icon={<Check size={11} />}         onClick={() => unbanUser(u.id)} loading={acting === u.id + '_unban'} />
-                          }
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                }
+        ) : (
+          /* ══════════════ HISTORY TAB ══════════════ */
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+            {/* summary strip */}
+            <div className="up" style={{
+              borderRadius: 20, background: '#fff', border: '1px solid rgba(0,0,0,0.07)',
+              padding: '16px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            }}>
+              <div>
+                <p style={{ fontSize: 11, color: 'rgba(0,0,0,0.38)', margin: '0 0 3px', fontWeight: 500 }}>Total Earned (all time)</p>
+                <p style={{ fontSize: 22, fontWeight: 700, margin: 0, letterSpacing: '-0.03em', color: '#111' }}>{fmtNgn(totalEarned)}</p>
               </div>
-          }
-        </main>
+              <div style={{ textAlign: 'right' }}>
+                <p style={{ fontSize: 11, color: 'rgba(0,0,0,0.38)', margin: '0 0 3px', fontWeight: 500 }}>Payouts</p>
+                <p style={{ fontSize: 22, fontWeight: 700, margin: 0, letterSpacing: '-0.03em', color: '#111' }}>{earnings.length}</p>
+              </div>
+            </div>
+
+            {earnings.length === 0 ? (
+              <div className="up up-1" style={{
+                borderRadius: 20, background: '#fff', border: '1px solid rgba(0,0,0,0.07)',
+                padding: '48px 20px', textAlign: 'center',
+              }}>
+                <div style={{ width: 50, height: 50, borderRadius: '50%', background: '#f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
+                  <Clock size={20} color="rgba(0,0,0,0.2)" />
+                </div>
+                <p style={{ fontSize: 14, fontWeight: 700, margin: '0 0 6px', color: '#111' }}>No payouts yet</p>
+                <p style={{ fontSize: 12, color: 'rgba(0,0,0,0.38)', margin: 0, lineHeight: 1.6, maxWidth: 220, marginLeft: 'auto', marginRight: 'auto' }}>
+                  Earnings are calculated at the end of each month and added to your balance.
+                </p>
+              </div>
+            ) : (
+              <div className="up up-1" style={{ borderRadius: 20, background: '#fff', border: '1px solid rgba(0,0,0,0.07)', overflow: 'hidden' }}>
+                {earnings.map((e, i) => {
+                  const label = new Date(e.month + '-01').toLocaleString('default', { month: 'long', year: 'numeric' });
+                  return (
+                    <div key={e.id} style={{
+                      display: 'flex', alignItems: 'center', gap: 13,
+                      padding: '14px 18px',
+                      borderBottom: i < earnings.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none',
+                    }}>
+                      <div style={{
+                        width: 38, height: 38, borderRadius: 11,
+                        background: 'rgba(22,163,74,0.08)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                      }}>
+                        <TrendingUp size={15} color="#16a34a" />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <p style={{ fontSize: 13, fontWeight: 600, margin: '0 0 2px', color: '#111' }}>{label}</p>
+                        <p style={{ fontSize: 11, color: 'rgba(0,0,0,0.38)', margin: 0 }}>
+                          Pool · {fmtNgn(e.pool_amount)}
+                        </p>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <p style={{ fontSize: 15, fontWeight: 700, margin: '0 0 1px', color: '#16a34a', letterSpacing: '-0.02em' }}>{fmtNgn(e.amount)}</p>
+                        <p style={{ fontSize: 10, color: 'rgba(0,0,0,0.3)', margin: 0, fontWeight: 500 }}>credited</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="up up-2" style={{
+              borderRadius: 16, background: 'rgba(0,0,0,0.03)',
+              padding: '13px 16px',
+            }}>
+              <p style={{ fontSize: 11, color: 'rgba(0,0,0,0.4)', margin: 0, lineHeight: 1.6 }}>
+                Payouts are processed monthly. Earned amounts are added to your available balance.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
+
+      <Navigation />
     </div>
   );
 }
+    
