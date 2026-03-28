@@ -8,9 +8,39 @@ import { useAuth } from '@/app/components/AuthProvider';
 import { fetchProfile, fetchUserWallpapers, getUserCounts, checkIsFollowing, followUser, unfollowUser } from '@/lib/stores/wallpaperStore';
 import type { Wallpaper } from '@/app/types';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Stale-While-Revalidate in-memory cache
+// Lives at module level → survives re-renders and React Strict Mode double-mounts.
+// Key   : string (e.g. "profile:abc123")
+// Value : { data: unknown; cachedAt: number }
+// ─────────────────────────────────────────────────────────────────────────────
+type CacheEntry<T> = { data: T; cachedAt: number };
+const cache = new Map<string, CacheEntry<unknown>>();
+
+const PROFILE_TTL = 5 * 60 * 1000;   // 5 min  — profile/stats are slow-changing
+const POSTS_TTL   = 2 * 60 * 1000;   // 2 min  — posts list can change more often
+
+function cacheGet<T>(key: string, ttl: number): T | null {
+  const entry = cache.get(key) as CacheEntry<T> | undefined;
+  if (!entry) return null;
+  if (Date.now() - entry.cachedAt > ttl) return null; // stale → treat as miss
+  return entry.data;
+}
+
+function cacheSet<T>(key: string, data: T) {
+  cache.set(key, { data, cachedAt: Date.now() });
+}
+
+function cacheIsStale(key: string, ttl: number): boolean {
+  const entry = cache.get(key);
+  if (!entry) return true;
+  return Date.now() - entry.cachedAt > ttl;
+}
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 const COOLDOWN_MS     = 3 * 60 * 60 * 1000;
 const RAPID_THRESHOLD = 4;
+const PAGE_SIZE       = 19;
 const cooldownKey = (uid: string, tid: string) => `follow_cooldown_${uid}_${tid}`;
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
@@ -43,20 +73,18 @@ const iconBtn: React.CSSProperties = { width: 34, height: 34, borderRadius: '50%
 const col:     React.CSSProperties = { display: 'flex', flexDirection: 'column', alignItems: 'center' };
 const row:     React.CSSProperties = { display: 'flex', alignItems: 'center' };
 
-const PAGE_SIZE = 19;
-
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function UserProfilePage() {
-  const router             = useRouter();
-  const { id: userId }     = useParams() as { id: string };
-  const { session }        = useAuth();
+  const router         = useRouter();
+  const { id: userId } = useParams() as { id: string };
+  const { session }    = useAuth();
 
   const [profile,       setProfile]       = useState<any>(null);
   const [stats,         setStats]         = useState({ followers: 0, following: 0, posts: 0 });
   const [isFollowing,   setIsFollowing]   = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
-  const [pageLoading,   setPageLoading]   = useState(true);
+  const [pageLoading,   setPageLoading]   = useState(true);   // true only when NO cached data
   const [posts,         setPosts]         = useState<Wallpaper[]>([]);
   const [postsLoading,  setPostsLoading]  = useState(true);
   const [page,          setPage]          = useState(0);
@@ -64,34 +92,97 @@ export default function UserProfilePage() {
   const [showWarning,   setShowWarning]   = useState(false);
   const [cooldownLeft,  setCooldownLeft]  = useState('');
 
-  // ── Network state ─────────────────────────────────────────────────────────
-  const [isOnline,      setIsOnline]      = useState(true);
-  const [showOffline,   setShowOffline]   = useState(false);  // banner visible
-  const [reconnecting,  setReconnecting]  = useState(false);  // spinner on reconnect
-  const offlineTimer                      = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Network
+  const [isOnline,     setIsOnline]     = useState(true);
+  const [showOffline,  setShowOffline]  = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
+  const offlineTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Rapid-tap guard
   const tapCount = useRef(0);
   const tapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isOwn    = session?.user.id === userId;
 
-  // ── Data loaders (memoised so network handler can call them) ──────────────
-  const loadProfile = useCallback(async () => {
+  const isOwn = session?.user.id === userId;
+
+  // ── Cache keys ────────────────────────────────────────────────────────────
+  const profileKey   = `profile:${userId}`;
+  const statsKey     = `stats:${userId}`;
+  const followingKey = `following:${session?.user.id}:${userId}`;
+  const postsKey     = `posts:${userId}:0`;
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // loadProfile — stale-while-revalidate
+  //   1. If fresh cache exists  → paint immediately, skip network call
+  //   2. If stale cache exists  → paint cached data immediately (no skeleton),
+  //                               then revalidate silently in background
+  //   3. No cache               → show skeleton, fetch, cache result
+  // ─────────────────────────────────────────────────────────────────────────
+  const loadProfile = useCallback(async (force = false) => {
     if (!userId) return;
+
+    const cachedProfile   = cache.get(profileKey)?.data as any;
+    const cachedStats     = cache.get(statsKey)?.data as any;
+    const cachedFollowing = cache.get(followingKey)?.data as boolean | undefined;
+
+    const profileFresh = !cacheIsStale(profileKey, PROFILE_TTL);
+
+    // Paint cached data immediately (eliminates skeleton on revisit)
+    if (cachedProfile) {
+      setProfile(cachedProfile);
+      if (cachedStats)                     setStats(cachedStats);
+      if (cachedFollowing !== undefined)   setIsFollowing(cachedFollowing);
+      setPageLoading(false);
+      // If still fresh and not forced, skip the network call entirely
+      if (profileFresh && !force) return;
+    }
+
+    // Fetch (initial load or background revalidation)
     try {
-      const [userProfile, userStats] = await Promise.all([fetchProfile(userId), getUserCounts(userId)]);
+      const [userProfile, userStats] = await Promise.all([
+        fetchProfile(userId),
+        getUserCounts(userId),
+      ]);
       if (!userProfile) { router.replace('/'); return; }
+
+      cacheSet(profileKey, userProfile);
+      cacheSet(statsKey,   userStats);
       setProfile(userProfile);
       setStats(userStats);
-      if (session && !isOwn) setIsFollowing(await checkIsFollowing(session.user.id, userId));
-    } catch { router.replace('/'); }
-    finally { setPageLoading(false); }
+
+      if (session && !isOwn) {
+        // Only re-check follow status if not cached or forced
+        if (cachedFollowing === undefined || force) {
+          const following = await checkIsFollowing(session.user.id, userId);
+          cacheSet(followingKey, following);
+          setIsFollowing(following);
+        }
+      }
+    } catch { if (!cachedProfile) router.replace('/'); }
+    finally  { setPageLoading(false); }
   }, [userId, session]);
 
-  const loadPosts = useCallback(async () => {
+  // ─────────────────────────────────────────────────────────────────────────
+  // loadPosts — same stale-while-revalidate strategy
+  // ─────────────────────────────────────────────────────────────────────────
+  const loadPosts = useCallback(async (force = false) => {
     if (!userId) return;
-    setPostsLoading(true);
+
+    const cachedPosts = cache.get(postsKey)?.data as { wallpapers: Wallpaper[]; hasMore: boolean } | undefined;
+    const postsFresh  = !cacheIsStale(postsKey, POSTS_TTL);
+
+    if (cachedPosts) {
+      setPosts(cachedPosts.wallpapers);
+      setHasMore(cachedPosts.hasMore);
+      setPostsLoading(false);
+      if (postsFresh && !force) return;
+    }
+
+    // Only show spinner if there's nothing to display yet
+    if (!cachedPosts) setPostsLoading(true);
+
     try {
       const { wallpapers, hasMore: more } = await fetchUserWallpapers(userId, 0, PAGE_SIZE);
+      cacheSet(postsKey, { wallpapers, hasMore: more });
       setPosts(wallpapers);
       setHasMore(more);
       setPage(0);
@@ -114,20 +205,17 @@ export default function UserProfilePage() {
     const handleOnline = async () => {
       setIsOnline(true);
       setReconnecting(true);
-      // Auto-refetch everything when connection is restored
-      try {
-        await Promise.all([loadProfile(), loadPosts()]);
-      } catch { /* silent — loaders handle errors */ }
+      // Force revalidation on reconnect — data may have changed while offline
+      try { await Promise.all([loadProfile(true), loadPosts(true)]); }
+      catch { /* silent */ }
       finally {
         setReconnecting(false);
-        // Hide banner after a short "Back online" moment
         offlineTimer.current = setTimeout(() => setShowOffline(false), 2200);
       }
     };
 
     window.addEventListener('online',  handleOnline);
     window.addEventListener('offline', handleOffline);
-    // Seed from navigator in case page loaded offline
     if (!navigator.onLine) { setIsOnline(false); setShowOffline(true); }
 
     return () => {
@@ -186,12 +274,16 @@ export default function UserProfilePage() {
       if (isFollowing) {
         await unfollowUser(session.user.id, userId);
         setIsFollowing(false);
+        cacheSet(followingKey, false);
         setStats(s => ({ ...s, followers: s.followers - 1 }));
       } else {
         await followUser(session.user.id, userId);
         setIsFollowing(true);
+        cacheSet(followingKey, true);
         setStats(s => ({ ...s, followers: s.followers + 1 }));
       }
+      // Invalidate stats cache so next visit refetches the real count
+      cache.delete(statsKey);
     } catch (e) { console.error(e); }
     finally { setFollowLoading(false); }
   };
@@ -204,16 +296,17 @@ export default function UserProfilePage() {
 
   const locked = !!getCooldownUntil();
 
+  // ─────────────────────────────────────────────────────────────────────────
   return (
     <div style={{ minHeight: '100dvh', background: S.bg, fontFamily: "'DM Sans', system-ui, sans-serif", color: S.ink, maxWidth: 600, margin: '0 auto', paddingBottom: 40 }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600;700&display=swap');
-        @keyframes shimmer  { 0%,100%{background-position:200% 0} 50%{background-position:-200% 0} }
-        @keyframes up       { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
-        @keyframes fadeIn   { from{opacity:0} to{opacity:1} }
-        @keyframes slideUp  { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
-        @keyframes slideDown{ from{opacity:0;transform:translateY(-100%)} to{opacity:1;transform:translateY(0)} }
-        @keyframes spin     { to{transform:rotate(360deg)} }
+        @keyframes shimmer   { 0%,100%{background-position:200% 0} 50%{background-position:-200% 0} }
+        @keyframes up        { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes fadeIn    { from{opacity:0} to{opacity:1} }
+        @keyframes slideUp   { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes slideDown { from{opacity:0;transform:translateY(-100%)} to{opacity:1;transform:translateY(0)} }
+        @keyframes spin      { to{transform:rotate(360deg)} }
         .up  { animation: up .42s cubic-bezier(.16,1,.3,1) both; }
         .d1  { animation-delay:.06s } .d2 { animation-delay:.12s } .d3 { animation-delay:.18s }
         .tap:active  { opacity:.55 }
@@ -223,20 +316,13 @@ export default function UserProfilePage() {
 
       {/* ── Offline / reconnecting banner ── */}
       {showOffline && (
-        <div className="banner" style={{
-          position: 'fixed', top: 0, left: '50%', transform: 'translateX(-50%)',
-          width: '100%', maxWidth: 600, zIndex: 50,
-          background: isOnline ? '#16a34a' : S.red,
-          padding: '10px 18px', display: 'flex', alignItems: 'center', gap: 10,
-          transition: 'background .4s ease',
-        }}>
-          {isOnline ? (
-            reconnecting
+        <div className="banner" style={{ position: 'fixed', top: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 600, zIndex: 50, background: isOnline ? '#16a34a' : S.red, padding: '10px 18px', display: 'flex', alignItems: 'center', gap: 10, transition: 'background .4s ease' }}>
+          {isOnline
+            ? reconnecting
               ? <><Spinner color="#fff" size={14} /><span style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>Reconnected — refreshing…</span></>
               : <span style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>✓ Back online</span>
-          ) : (
-            <><WifiOff size={14} color="#fff" /><span style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>No internet connection</span></>
-          )}
+            : <><WifiOff size={14} color="#fff" /><span style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>No internet connection</span></>
+          }
         </div>
       )}
 
@@ -253,7 +339,7 @@ export default function UserProfilePage() {
         <div style={{ width: 34 }} />
       </div>
 
-      {/* ── Skeleton ── */}
+      {/* ── Skeleton — only shown when absolutely no cached data ── */}
       {pageLoading ? (
         <div style={{ paddingTop: 16 }}>
           <div style={{ ...col, padding: '32px 20px 20px', gap: 12 }}>
@@ -273,15 +359,16 @@ export default function UserProfilePage() {
         <>
           {/* ── Hero ── */}
           <div className="up d1" style={{ padding: '24px 18px 20px', borderBottom: `1px solid ${S.border}` }}>
-
-            {/* Avatar · name+username · follow — one row */}
             <div style={{ ...row, alignItems: 'center', gap: 12, marginBottom: 14 }}>
+
+              {/* Avatar */}
               <div style={{ position: 'relative', flexShrink: 0 }}>
                 <img src={profile.avatar} alt={profile.name}
                   style={{ width: 90, height: 90, borderRadius: 24, objectFit: 'cover', display: 'block', border: `1.5px solid ${S.border}` }} />
                 <div style={{ position: 'absolute', bottom: 6, right: 6, width: 11, height: 11, borderRadius: '50%', background: '#16a34a', border: `2px solid ${S.bg}` }} />
               </div>
 
+              {/* Name + username */}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ ...row, gap: 5, marginBottom: 2 }}>
                   <span style={{ fontFamily: "'Syne', sans-serif", fontSize: 18, fontWeight: 700, letterSpacing: '-.01em', lineHeight: 1.15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{profile.name}</span>
@@ -294,21 +381,8 @@ export default function UserProfilePage() {
 
               {/* Follow button */}
               {session && !isOwn && (
-                <button
-                  className="tap"
-                  onClick={handleFollow}
-                  disabled={followLoading || locked || !isOnline}
-                  style={{
-                    flexShrink: 0, minWidth: 90, padding: '9px 16px', borderRadius: 12,
-                    border: isFollowing ? `1px solid ${S.border}` : 'none',
-                    background: isFollowing ? 'transparent' : S.ink,
-                    color: isFollowing ? S.ink2 : S.bg,
-                    fontSize: 13, fontWeight: 600,
-                    cursor: (followLoading || locked || !isOnline) ? 'default' : 'pointer',
-                    opacity: (locked || !isOnline) ? 0.4 : 1,
-                    fontFamily: 'inherit', transition: 'all .18s',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                  }}>
+                <button className="tap" onClick={handleFollow} disabled={followLoading || locked || !isOnline}
+                  style={{ flexShrink: 0, minWidth: 90, padding: '9px 16px', borderRadius: 12, border: isFollowing ? `1px solid ${S.border}` : 'none', background: isFollowing ? 'transparent' : S.ink, color: isFollowing ? S.ink2 : S.bg, fontSize: 13, fontWeight: 600, cursor: (followLoading || locked || !isOnline) ? 'default' : 'pointer', opacity: (locked || !isOnline) ? 0.4 : 1, fontFamily: 'inherit', transition: 'all .18s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                   {followLoading
                     ? <><Spinner color={isFollowing ? S.ink2 : '#fff'} />{isFollowing ? 'Unfollowing…' : 'Following…'}</>
                     : isFollowing ? 'Following' : 'Follow'
@@ -339,6 +413,7 @@ export default function UserProfilePage() {
             <span style={{ fontSize: 10, fontWeight: 700, color: S.ink3, textTransform: 'uppercase', letterSpacing: '.07em' }}>{fmt(stats.posts || posts.length)} Wallpapers</span>
           </div>
 
+         
           {/* ── Grid ── */}
           <div className="up d3">
             {postsLoading ? (
@@ -376,7 +451,6 @@ export default function UserProfilePage() {
         </>
       ) : null}
 
-     
       {/* ── Rapid-tap / cooldown warning modal ── */}
       {showWarning && (
         <div onClick={() => setShowWarning(false)}
