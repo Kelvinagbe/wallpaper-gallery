@@ -1,16 +1,16 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { ChevronLeft, Grid, AlertTriangle } from 'lucide-react';
+import { ChevronLeft, Grid, AlertTriangle, WifiOff } from 'lucide-react';
 import { VerifiedBadge } from '@/app/components/VerifiedBadge';
 import { useAuth } from '@/app/components/AuthProvider';
 import { fetchProfile, fetchUserWallpapers, getUserCounts, checkIsFollowing, followUser, unfollowUser } from '@/lib/stores/wallpaperStore';
 import type { Wallpaper } from '@/app/types';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const COOLDOWN_MS     = 3 * 60 * 60 * 1000; // 3 hours in ms
-const RAPID_THRESHOLD = 4;                   // taps within 5s before lockout
+const COOLDOWN_MS     = 3 * 60 * 60 * 1000;
+const RAPID_THRESHOLD = 4;
 const cooldownKey = (uid: string, tid: string) => `follow_cooldown_${uid}_${tid}`;
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
@@ -25,15 +25,15 @@ const S = {
   ink2:    'rgba(17,17,16,.5)',
   ink3:    'rgba(17,17,16,.3)',
   amber:   '#d97706',
+  red:     '#dc2626',
 };
 
 const Shimmer = ({ w, h, r = 8 }: { w: string | number; h: string | number; r?: number }) => (
   <div style={{ width: w, height: h, borderRadius: r, flexShrink: 0, background: 'linear-gradient(90deg,#e8e8e8 25%,#f0f0f0 50%,#e8e8e8 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease infinite' }} />
 );
 
-// Inline SVG spinner — no extra dependency
-const Spinner = ({ color = '#fff' }: { color?: string }) => (
-  <svg width="13" height="13" viewBox="0 0 14 14" style={{ animation: 'spin .7s linear infinite', flexShrink: 0, display: 'block' }}>
+const Spinner = ({ color = '#fff', size = 13 }: { color?: string; size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 14 14" style={{ animation: 'spin .7s linear infinite', flexShrink: 0, display: 'block' }}>
     <circle cx="7" cy="7" r="5.5" fill="none" stroke={color} strokeWidth="2" strokeOpacity=".25" />
     <path d="M7 1.5a5.5 5.5 0 0 1 5.5 5.5" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" />
   </svg>
@@ -64,9 +64,78 @@ export default function UserProfilePage() {
   const [showWarning,   setShowWarning]   = useState(false);
   const [cooldownLeft,  setCooldownLeft]  = useState('');
 
+  // ── Network state ─────────────────────────────────────────────────────────
+  const [isOnline,      setIsOnline]      = useState(true);
+  const [showOffline,   setShowOffline]   = useState(false);  // banner visible
+  const [reconnecting,  setReconnecting]  = useState(false);  // spinner on reconnect
+  const offlineTimer                      = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const tapCount = useRef(0);
   const tapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isOwn    = session?.user.id === userId;
+
+  // ── Data loaders (memoised so network handler can call them) ──────────────
+  const loadProfile = useCallback(async () => {
+    if (!userId) return;
+    try {
+      const [userProfile, userStats] = await Promise.all([fetchProfile(userId), getUserCounts(userId)]);
+      if (!userProfile) { router.replace('/'); return; }
+      setProfile(userProfile);
+      setStats(userStats);
+      if (session && !isOwn) setIsFollowing(await checkIsFollowing(session.user.id, userId));
+    } catch { router.replace('/'); }
+    finally { setPageLoading(false); }
+  }, [userId, session]);
+
+  const loadPosts = useCallback(async () => {
+    if (!userId) return;
+    setPostsLoading(true);
+    try {
+      const { wallpapers, hasMore: more } = await fetchUserWallpapers(userId, 0, PAGE_SIZE);
+      setPosts(wallpapers);
+      setHasMore(more);
+      setPage(0);
+    } catch (e) { console.error(e); }
+    finally { setPostsLoading(false); }
+  }, [userId]);
+
+  // ── Initial fetch ─────────────────────────────────────────────────────────
+  useEffect(() => { loadProfile(); }, [loadProfile]);
+  useEffect(() => { loadPosts();   }, [loadPosts]);
+
+  // ── Network listeners ─────────────────────────────────────────────────────
+  useEffect(() => {
+    const handleOffline = () => {
+      setIsOnline(false);
+      setShowOffline(true);
+      if (offlineTimer.current) clearTimeout(offlineTimer.current);
+    };
+
+    const handleOnline = async () => {
+      setIsOnline(true);
+      setReconnecting(true);
+      // Auto-refetch everything when connection is restored
+      try {
+        await Promise.all([loadProfile(), loadPosts()]);
+      } catch { /* silent — loaders handle errors */ }
+      finally {
+        setReconnecting(false);
+        // Hide banner after a short "Back online" moment
+        offlineTimer.current = setTimeout(() => setShowOffline(false), 2200);
+      }
+    };
+
+    window.addEventListener('online',  handleOnline);
+    window.addEventListener('offline', handleOffline);
+    // Seed from navigator in case page loaded offline
+    if (!navigator.onLine) { setIsOnline(false); setShowOffline(true); }
+
+    return () => {
+      window.removeEventListener('online',  handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      if (offlineTimer.current) clearTimeout(offlineTimer.current);
+    };
+  }, [loadProfile, loadPosts]);
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   const getCooldownUntil = (): number | null => {
@@ -84,30 +153,6 @@ export default function UserProfilePage() {
     return h > 0 ? `${h}h ${m}m` : `${m}m`;
   };
 
-  // ── Data fetching ─────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!userId) return;
-    (async () => {
-      try {
-        const [userProfile, userStats] = await Promise.all([fetchProfile(userId), getUserCounts(userId)]);
-        if (!userProfile) { router.replace('/'); return; }
-        setProfile(userProfile);
-        setStats(userStats);
-        if (session && !isOwn) setIsFollowing(await checkIsFollowing(session.user.id, userId));
-      } catch { router.replace('/'); }
-      finally { setPageLoading(false); }
-    })();
-  }, [userId, session]);
-
-  useEffect(() => {
-    if (!userId) return;
-    setPostsLoading(true);
-    fetchUserWallpapers(userId, 0, PAGE_SIZE)
-      .then(({ wallpapers, hasMore: more }) => { setPosts(wallpapers); setHasMore(more); setPage(0); })
-      .catch(console.error)
-      .finally(() => setPostsLoading(false));
-  }, [userId]);
-
   const loadMore = async () => {
     const next = page + 1;
     const { wallpapers, hasMore: more } = await fetchUserWallpapers(userId, next, PAGE_SIZE);
@@ -116,24 +161,17 @@ export default function UserProfilePage() {
     setPage(next);
   };
 
-  // ── Follow handler with rapid-tap guard ───────────────────────────────────
+  // ── Follow handler ────────────────────────────────────────────────────────
   const handleFollow = async () => {
     if (!session || followLoading) return;
 
-    // Already in cooldown → show warning immediately
     const until = getCooldownUntil();
-    if (until) {
-      setCooldownLeft(fmtRemaining(until));
-      setShowWarning(true);
-      return;
-    }
+    if (until) { setCooldownLeft(fmtRemaining(until)); setShowWarning(true); return; }
 
-    // Count taps; reset counter after 5 s of inactivity
     tapCount.current += 1;
     if (tapTimer.current) clearTimeout(tapTimer.current);
     tapTimer.current = setTimeout(() => { tapCount.current = 0; }, 5000);
 
-    // Too many rapid taps → lock for 3 hours
     if (tapCount.current >= RAPID_THRESHOLD) {
       const lockUntil = Date.now() + COOLDOWN_MS;
       localStorage.setItem(cooldownKey(session.user.id, userId), String(lockUntil));
@@ -143,7 +181,6 @@ export default function UserProfilePage() {
       return;
     }
 
-    // Normal follow / unfollow
     setFollowLoading(true);
     try {
       if (isFollowing) {
@@ -171,16 +208,37 @@ export default function UserProfilePage() {
     <div style={{ minHeight: '100dvh', background: S.bg, fontFamily: "'DM Sans', system-ui, sans-serif", color: S.ink, maxWidth: 600, margin: '0 auto', paddingBottom: 40 }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600;700&display=swap');
-        @keyframes shimmer { 0%,100%{background-position:200% 0} 50%{background-position:-200% 0} }
-        @keyframes up      { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
-        @keyframes fadeIn  { from{opacity:0} to{opacity:1} }
-        @keyframes slideUp { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
-        @keyframes spin    { to{transform:rotate(360deg)} }
+        @keyframes shimmer  { 0%,100%{background-position:200% 0} 50%{background-position:-200% 0} }
+        @keyframes up       { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes fadeIn   { from{opacity:0} to{opacity:1} }
+        @keyframes slideUp  { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes slideDown{ from{opacity:0;transform:translateY(-100%)} to{opacity:1;transform:translateY(0)} }
+        @keyframes spin     { to{transform:rotate(360deg)} }
         .up  { animation: up .42s cubic-bezier(.16,1,.3,1) both; }
         .d1  { animation-delay:.06s } .d2 { animation-delay:.12s } .d3 { animation-delay:.18s }
         .tap:active  { opacity:.55 }
         .cell:active { opacity:.75 }
+        .banner      { animation: slideDown .3s cubic-bezier(.16,1,.3,1); }
       `}</style>
+
+      {/* ── Offline / reconnecting banner ── */}
+      {showOffline && (
+        <div className="banner" style={{
+          position: 'fixed', top: 0, left: '50%', transform: 'translateX(-50%)',
+          width: '100%', maxWidth: 600, zIndex: 50,
+          background: isOnline ? '#16a34a' : S.red,
+          padding: '10px 18px', display: 'flex', alignItems: 'center', gap: 10,
+          transition: 'background .4s ease',
+        }}>
+          {isOnline ? (
+            reconnecting
+              ? <><Spinner color="#fff" size={14} /><span style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>Reconnected — refreshing…</span></>
+              : <span style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>✓ Back online</span>
+          ) : (
+            <><WifiOff size={14} color="#fff" /><span style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>No internet connection</span></>
+          )}
+        </div>
+      )}
 
       {/* ── Sticky header ── */}
       <div style={{ position: 'sticky', top: 0, zIndex: 30, ...row, justifyContent: 'space-between', padding: '13px 16px', background: 'rgba(247,247,245,.92)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', borderBottom: `1px solid ${S.border}` }}>
@@ -216,17 +274,14 @@ export default function UserProfilePage() {
           {/* ── Hero ── */}
           <div className="up d1" style={{ padding: '24px 18px 20px', borderBottom: `1px solid ${S.border}` }}>
 
-            {/* Avatar · name+username · follow button — one row */}
+            {/* Avatar · name+username · follow — one row */}
             <div style={{ ...row, alignItems: 'center', gap: 12, marginBottom: 14 }}>
-
-              {/* Avatar */}
               <div style={{ position: 'relative', flexShrink: 0 }}>
                 <img src={profile.avatar} alt={profile.name}
                   style={{ width: 90, height: 90, borderRadius: 24, objectFit: 'cover', display: 'block', border: `1.5px solid ${S.border}` }} />
                 <div style={{ position: 'absolute', bottom: 6, right: 6, width: 11, height: 11, borderRadius: '50%', background: '#16a34a', border: `2px solid ${S.bg}` }} />
               </div>
 
-              {/* Name + username */}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ ...row, gap: 5, marginBottom: 2 }}>
                   <span style={{ fontFamily: "'Syne', sans-serif", fontSize: 18, fontWeight: 700, letterSpacing: '-.01em', lineHeight: 1.15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{profile.name}</span>
@@ -237,31 +292,27 @@ export default function UserProfilePage() {
                 )}
               </div>
 
-              {/* Follow button — with spinner while loading, dimmed when locked */}
+              {/* Follow button */}
               {session && !isOwn && (
                 <button
                   className="tap"
                   onClick={handleFollow}
-                  disabled={followLoading || locked}
+                  disabled={followLoading || locked || !isOnline}
                   style={{
                     flexShrink: 0, minWidth: 90, padding: '9px 16px', borderRadius: 12,
                     border: isFollowing ? `1px solid ${S.border}` : 'none',
                     background: isFollowing ? 'transparent' : S.ink,
                     color: isFollowing ? S.ink2 : S.bg,
                     fontSize: 13, fontWeight: 600,
-                    cursor: (followLoading || locked) ? 'default' : 'pointer',
-                    opacity: locked ? 0.4 : 1,
+                    cursor: (followLoading || locked || !isOnline) ? 'default' : 'pointer',
+                    opacity: (locked || !isOnline) ? 0.4 : 1,
                     fontFamily: 'inherit', transition: 'all .18s',
                     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
                   }}>
-                  {followLoading ? (
-                    <>
-                      <Spinner color={isFollowing ? S.ink2 : '#fff'} />
-                      {isFollowing ? 'Unfollowing…' : 'Following…'}
-                    </>
-                  ) : (
-                    isFollowing ? 'Following' : 'Follow'
-                  )}
+                  {followLoading
+                    ? <><Spinner color={isFollowing ? S.ink2 : '#fff'} />{isFollowing ? 'Unfollowing…' : 'Following…'}</>
+                    : isFollowing ? 'Following' : 'Follow'
+                  }
                 </button>
               )}
             </div>
@@ -306,8 +357,8 @@ export default function UserProfilePage() {
                 </div>
                 {hasMore && (
                   <div style={{ display: 'flex', justifyContent: 'center', padding: '24px 0 40px' }}>
-                    <button className="tap" onClick={loadMore}
-                      style={{ padding: '11px 32px', borderRadius: 14, border: `1px solid ${S.border}`, background: S.surface, color: S.ink2, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                    <button className="tap" onClick={loadMore} disabled={!isOnline}
+                      style={{ padding: '11px 32px', borderRadius: 14, border: `1px solid ${S.border}`, background: S.surface, color: S.ink2, fontSize: 13, fontWeight: 600, cursor: isOnline ? 'pointer' : 'default', opacity: isOnline ? 1 : 0.4, fontFamily: 'inherit' }}>
                       Load more
                     </button>
                   </div>
@@ -325,13 +376,12 @@ export default function UserProfilePage() {
         </>
       ) : null}
 
+     
       {/* ── Rapid-tap / cooldown warning modal ── */}
       {showWarning && (
-        <div
-          onClick={() => setShowWarning(false)}
+        <div onClick={() => setShowWarning(false)}
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.35)', backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, animation: 'fadeIn .2s ease' }}>
-          <div
-            onClick={e => e.stopPropagation()}
+          <div onClick={e => e.stopPropagation()}
             style={{ background: S.surface, borderRadius: 26, border: `1px solid ${S.border}`, padding: '28px 24px', maxWidth: 300, width: '100%', textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,.12)', animation: 'slideUp .28s cubic-bezier(.16,1,.3,1)' }}>
             <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'rgba(217,119,6,.08)', border: '1px solid rgba(217,119,6,.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
               <AlertTriangle size={22} color={S.amber} />
@@ -343,9 +393,7 @@ export default function UserProfilePage() {
             <p style={{ fontSize: 13, color: S.ink2, lineHeight: 1.6, margin: '0 0 22px' }}>
               Try again in <span style={{ fontWeight: 700, color: S.ink }}>{cooldownLeft}</span>.
             </p>
-            <button
-              className="tap"
-              onClick={() => setShowWarning(false)}
+            <button className="tap" onClick={() => setShowWarning(false)}
               style={{ width: '100%', padding: '13px 0', borderRadius: 14, border: 'none', background: S.ink, fontFamily: 'inherit', fontSize: 14, fontWeight: 600, color: S.bg, cursor: 'pointer' }}>
               Got it
             </button>
