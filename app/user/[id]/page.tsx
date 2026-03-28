@@ -143,22 +143,32 @@ export default function UserProfilePage() {
           {/* Hero */}
           <div className="up d1" style={{ padding: '24px 18px 20px', borderBottom: `1px solid ${S.border}` }}>
 
-            {/* Avatar left + name/username right */}
-            <div style={{ ...row, alignItems: 'flex-end', gap: 16, marginBottom: 14 }}>
+            {/* Avatar left · name/username centre · follow button right — all in one row */}
+            <div style={{ ...row, alignItems: 'center', gap: 12, marginBottom: 14 }}>
               <div style={{ position: 'relative', flexShrink: 0 }}>
                 <img src={profile.avatar} alt={profile.name}
                   style={{ width: 90, height: 90, borderRadius: 24, objectFit: 'cover', display: 'block', border: `1.5px solid ${S.border}` }} />
                 <div style={{ position: 'absolute', bottom: 6, right: 6, width: 11, height: 11, borderRadius: '50%', background: '#16a34a', border: `2px solid ${S.bg}` }} />
               </div>
-              <div style={{ flex: 1, paddingBottom: 4 }}>
-                <div style={{ ...row, gap: 6, marginBottom: 3 }}>
-                  <span style={{ fontFamily: "'Syne', sans-serif", fontSize: 20, fontWeight: 700, letterSpacing: '-.01em', lineHeight: 1 }}>{profile.name}</span>
-                  {profile.verified && <VerifiedBadge size="md" />}
+
+              {/* Name + username — grow to fill middle */}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ ...row, gap: 5, marginBottom: 2 }}>
+                  <span style={{ fontFamily: "'Syne', sans-serif", fontSize: 18, fontWeight: 700, letterSpacing: '-.01em', lineHeight: 1.15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{profile.name}</span>
+                  {profile.verified && <VerifiedBadge size="sm" />}
                 </div>
                 {profile.username && (
-                  <p style={{ fontSize: 13, color: S.ink2, margin: 0 }}>@{profile.username}</p>
+                  <p style={{ fontSize: 12, color: S.ink2, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>@{profile.username}</p>
                 )}
               </div>
+
+              {/* Follow button — right side, same row as avatar */}
+              {session && !isOwn && (
+                <button className="tap" onClick={handleFollow} disabled={followLoading}
+                  style={{ flexShrink: 0, padding: '9px 20px', borderRadius: 12, border: isFollowing ? `1px solid ${S.border}` : 'none', background: isFollowing ? 'transparent' : S.ink, color: isFollowing ? S.ink2 : S.bg, fontSize: 13, fontWeight: 600, cursor: followLoading ? 'default' : 'pointer', opacity: followLoading ? 0.55 : 1, fontFamily: 'inherit', transition: 'all .18s' }}>
+                  {isFollowing ? 'Following' : 'Follow'}
+                </button>
+              )}
             </div>
 
             {/* Bio */}
@@ -167,7 +177,7 @@ export default function UserProfilePage() {
             )}
 
             {/* Stats row card */}
-            <div style={{ display: 'flex', background: S.surface, borderRadius: 18, border: `1px solid ${S.border}`, overflow: 'hidden', marginBottom: 16 }}>
+            <div style={{ display: 'flex', background: S.surface, borderRadius: 18, border: `1px solid ${S.border}`, overflow: 'hidden' }}>
               {statItems.map(({ label, val }, i) => (
                 <div key={label} style={{ flex: 1, padding: '12px 0', textAlign: 'center', borderRight: i < statItems.length - 1 ? `1px solid ${S.border}` : 'none' }}>
                   <p style={{ fontFamily: "'Syne', sans-serif", fontSize: 17, fontWeight: 700, margin: 0, letterSpacing: '-.02em', lineHeight: 1 }}>{fmt(val)}</p>
@@ -175,14 +185,6 @@ export default function UserProfilePage() {
                 </div>
               ))}
             </div>
-
-            {/* Follow button — full width like Edit Profile */}
-            {session && !isOwn && (
-              <button className="tap" onClick={handleFollow} disabled={followLoading}
-                style={{ width: '100%', padding: '11px 0', borderRadius: 14, border: isFollowing ? `1px solid ${S.border}` : 'none', background: isFollowing ? 'transparent' : S.ink, color: isFollowing ? S.ink2 : S.bg, fontSize: 13, fontWeight: 600, cursor: followLoading ? 'default' : 'pointer', opacity: followLoading ? 0.55 : 1, fontFamily: 'inherit', transition: 'all .18s' }}>
-                {isFollowing ? 'Following' : 'Follow'}
-              </button>
-            )}
           </div>
 
           {/* Posts header */}
