@@ -33,22 +33,22 @@ const transformWallpaper = (wp: any): Wallpaper => ({
 });
 
 const transformProfile = (p: any): UserProfile => ({
-  id:         p.id,
-  name:       p.full_name || p.username || 'User',
-  username:   p.username || '@user',
-  avatar:     p.avatar_url || 'favicon.ico',
-  bio:        p.bio || '',
-  verified:   p.verified || false,
-  createdAt:  p.created_at,
-  followers:  p.followers_count || 0,
-  following:  p.following_count || 0,
-  posts:      p.posts_count || 0,
+  id:          p.id,
+  name:        p.full_name || p.username || 'User',
+  username:    p.username || '@user',
+  avatar:      p.avatar_url || 'favicon.ico',
+  bio:         p.bio || '',
+  verified:    p.verified || false,
+  createdAt:   p.created_at,
+  followers:   p.followers_count || 0,
+  following:   p.following_count || 0,
+  posts:       p.posts_count || 0,
   isFollowing: false,
 });
 
 const SELECT_WALLPAPERS = `*, profiles:user_id(username,full_name,avatar_url,verified)`;
 
-// ─── Fetch wallpapers ─────────────────────────────────────────────────────────
+// ─── Fetch wallpapers (main feed) ─────────────────────────────────────────────
 export const fetchWallpapers = async (page = 0, pageSize = 10, filter: Filter = 'all') => {
   const supabase = getSupabase();
   console.log(`🔍 Fetching wallpapers - Page ${page}, Size ${pageSize}, Filter ${filter}`);
@@ -56,12 +56,11 @@ export const fetchWallpapers = async (page = 0, pageSize = 10, filter: Filter = 
   const start = page * pageSize;
   const end   = start + pageSize - 1;
 
-  // 'all' uses wallpapers_hot view which has hot_score pre-calculated
-  // other filters use wallpapers table directly
+  // 'all' uses wallpapers_hot_cache — pre-computed, no live recalculation
   const isHot = filter === 'all';
 
   let query = supabase
-    .from(isHot ? 'wallpapers_hot' : 'wallpapers')
+    .from(isHot ? 'wallpapers_hot_cache' : 'wallpapers')
     .select(SELECT_WALLPAPERS, { count: 'exact' });
 
   if (!isHot) query = query.eq('is_public', true);
@@ -69,13 +68,15 @@ export const fetchWallpapers = async (page = 0, pageSize = 10, filter: Filter = 
   if (filter === 'trending') {
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-    query = query.gte('created_at', sevenDaysAgo.toISOString()).order('views', { ascending: false });
+    query = query
+      .gte('created_at', sevenDaysAgo.toISOString())
+      .order('views', { ascending: false });
   } else if (filter === 'popular') {
     query = query.order('downloads', { ascending: false });
   } else if (filter === 'recent') {
     query = query.order('created_at', { ascending: false });
   } else {
-    // 'all' — hot score from view
+    // 'all' — already sorted by hot_score in cache
     query = query.order('hot_score', { ascending: false });
   }
 
@@ -83,9 +84,9 @@ export const fetchWallpapers = async (page = 0, pageSize = 10, filter: Filter = 
 
   if (error) {
     console.error('❌ Error fetching wallpapers:', error);
-    // fallback to created_at if hot score function doesn't exist yet
-    if (error.message.includes('hot_score') || error.message.includes('wallpapers_hot')) {
-      console.warn('⚠️ wallpapers_hot view not found — falling back to created_at');
+    // Fallback to wallpapers table if cache isn't ready yet
+    if (error.message.includes('hot_score') || error.message.includes('wallpapers_hot_cache')) {
+      console.warn('⚠️ wallpapers_hot_cache not ready — falling back to created_at');
       const fallback = await supabase
         .from('wallpapers')
         .select(SELECT_WALLPAPERS, { count: 'exact' })
@@ -95,8 +96,8 @@ export const fetchWallpapers = async (page = 0, pageSize = 10, filter: Filter = 
       if (fallback.error) throw new Error(fallback.error.message);
       return {
         wallpapers: fallback.data ? fallback.data.map(transformWallpaper) : [],
-        hasMore: end < (fallback.count || 0) - 1,
-        total: fallback.count || 0,
+        hasMore:    end < (fallback.count || 0) - 1,
+        total:      fallback.count || 0,
       };
     }
     throw new Error(error.message);
@@ -108,7 +109,26 @@ export const fetchWallpapers = async (page = 0, pageSize = 10, filter: Filter = 
   }
 
   console.log(`✅ Found ${data.length} wallpapers (Total: ${count})`);
-  return { wallpapers: data.map(transformWallpaper), hasMore: end < (count || 0) - 1, total: count || 0 };
+  return {
+    wallpapers: data.map(transformWallpaper),
+    hasMore:    end < (count || 0) - 1,
+    total:      count || 0,
+  };
+};
+
+// ─── Fetch hot wallpapers (for TrendingCarousel) ──────────────────────────────
+export const fetchHotWallpapers = async (limit = 10) => {
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from('wallpapers_hot_cache')
+    .select(SELECT_WALLPAPERS)
+    .order('hot_score', { ascending: false })
+    .limit(limit);
+  if (error) {
+    console.error('❌ Error fetching hot wallpapers:', error);
+    throw new Error(error.message);
+  }
+  return data ? data.map(transformWallpaper) : [];
 };
 
 // ─── Fetch by category ────────────────────────────────────────────────────────
@@ -126,7 +146,11 @@ export const fetchWallpapersByCategory = async (category: string, page = 0, page
     console.error('❌ Error fetching category wallpapers:', error);
     throw new Error(error.message);
   }
-  return { wallpapers: data ? data.map(transformWallpaper) : [], hasMore: data && end < (count || 0) - 1, total: count || 0 };
+  return {
+    wallpapers: data ? data.map(transformWallpaper) : [],
+    hasMore:    data && end < (count || 0) - 1,
+    total:      count || 0,
+  };
 };
 
 // ─── Fetch by tags ────────────────────────────────────────────────────────────
@@ -140,8 +164,15 @@ export const fetchWallpapersByTags = async (tags: string[], page = 0, pageSize =
     .overlaps('tags', tags)
     .order('created_at', { ascending: false })
     .range(start, end);
-  if (error) { console.error('❌ Error fetching wallpapers by tags:', error); throw new Error(error.message); }
-  return { wallpapers: data ? data.map(transformWallpaper) : [], hasMore: data && end < (count || 0) - 1, total: count || 0 };
+  if (error) {
+    console.error('❌ Error fetching wallpapers by tags:', error);
+    throw new Error(error.message);
+  }
+  return {
+    wallpapers: data ? data.map(transformWallpaper) : [],
+    hasMore:    data && end < (count || 0) - 1,
+    total:      count || 0,
+  };
 };
 
 // ─── Fetch trending ───────────────────────────────────────────────────────────
@@ -156,7 +187,10 @@ export const fetchTrendingWallpapers = async (limit = DEFAULT_PAGE_SIZE) => {
     .gte('created_at', sevenDaysAgo.toISOString())
     .order('views', { ascending: false })
     .limit(limit);
-  if (error) { console.error('❌ Error fetching trending:', error); throw new Error(error.message); }
+  if (error) {
+    console.error('❌ Error fetching trending:', error);
+    throw new Error(error.message);
+  }
   return data ? data.map(transformWallpaper) : [];
 };
 
@@ -170,8 +204,15 @@ export const fetchUserWallpapers = async (userId: string, page = 0, pageSize = D
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .range(start, end);
-  if (error) { console.error('❌ Error fetching user wallpapers:', error); throw new Error(error.message); }
-  return { wallpapers: data ? data.map(transformWallpaper) : [], hasMore: data && end < (count || 0) - 1, total: count || 0 };
+  if (error) {
+    console.error('❌ Error fetching user wallpapers:', error);
+    throw new Error(error.message);
+  }
+  return {
+    wallpapers: data ? data.map(transformWallpaper) : [],
+    hasMore:    data && end < (count || 0) - 1,
+    total:      count || 0,
+  };
 };
 
 // ─── Search wallpapers ────────────────────────────────────────────────────────
@@ -185,8 +226,15 @@ export const searchWallpapers = async (query: string, page = 0, pageSize = DEFAU
     .or(`title.ilike.%${query}%,description.ilike.%${query}%,tags.cs.{${query}}`)
     .order('created_at', { ascending: false })
     .range(start, end);
-  if (error) { console.error('❌ Error searching wallpapers:', error); throw new Error(error.message); }
-  return { wallpapers: data ? data.map(transformWallpaper) : [], hasMore: data && end < (count || 0) - 1, total: count || 0 };
+  if (error) {
+    console.error('❌ Error searching wallpapers:', error);
+    throw new Error(error.message);
+  }
+  return {
+    wallpapers: data ? data.map(transformWallpaper) : [],
+    hasMore:    data && end < (count || 0) - 1,
+    total:      count || 0,
+  };
 };
 
 // ─── Fetch single wallpaper ───────────────────────────────────────────────────
@@ -197,7 +245,10 @@ export const fetchWallpaperById = async (wallpaperId: string) => {
     .select(SELECT_WALLPAPERS)
     .eq('id', wallpaperId)
     .single();
-  if (error) { console.error('❌ Error fetching wallpaper:', error); throw new Error(error.message); }
+  if (error) {
+    console.error('❌ Error fetching wallpaper:', error);
+    throw new Error(error.message);
+  }
   return data ? transformWallpaper(data) : null;
 };
 
@@ -214,14 +265,21 @@ export const incrementDownloads = async (wallpaperId: string) => {
 
 // ─── Profiles ─────────────────────────────────────────────────────────────────
 export const fetchProfile = async (userId: string) => {
-  const { data, error } = await getSupabase().from('profiles').select('*').eq('id', userId).single();
+  const { data, error } = await getSupabase()
+    .from('profiles')
+    .select('*')
+    .eq('id', userId)
+    .single();
   if (error) { console.error('❌ Error fetching profile:', error); return null; }
   return data ? transformProfile(data) : null;
 };
 
 export const fetchProfiles = async (userIds: string[]) => {
   if (!userIds.length) return [];
-  const { data, error } = await getSupabase().from('profiles').select('*').in('id', userIds);
+  const { data, error } = await getSupabase()
+    .from('profiles')
+    .select('*')
+    .in('id', userIds);
   if (error) { console.error('❌ Error fetching profiles:', error); return []; }
   return data ? data.map(transformProfile) : [];
 };
@@ -234,8 +292,15 @@ export const searchProfiles = async (query: string, page = 0, pageSize = 10) => 
     .select('*', { count: 'exact' })
     .or(`username.ilike.%${query}%,full_name.ilike.%${query}%`)
     .range(start, end);
-  if (error) { console.error('❌ Error searching profiles:', error); throw new Error(error.message); }
-  return { profiles: data ? data.map(transformProfile) : [], hasMore: data && end < (count || 0) - 1, total: count || 0 };
+  if (error) {
+    console.error('❌ Error searching profiles:', error);
+    throw new Error(error.message);
+  }
+  return {
+    profiles: data ? data.map(transformProfile) : [],
+    hasMore:  data && end < (count || 0) - 1,
+    total:    count || 0,
+  };
 };
 
 // ─── User stats ───────────────────────────────────────────────────────────────
@@ -246,45 +311,82 @@ export const getUserCounts = async (userId: string) => {
     supabase.from('follows').select('id', { count: 'exact', head: true }).eq('follower_id', userId),
     supabase.from('wallpapers').select('id', { count: 'exact', head: true }).eq('user_id', userId),
   ]);
-  return { followers: followersResult.count || 0, following: followingResult.count || 0, posts: postsResult.count || 0 };
+  return {
+    followers: followersResult.count || 0,
+    following: followingResult.count || 0,
+    posts:     postsResult.count || 0,
+  };
 };
 
 export const checkIsFollowing = async (currentUserId: string, targetUserId: string) => {
-  const { data } = await getSupabase().from('follows').select('id').eq('follower_id', currentUserId).eq('following_id', targetUserId).maybeSingle();
+  const { data } = await getSupabase()
+    .from('follows')
+    .select('id')
+    .eq('follower_id', currentUserId)
+    .eq('following_id', targetUserId)
+    .maybeSingle();
   return !!data;
 };
 
 export const followUser = async (currentUserId: string, targetUserId: string) => {
-  const { error } = await getSupabase().from('follows').insert({ follower_id: currentUserId, following_id: targetUserId });
-  if (error) { console.error('❌ Error following user:', error); throw new Error(error.message); }
+  const { error } = await getSupabase()
+    .from('follows')
+    .insert({ follower_id: currentUserId, following_id: targetUserId });
+  if (error) {
+    console.error('❌ Error following user:', error);
+    throw new Error(error.message);
+  }
 };
 
 export const unfollowUser = async (currentUserId: string, targetUserId: string) => {
-  const { error } = await getSupabase().from('follows').delete().eq('follower_id', currentUserId).eq('following_id', targetUserId);
-  if (error) { console.error('❌ Error unfollowing user:', error); throw new Error(error.message); }
+  const { error } = await getSupabase()
+    .from('follows')
+    .delete()
+    .eq('follower_id', currentUserId)
+    .eq('following_id', targetUserId);
+  if (error) {
+    console.error('❌ Error unfollowing user:', error);
+    throw new Error(error.message);
+  }
 };
 
 // ─── Realtime ─────────────────────────────────────────────────────────────────
 export const subscribeToWallpapers = (callback: (wallpaper: Wallpaper) => void) => {
   const supabase = getSupabase();
-  const channel = supabase.channel('wallpapers-changes')
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'wallpapers', filter: 'is_public=eq.true' },
+  const channel = supabase
+    .channel('wallpapers-changes')
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'wallpapers', filter: 'is_public=eq.true' },
       async (payload: RealtimePostgresChangesPayload<any>) => {
-        const { data } = await supabase.from('wallpapers').select(SELECT_WALLPAPERS).eq('id', payload.new.id).single();
+        const { data } = await supabase
+          .from('wallpapers')
+          .select(SELECT_WALLPAPERS)
+          .eq('id', payload.new.id)
+          .single();
         if (data) callback(transformWallpaper(data));
       }
-    ).subscribe();
+    )
+    .subscribe();
   return () => supabase.removeChannel(channel);
 };
 
 export const subscribeToWallpaperUpdates = (wallpaperId: string, callback: (wallpaper: Wallpaper) => void) => {
   const supabase = getSupabase();
-  const channel = supabase.channel(`wallpaper-${wallpaperId}`)
-    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'wallpapers', filter: `id=eq.${wallpaperId}` },
+  const channel = supabase
+    .channel(`wallpaper-${wallpaperId}`)
+    .on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'wallpapers', filter: `id=eq.${wallpaperId}` },
       async (payload: RealtimePostgresChangesPayload<any>) => {
-        const { data } = await supabase.from('wallpapers').select(SELECT_WALLPAPERS).eq('id', payload.new.id).single();
+        const { data } = await supabase
+          .from('wallpapers')
+          .select(SELECT_WALLPAPERS)
+          .eq('id', payload.new.id)
+          .single();
         if (data) callback(transformWallpaper(data));
       }
-    ).subscribe();
+    )
+    .subscribe();
   return () => supabase.removeChannel(channel);
 };
