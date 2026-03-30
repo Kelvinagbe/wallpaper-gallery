@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import {
   fetchWallpapers,
-  fetchTrendingWallpapers,
+  fetchHotWallpapers,
   fetchWallpapersByCategory,
 } from '@/lib/stores/wallpaperStore';
 import type { Wallpaper } from '@/app/types';
@@ -17,7 +17,7 @@ const cache = new Map<string, CacheEntry>();
 const CACHE_TTL = 2 * 60 * 1000; // 2 min
 const isFresh = (entry: CacheEntry) => Date.now() - entry.timestamp < CACHE_TTL;
 
-// ── Supabase singleton — avoids new client on every render ───────
+// ── Supabase singleton ───────────────────────────────────────────
 const supabase = createClient();
 
 // ── Shared realtime helper ───────────────────────────────────────
@@ -71,8 +71,6 @@ export const useWallpapers = (page = 0, pageSize = 24) => {
     }
     setLoading(true);
     try {
-      // ↓ Your fetchWallpapers should join profiles for uploader data:
-      //   .select('*, uploader:profiles(id,name,username,avatar,verified)')
       const { wallpapers: data, hasMore: more, total: tot } = await fetchWallpapers(page, pageSize);
       cache.set(key, { data, timestamp: Date.now(), hasMore: more, total: tot });
       setWallpapers(data);
@@ -101,14 +99,15 @@ export const useWallpapers = (page = 0, pageSize = 24) => {
 };
 
 // ────────────────────────────────────────────────────────────────
-// useTrendingWallpapers
+// useHotWallpapers
+// Reads from wallpapers_hot_cache — no realtime, refreshed by pg_cron
 // ────────────────────────────────────────────────────────────────
-export const useTrendingWallpapers = (limit = 24) => {
+export const useHotWallpapers = (limit = 10) => {
   const [wallpapers, setWallpapers] = useState<Wallpaper[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [error,      setError]      = useState<string | null>(null);
 
-  const key = `trending-${limit}`;
+  const key = `hot-${limit}`;
 
   const load = useCallback(async (force = false) => {
     const cached = cache.get(key);
@@ -119,12 +118,12 @@ export const useTrendingWallpapers = (limit = 24) => {
     }
     setLoading(true);
     try {
-      const data = await fetchTrendingWallpapers(limit);
+      const data = await fetchHotWallpapers(limit);
       cache.set(key, { data, timestamp: Date.now() });
       setWallpapers(data);
       setError(null);
     } catch (e: any) {
-      setError(e.message ?? 'Failed to load trending wallpapers');
+      setError(e.message ?? 'Failed to load hot wallpapers');
     } finally {
       setLoading(false);
     }
@@ -132,15 +131,8 @@ export const useTrendingWallpapers = (limit = 24) => {
 
   useEffect(() => { load(); }, [load]);
 
-  // Trending depends on views/likes so refresh on any change
-  useRealtimeWallpapers(
-    'trending-rt',
-    undefined,
-    () => load(true),
-    () => load(true),
-    () => load(true),
-    () => cache.delete(key),
-  );
+  // No realtime subscription — cache is controlled by pg_cron
+  // Hot wallpapers won't change between cron runs anyway
 
   return { wallpapers, loading, error, refresh: () => load(true) };
 };
