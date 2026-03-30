@@ -116,18 +116,19 @@ export const fetchWallpapers = async (page = 0, pageSize = 10, filter: Filter = 
   };
 };
 
-// ─── Fetch hot wallpapers (for TrendingCarousel) ──────────────────────────────
+// ─── Fetch hot wallpapers (for HotCarousel) ───────────────────────────────────
 export const fetchHotWallpapers = async (limit = 10) => {
   const supabase = getSupabase();
   const { data, error } = await supabase
     .from('wallpapers_hot_cache')
-    .select(SELECT_WALLPAPERS)
+    .select('*')  // no profile join — cache table has no FK to profiles
     .order('hot_score', { ascending: false })
     .limit(limit);
   if (error) {
     console.error('❌ Error fetching hot wallpapers:', error);
     throw new Error(error.message);
   }
+  console.log('🔥 Hot wallpapers:', data);
   return data ? data.map(transformWallpaper) : [];
 };
 
