@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
 
 export async function GET() {
-  const supabase = createClient();
+  const supabase = await createClient();  // ← await here
   const { data, error } = await supabase
     .from('wallpapers_hot_cache')
     .select('*')
