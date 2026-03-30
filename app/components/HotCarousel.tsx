@@ -20,6 +20,37 @@ const HOT_COLORS = [
   'linear-gradient(145deg,#1a1000,#3d2800,#604000)',
 ];
 
+const HOT_CACHE_KEY = 'hot_wallpapers';
+const HOT_CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
+
+const getHotCache = (): Wallpaper[] | null => {
+  try {
+    const raw = localStorage.getItem(HOT_CACHE_KEY);
+    if (!raw) return null;
+    const { data, cachedAt } = JSON.parse(raw);
+    if (Date.now() - cachedAt > HOT_CACHE_TTL) return null;
+    return data;
+  } catch { return null; }
+};
+
+const setHotCache = (data: Wallpaper[]) => {
+  try {
+    localStorage.setItem(HOT_CACHE_KEY, JSON.stringify({ data, cachedAt: Date.now() }));
+  } catch { /**/ }
+};
+
+const CARD_WIDTH = 110;
+const CARD_GAP = 10;
+const SCROLL_STEP = CARD_WIDTH + CARD_GAP;
+const AUTO_SCROLL_INTERVAL = 2200;
+
+const getRankStyle = (rank: number) => {
+  if (rank === 1) return { background: 'linear-gradient(135deg,rgba(255,180,0,.85),rgba(255,120,0,.85))', borderColor: 'rgba(255,220,100,.4)' };
+  if (rank === 2) return { background: 'linear-gradient(135deg,rgba(180,180,200,.85),rgba(140,140,160,.85))', borderColor: 'rgba(220,220,240,.3)' };
+  if (rank === 3) return { background: 'linear-gradient(135deg,rgba(180,100,40,.85),rgba(140,80,30,.85))', borderColor: 'rgba(220,160,100,.3)' };
+  return { background: 'rgba(0,0,0,.55)', borderColor: 'rgba(255,255,255,.2)' };
+};
+
 const CSS = `
   @keyframes hotPulse {
     0%, 100% { transform: scale(1); }
@@ -46,19 +77,6 @@ const CSS = `
   .hot-card-img-wrap:active { transform: scale(0.95); }
 `;
 
-const CARD_WIDTH = 110;
-const CARD_GAP = 10;
-const AUTO_SCROLL_INTERVAL = 2200; // ms between each step
-const SCROLL_STEP = CARD_WIDTH + CARD_GAP;
-
-const getRankStyle = (rank: number) => {
-  if (rank === 1) return { background: 'linear-gradient(135deg,rgba(255,180,0,.85),rgba(255,120,0,.85))', borderColor: 'rgba(255,220,100,.4)' };
-  if (rank === 2) return { background: 'linear-gradient(135deg,rgba(180,180,200,.85),rgba(140,140,160,.85))', borderColor: 'rgba(220,220,240,.3)' };
-  if (rank === 3) return { background: 'linear-gradient(135deg,rgba(180,100,40,.85),rgba(140,80,30,.85))', borderColor: 'rgba(220,160,100,.3)' };
-  return { background: 'rgba(0,0,0,.55)', borderColor: 'rgba(255,255,255,.2)' };
-};
-
-/* ─── Shimmer placeholder ─────────────────────────────────────── */
 const HotCarouselShimmer = () => (
   <div style={{ background: '#fff', paddingBottom: 4 }}>
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px 10px' }}>
@@ -84,7 +102,6 @@ const HotCarouselShimmer = () => (
   </div>
 );
 
-/* ─── Main component ──────────────────────────────────────────── */
 export const HotCarousel = () => {
   const router = useRouter();
   const [wallpapers, setWallpapers] = useState<Wallpaper[]>([]);
@@ -94,13 +111,25 @@ export const HotCarousel = () => {
   const isPausedRef = useRef(false);
   const currentIndexRef = useRef(0);
 
+  // ── Fetch with localStorage cache ──────────────────────────────
   useEffect(() => {
+    const cached = getHotCache();
+    if (cached) {
+      setWallpapers(cached);
+      setLoading(false);
+      return;
+    }
+
     fetchHotWallpapers(10)
-      .then(setWallpapers)
+      .then(data => {
+        setHotCache(data);
+        setWallpapers(data);
+      })
       .catch(e => console.error('Failed to load hot wallpapers:', e))
       .finally(() => setLoading(false));
   }, []);
 
+  // ── Auto-scroll ────────────────────────────────────────────────
   const scrollToIndex = useCallback((index: number) => {
     const track = trackRef.current;
     if (!track) return;
@@ -109,24 +138,16 @@ export const HotCarousel = () => {
 
   const startAutoScroll = useCallback((total: number) => {
     if (intervalRef.current) clearInterval(intervalRef.current);
-
     intervalRef.current = setInterval(() => {
       if (isPausedRef.current) return;
       const track = trackRef.current;
       if (!track) return;
-
       const maxScroll = track.scrollWidth - track.clientWidth;
-
-      // If at (or very near) the end, jump back to start instantly then continue
       if (track.scrollLeft >= maxScroll - 4) {
-        // Temporarily disable smooth scroll for the reset
         track.style.scrollBehavior = 'auto';
         track.scrollLeft = 0;
         currentIndexRef.current = 0;
-        // Re-enable after the instant jump
-        requestAnimationFrame(() => {
-          track.style.scrollBehavior = 'smooth';
-        });
+        requestAnimationFrame(() => { track.style.scrollBehavior = 'smooth'; });
       } else {
         currentIndexRef.current = Math.min(currentIndexRef.current + 1, total - 1);
         scrollToIndex(currentIndexRef.current);
@@ -135,27 +156,17 @@ export const HotCarousel = () => {
   }, [scrollToIndex]);
 
   useEffect(() => {
-    if (wallpapers.length > 0) {
-      startAutoScroll(wallpapers.length);
-    }
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
+    if (wallpapers.length > 0) startAutoScroll(wallpapers.length);
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [wallpapers.length, startAutoScroll]);
 
-  // Pause on user interaction, resume after 4s
-  const handleInteractionStart = useCallback(() => {
-    isPausedRef.current = true;
-  }, []);
-
-  const handleInteractionEnd = useCallback(() => {
+  // ── Pause / resume on interaction ─────────────────────────────
+  const handleInteractionStart = useCallback(() => { isPausedRef.current = true; }, []);
+  const handleInteractionEnd   = useCallback(() => {
     setTimeout(() => {
       isPausedRef.current = false;
-      // Sync index with actual scroll position on resume
       const track = trackRef.current;
-      if (track) {
-        currentIndexRef.current = Math.round(track.scrollLeft / SCROLL_STEP);
-      }
+      if (track) currentIndexRef.current = Math.round(track.scrollLeft / SCROLL_STEP);
     }, 4000);
   }, []);
 
@@ -196,7 +207,6 @@ export const HotCarousel = () => {
             const rank = i + 1;
             const rankStyle = getRankStyle(rank);
             const imgSrc = wp.thumbnail || wp.url;
-
             return (
               <div
                 key={wp.id}
@@ -205,21 +215,11 @@ export const HotCarousel = () => {
               >
                 <div
                   className="hot-card-img-wrap"
-                  style={{
-                    position: 'relative', width: 110, height: 175,
-                    borderRadius: 14, overflow: 'hidden',
-                    background: HOT_COLORS[i % HOT_COLORS.length],
-                  }}
+                  style={{ position: 'relative', width: 110, height: 175, borderRadius: 14, overflow: 'hidden', background: HOT_COLORS[i % HOT_COLORS.length] }}
                 >
-                  <img
-                    src={imgSrc}
-                    alt={wp.title}
-                    draggable={false}
-                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }}
-                  />
-                  {/* Gradient overlay */}
+                  <img src={imgSrc} alt={wp.title} draggable={false}
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />
                   <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(to top,rgba(0,0,0,.6) 0%,transparent 100%)', zIndex: 2 }} />
-                  {/* Rank badge */}
                   <div style={{
                     position: 'absolute', top: 7, left: 7, zIndex: 3,
                     fontSize: 10, fontWeight: 800, color: '#fff',
@@ -228,17 +228,9 @@ export const HotCarousel = () => {
                     borderRadius: 7, padding: '3px 7px',
                     background: rankStyle.background,
                     letterSpacing: '0.02em',
-                  }}>
-                    #{rank}
-                  </div>
+                  }}>#{rank}</div>
                 </div>
-
-                {/* Title */}
-                <p style={{
-                  fontSize: 10.5, fontWeight: 600, color: '#0a0a0a',
-                  margin: '6px 2px 0', whiteSpace: 'nowrap',
-                  overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.3,
-                }}>
+                <p style={{ fontSize: 10.5, fontWeight: 600, color: '#0a0a0a', margin: '6px 2px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.3 }}>
                   {wp.title}
                 </p>
               </div>
@@ -246,7 +238,6 @@ export const HotCarousel = () => {
           })}
         </div>
 
-        {/* Divider */}
         <div style={{ height: 1, background: '#f3f4f6', margin: '0 16px' }} />
       </div>
     </>
