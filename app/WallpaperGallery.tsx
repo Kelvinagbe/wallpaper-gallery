@@ -7,6 +7,7 @@ import { Header } from './components/Header';
 import { Navigation } from './components/Navigation';
 import { WallpaperGrid } from './components/WallpaperGrid';
 import { GlobalStyles } from './components/GlobalStyles';
+import { HotCarousel } from '@/app/components/HotCarousel';
 import { MonetizationInfoModal } from '@/app/components/MonetizationInfoModal';
 import type { Wallpaper, Filter } from './types';
 
@@ -91,13 +92,16 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
       <Navigation isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="sidebar-offset">
         <Header filter={filter} setFilter={handleFilterChange} onMenuOpen={() => setSidebarOpen(true)} />
-        <main className="max-w-7xl mx-auto px-4 py-6 pb-8">
-          <WallpaperGrid
-            wallpapers={wallpapers}
-            isLoading={isInitialLoad}
-            onLoadMore={handleLoadMore}
-            hasMore={hasMore}
-          />
+        <main className="max-w-7xl mx-auto pb-8">
+          {filter === 'all' && <HotCarousel />}
+          <div className="px-4 py-6">
+            <WallpaperGrid
+              wallpapers={wallpapers}
+              isLoading={isInitialLoad}
+              onLoadMore={handleLoadMore}
+              hasMore={hasMore}
+            />
+          </div>
         </main>
       </div>
       <MonetizationInfoModal />
