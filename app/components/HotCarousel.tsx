@@ -1,6 +1,7 @@
+
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { fetchHotWallpapers } from '@/lib/stores/wallpaperStore';
 import { startLoader } from '@/app/components/TopLoader';
@@ -36,6 +37,7 @@ const CSS = `
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
     padding: 0 16px 12px;
+    scroll-behavior: smooth;
   }
   .hot-scroll-track::-webkit-scrollbar { display: none; }
   .hot-card-img-wrap {
@@ -43,6 +45,11 @@ const CSS = `
   }
   .hot-card-img-wrap:active { transform: scale(0.95); }
 `;
+
+const CARD_WIDTH = 110;
+const CARD_GAP = 10;
+const AUTO_SCROLL_INTERVAL = 2200; // ms between each step
+const SCROLL_STEP = CARD_WIDTH + CARD_GAP;
 
 const getRankStyle = (rank: number) => {
   if (rank === 1) return { background: 'linear-gradient(135deg,rgba(255,180,0,.85),rgba(255,120,0,.85))', borderColor: 'rgba(255,220,100,.4)' };
@@ -61,10 +68,7 @@ const HotCarouselShimmer = () => (
     <div className="hot-scroll-track">
       {Array.from({ length: 6 }).map((_, i) => (
         <div key={i} style={{ flexShrink: 0, width: 110, scrollSnapAlign: 'start' }}>
-          <div style={{
-            width: 110, height: 175, borderRadius: 14, overflow: 'hidden',
-            background: '#f0f0f5', position: 'relative',
-          }}>
+          <div style={{ width: 110, height: 175, borderRadius: 14, overflow: 'hidden', background: '#f0f0f5', position: 'relative' }}>
             <div style={{
               position: 'absolute', inset: 0,
               background: 'linear-gradient(105deg,transparent 40%,rgba(255,255,255,0.5) 50%,transparent 60%)',
@@ -84,13 +88,75 @@ const HotCarouselShimmer = () => (
 export const HotCarousel = () => {
   const router = useRouter();
   const [wallpapers, setWallpapers] = useState<Wallpaper[]>([]);
-  const [loading,    setLoading]    = useState(true);
+  const [loading, setLoading] = useState(true);
+  const trackRef = useRef<HTMLDivElement>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isPausedRef = useRef(false);
+  const currentIndexRef = useRef(0);
 
   useEffect(() => {
     fetchHotWallpapers(10)
       .then(setWallpapers)
       .catch(e => console.error('Failed to load hot wallpapers:', e))
       .finally(() => setLoading(false));
+  }, []);
+
+  const scrollToIndex = useCallback((index: number) => {
+    const track = trackRef.current;
+    if (!track) return;
+    track.scrollTo({ left: index * SCROLL_STEP, behavior: 'smooth' });
+  }, []);
+
+  const startAutoScroll = useCallback((total: number) => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+
+    intervalRef.current = setInterval(() => {
+      if (isPausedRef.current) return;
+      const track = trackRef.current;
+      if (!track) return;
+
+      const maxScroll = track.scrollWidth - track.clientWidth;
+
+      // If at (or very near) the end, jump back to start instantly then continue
+      if (track.scrollLeft >= maxScroll - 4) {
+        // Temporarily disable smooth scroll for the reset
+        track.style.scrollBehavior = 'auto';
+        track.scrollLeft = 0;
+        currentIndexRef.current = 0;
+        // Re-enable after the instant jump
+        requestAnimationFrame(() => {
+          track.style.scrollBehavior = 'smooth';
+        });
+      } else {
+        currentIndexRef.current = Math.min(currentIndexRef.current + 1, total - 1);
+        scrollToIndex(currentIndexRef.current);
+      }
+    }, AUTO_SCROLL_INTERVAL);
+  }, [scrollToIndex]);
+
+  useEffect(() => {
+    if (wallpapers.length > 0) {
+      startAutoScroll(wallpapers.length);
+    }
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [wallpapers.length, startAutoScroll]);
+
+  // Pause on user interaction, resume after 4s
+  const handleInteractionStart = useCallback(() => {
+    isPausedRef.current = true;
+  }, []);
+
+  const handleInteractionEnd = useCallback(() => {
+    setTimeout(() => {
+      isPausedRef.current = false;
+      // Sync index with actual scroll position on resume
+      const track = trackRef.current;
+      if (track) {
+        currentIndexRef.current = Math.round(track.scrollLeft / SCROLL_STEP);
+      }
+    }, 4000);
   }, []);
 
   if (loading) return <><style>{CSS}</style><HotCarouselShimmer /></>;
@@ -116,11 +182,20 @@ export const HotCarousel = () => {
         </div>
 
         {/* Scroll track */}
-        <div className="hot-scroll-track">
+        <div
+          ref={trackRef}
+          className="hot-scroll-track"
+          onMouseEnter={handleInteractionStart}
+          onMouseLeave={handleInteractionEnd}
+          onTouchStart={handleInteractionStart}
+          onTouchEnd={handleInteractionEnd}
+          onPointerDown={handleInteractionStart}
+          onPointerUp={handleInteractionEnd}
+        >
           {wallpapers.map((wp, i) => {
-            const rank      = i + 1;
+            const rank = i + 1;
             const rankStyle = getRankStyle(rank);
-            const imgSrc    = wp.thumbnail || wp.url;
+            const imgSrc = wp.thumbnail || wp.url;
 
             return (
               <div
