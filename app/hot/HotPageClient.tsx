@@ -3,70 +3,279 @@
 import { useRouter } from 'next/navigation';
 import { startLoader } from '@/app/components/TopLoader';
 
-const getRankStyle = (rank: number) => {
-  if (rank === 1) return {
-    badge: 'linear-gradient(135deg,#FFB800,#FF7800)',
-    border: 'rgba(255,220,100,.4)',
-    glow: 'rgba(255,180,0,.15)',
-    label: '🥇',
-  };
-  if (rank === 2) return {
-    badge: 'linear-gradient(135deg,#B4B4C8,#8C8CA0)',
-    border: 'rgba(220,220,240,.3)',
-    glow: 'rgba(180,180,200,.1)',
-    label: '🥈',
-  };
-  if (rank === 3) return {
-    badge: 'linear-gradient(135deg,#B46428,#8C501E)',
-    border: 'rgba(220,160,100,.3)',
-    glow: 'rgba(180,100,40,.1)',
-    label: '🥉',
-  };
-  return {
-    badge: 'rgba(0,0,0,.06)',
-    border: 'rgba(0,0,0,.08)',
-    glow: 'transparent',
-    label: null,
-  };
-};
-
-const fmt = (n: number) =>
-  n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` :
-  n >= 1_000 ? `${(n / 1_000).toFixed(1)}k` : String(n);
-
 const CSS = `
+  @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');
+
   @keyframes fadeUp {
-    from { opacity: 0; transform: translateY(12px); }
+    from { opacity: 0; transform: translateY(16px); }
     to   { opacity: 1; transform: translateY(0); }
   }
-  .hot-row {
+
+  .hot-page {
+    min-height: 100vh;
+    background: #fafafa;
+    font-family: 'DM Sans', sans-serif;
+  }
+
+  .hot-header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: #fff;
+    border-bottom: 1px solid #f0f0f0;
+    padding: 0 16px;
+    height: 56px;
     display: flex;
     align-items: center;
     gap: 14px;
-    padding: 10px 16px;
+  }
+
+  .back-btn {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    border: 1.5px solid #e5e7eb;
+    background: #fff;
     cursor: pointer;
-    transition: background 0.15s;
-    border-radius: 16px;
-    animation: fadeUp 0.35s ease both;
-  }
-  .hot-row:active { background: #f9fafb; }
-  .hot-thumb {
-    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     flex-shrink: 0;
-    width: 64px;
-    height: 102px;
-    border-radius: 12px;
-    overflow: hidden;
-    background: #f0f0f5;
+    transition: background 0.15s;
   }
-  .hot-thumb img {
+  .back-btn:active { background: #f3f4f6; }
+  .back-chevron {
+    width: 8px;
+    height: 8px;
+    border-left: 2px solid #374151;
+    border-bottom: 2px solid #374151;
+    transform: rotate(45deg) translateX(1px);
+    display: block;
+  }
+
+  .header-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 22px;
+    letter-spacing: 1px;
+    color: #0a0a0a;
+    line-height: 1;
+  }
+  .header-sub {
+    font-size: 11px;
+    color: #9ca3af;
+    font-weight: 500;
+    margin-left: auto;
+    white-space: nowrap;
+  }
+
+  /* Hero — rank #1 */
+  .hero-card {
+    position: relative;
+    margin: 16px 16px 0;
+    border-radius: 20px;
+    overflow: hidden;
+    height: 220px;
+    cursor: pointer;
+    animation: fadeUp 0.4s ease both;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.10);
+  }
+  .hero-card img {
     position: absolute;
     inset: 0;
     width: 100%;
     height: 100%;
     object-fit: cover;
   }
+  .hero-overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to top, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.1) 60%, transparent 100%);
+    z-index: 2;
+  }
+  .hero-rank {
+    position: absolute;
+    top: 14px;
+    left: 14px;
+    z-index: 3;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 52px;
+    line-height: 1;
+    color: rgba(255,255,255,0.18);
+    letter-spacing: 2px;
+    pointer-events: none;
+  }
+  .hero-badge {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    z-index: 3;
+    background: #FFB800;
+    color: #0a0a0a;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    padding: 4px 10px;
+    border-radius: 6px;
+    text-transform: uppercase;
+  }
+  .hero-meta {
+    position: absolute;
+    bottom: 14px;
+    left: 14px;
+    right: 14px;
+    z-index: 3;
+  }
+  .hero-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 26px;
+    color: #fff;
+    letter-spacing: 0.5px;
+    line-height: 1.1;
+    margin: 0 0 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .hero-stats {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .stat-pill {
+    font-size: 10px;
+    font-weight: 600;
+    color: rgba(255,255,255,0.85);
+    background: rgba(255,255,255,0.15);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 20px;
+    padding: 3px 9px;
+  }
+
+  /* List rows — ranks 2-10 */
+  .list-section {
+    padding: 12px 16px 48px;
+  }
+  .list-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 11px 0;
+    cursor: pointer;
+    border-bottom: 1px solid #f3f4f6;
+    animation: fadeUp 0.35s ease both;
+    transition: opacity 0.15s;
+  }
+  .list-row:last-child { border-bottom: none; }
+  .list-row:active { opacity: 0.6; }
+
+  .rank-num {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 28px;
+    line-height: 1;
+    width: 28px;
+    text-align: center;
+    flex-shrink: 0;
+    letter-spacing: 1px;
+  }
+  .row-thumb {
+    position: relative;
+    width: 58px;
+    height: 92px;
+    border-radius: 12px;
+    overflow: hidden;
+    flex-shrink: 0;
+    background: #f0f0f5;
+  }
+  .row-thumb img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .row-info {
+    flex: 1;
+    min-width: 0;
+  }
+  .row-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #0a0a0a;
+    margin: 0 0 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    letter-spacing: -0.1px;
+  }
+  .row-category {
+    font-size: 11px;
+    color: #9ca3af;
+    font-weight: 500;
+    margin: 0 0 7px;
+    text-transform: capitalize;
+  }
+  .row-stats {
+    display: flex;
+    gap: 10px;
+  }
+  .row-stat {
+    font-size: 10px;
+    color: #6b7280;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+  }
+  .row-arrow {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    border-radius: 8px;
+    background: #f3f4f6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .arrow-icon {
+    width: 6px;
+    height: 6px;
+    border-right: 1.5px solid #9ca3af;
+    border-top: 1.5px solid #9ca3af;
+    transform: rotate(45deg) translateX(-1px);
+    display: block;
+  }
 `;
+
+const RANK_COLORS = [
+  '#0a0a0a', '#0a0a0a', '#374151',
+  '#6b7280', '#6b7280', '#9ca3af',
+  '#9ca3af', '#9ca3af', '#9ca3af',
+];
+
+const fmt = (n: number) =>
+  n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` :
+  n >= 1_000 ? `${(n / 1_000).toFixed(1)}k` :
+  String(n);
+
+const EyeIcon = () => (
+  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+    <circle cx="12" cy="12" r="3"/>
+  </svg>
+);
+const HeartIcon = () => (
+  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+  </svg>
+);
+const DownloadIcon = () => (
+  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+    <polyline points="7 10 12 15 17 10"/>
+    <line x1="12" y1="15" x2="12" y2="3"/>
+  </svg>
+);
 
 type Wallpaper = {
   id: string;
@@ -83,92 +292,77 @@ type Wallpaper = {
 
 export default function HotPageClient({ wallpapers }: { wallpapers: Wallpaper[] }) {
   const router = useRouter();
+  const hero   = wallpapers[0];
+  const rest   = wallpapers.slice(1);
+
+  const goTo = (id: string) => { startLoader(); router.push(`/details/${id}`); };
 
   return (
     <>
       <style>{CSS}</style>
-      <div style={{ minHeight: '100vh', background: '#fff' }}>
+      <div className="hot-page">
 
         {/* Header */}
-        <div style={{
-          position: 'sticky', top: 0, zIndex: 10,
-          background: '#fff',
-          borderBottom: '1px solid #f3f4f6',
-          display: 'flex', alignItems: 'center', gap: 12,
-          padding: '12px 16px',
-        }}>
-          <button
-            onClick={() => router.back()}
-            style={{ width: 36, height: 36, borderRadius: 10, border: 'none', background: '#f3f4f6', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 16 }}
-          >
-            ←
+        <div className="hot-header">
+          <button className="back-btn" onClick={() => router.back()}>
+            <span className="back-chevron" />
           </button>
-          <div>
-            <h1 style={{ fontSize: 17, fontWeight: 800, color: '#0a0a0a', margin: 0, letterSpacing: '-0.3px' }}>
-              🔥 Hot Right Now
-            </h1>
-            <p style={{ fontSize: 11, color: '#9ca3af', margin: 0, marginTop: 1 }}>
-              Top 10 · Updated every 2 days
-            </p>
-          </div>
+          <span className="header-title">Hot Right Now</span>
+          <span className="header-sub">Updated every 2 days</span>
         </div>
 
-        {/* Ranked list */}
-        <div style={{ padding: '8px 8px 32px' }}>
-          {wallpapers.map((wp, i) => {
-            const rank = i + 1;
-            const rs   = getRankStyle(rank);
+        {/* Hero — #1 */}
+        {hero && (
+          <div className="hero-card" onClick={() => goTo(hero.id)}>
+            <img src={hero.thumbnail || hero.url} alt={hero.title} draggable={false} />
+            <div className="hero-overlay" />
+            <div className="hero-rank">#1</div>
+            <div className="hero-badge">Top Pick</div>
+            <div className="hero-meta">
+              <p className="hero-title">{hero.title}</p>
+              <div className="hero-stats">
+                <span className="stat-pill">{fmt(hero.views)} views</span>
+                <span className="stat-pill">{fmt(hero.likes)} likes</span>
+                <span className="stat-pill">{fmt(hero.downloads)} downloads</span>
+              </div>
+            </div>
+          </div>
+        )}
 
+        {/* Ranked list — #2 to #10 */}
+        <div className="list-section">
+          {rest.map((wp, i) => {
+            const rank = i + 2;
             return (
               <div
                 key={wp.id}
-                className="hot-row"
-                style={{ animationDelay: `${i * 0.05}s` }}
-                onClick={() => { startLoader(); router.push(`/details/${wp.id}`); }}
+                className="list-row"
+                style={{ animationDelay: `${0.1 + i * 0.05}s` }}
+                onClick={() => goTo(wp.id)}
               >
-                {/* Rank number */}
-                <div style={{
-                  flexShrink: 0, width: 32, height: 32,
-                  borderRadius: 10,
-                  background: rs.badge,
-                  border: `1px solid ${rs.border}`,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: rank <= 3 ? 16 : 13,
-                  fontWeight: 800,
-                  color: rank <= 3 ? '#fff' : '#6b7280',
-                }}>
-                  {rs.label ?? rank}
-                </div>
+                <span className="rank-num" style={{ color: RANK_COLORS[rank - 2] ?? '#9ca3af' }}>
+                  {rank}
+                </span>
 
-                {/* Thumbnail */}
-                <div className="hot-thumb">
+                <div className="row-thumb">
                   <img src={wp.thumbnail || wp.url} alt={wp.title} draggable={false} />
                 </div>
 
-                {/* Info */}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontSize: 13, fontWeight: 700, color: '#0a0a0a', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {wp.title}
-                  </p>
-                  <p style={{ fontSize: 11, color: '#9ca3af', margin: '3px 0 0', textTransform: 'capitalize' }}>
+                <div className="row-info">
+                  <p className="row-title">{wp.title}</p>
+                  <p className="row-category">
                     {wp.category} · {wp.type === 'pc' ? 'Desktop' : 'Mobile'}
                   </p>
-                  {/* Stats */}
-                  <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
-                    <span style={{ fontSize: 10, color: '#6b7280', display: 'flex', alignItems: 'center', gap: 3 }}>
-                      👁 {fmt(wp.views)}
-                    </span>
-                    <span style={{ fontSize: 10, color: '#6b7280', display: 'flex', alignItems: 'center', gap: 3 }}>
-                      ♥ {fmt(wp.likes)}
-                    </span>
-                    <span style={{ fontSize: 10, color: '#6b7280', display: 'flex', alignItems: 'center', gap: 3 }}>
-                      ↓ {fmt(wp.downloads)}
-                    </span>
+                  <div className="row-stats">
+                    <span className="row-stat"><EyeIcon /> {fmt(wp.views)}</span>
+                    <span className="row-stat"><HeartIcon /> {fmt(wp.likes)}</span>
+                    <span className="row-stat"><DownloadIcon /> {fmt(wp.downloads)}</span>
                   </div>
                 </div>
 
-                {/* Arrow */}
-                <div style={{ flexShrink: 0, fontSize: 14, color: '#d1d5db' }}>›</div>
+                <div className="row-arrow">
+                  <span className="arrow-icon" />
+                </div>
               </div>
             );
           })}
