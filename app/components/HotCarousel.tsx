@@ -1,0 +1,179 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { fetchHotWallpapers } from '@/lib/stores/wallpaperStore';
+import { startLoader } from '@/app/components/TopLoader';
+import type { Wallpaper } from '@/app/types';
+
+const HOT_COLORS = [
+  'linear-gradient(145deg,#0f0c29,#302b63,#24243e)',
+  'linear-gradient(145deg,#1a0533,#2d1b69,#11998e)',
+  'linear-gradient(145deg,#0a0a0a,#1a1a2e,#16213e)',
+  'linear-gradient(145deg,#1b0000,#3d0000,#7b2d00)',
+  'linear-gradient(145deg,#001a00,#003300,#005500)',
+  'linear-gradient(145deg,#160a2c,#0f3460,#533483)',
+  'linear-gradient(145deg,#0d0d0d,#1a1a1a,#2c2c54)',
+  'linear-gradient(145deg,#1a0010,#3d0030,#600050)',
+  'linear-gradient(145deg,#001020,#002040,#003060)',
+  'linear-gradient(145deg,#1a1000,#3d2800,#604000)',
+];
+
+const CSS = `
+  @keyframes hotPulse {
+    0%, 100% { transform: scale(1); }
+    50%       { transform: scale(1.12); }
+  }
+  @keyframes shimmerSweep {
+    0%   { background-position: -200% 0 }
+    100% { background-position:  200% 0 }
+  }
+  .hot-scroll-track {
+    display: flex;
+    gap: 10px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding: 0 16px 12px;
+  }
+  .hot-scroll-track::-webkit-scrollbar { display: none; }
+  .hot-card-img-wrap {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  .hot-card-img-wrap:active { transform: scale(0.95); }
+`;
+
+const getRankStyle = (rank: number) => {
+  if (rank === 1) return { background: 'linear-gradient(135deg,rgba(255,180,0,.85),rgba(255,120,0,.85))', borderColor: 'rgba(255,220,100,.4)' };
+  if (rank === 2) return { background: 'linear-gradient(135deg,rgba(180,180,200,.85),rgba(140,140,160,.85))', borderColor: 'rgba(220,220,240,.3)' };
+  if (rank === 3) return { background: 'linear-gradient(135deg,rgba(180,100,40,.85),rgba(140,80,30,.85))', borderColor: 'rgba(220,160,100,.3)' };
+  return { background: 'rgba(0,0,0,.55)', borderColor: 'rgba(255,255,255,.2)' };
+};
+
+/* ─── Shimmer placeholder ─────────────────────────────────────── */
+const HotCarouselShimmer = () => (
+  <div style={{ background: '#fff', paddingBottom: 4 }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px 10px' }}>
+      <div style={{ height: 16, width: 120, borderRadius: 6, background: '#f0f0f5', backgroundSize: '200% 100%', animation: 'shimmerSweep 1.6s ease-in-out infinite' }} />
+      <div style={{ height: 12, width: 48, borderRadius: 6, background: '#f0f0f5', backgroundSize: '200% 100%', animation: 'shimmerSweep 1.6s ease-in-out infinite' }} />
+    </div>
+    <div className="hot-scroll-track">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <div key={i} style={{ flexShrink: 0, width: 110, scrollSnapAlign: 'start' }}>
+          <div style={{
+            width: 110, height: 175, borderRadius: 14, overflow: 'hidden',
+            background: '#f0f0f5', position: 'relative',
+          }}>
+            <div style={{
+              position: 'absolute', inset: 0,
+              background: 'linear-gradient(105deg,transparent 40%,rgba(255,255,255,0.5) 50%,transparent 60%)',
+              backgroundSize: '200% 100%',
+              animation: `shimmerSweep 1.6s ease-in-out ${i * 0.1}s infinite`,
+            }} />
+          </div>
+          <div style={{ height: 10, borderRadius: 4, background: '#f0f0f5', width: '80%', marginTop: 6, backgroundSize: '200% 100%', animation: 'shimmerSweep 1.6s ease-in-out infinite' }} />
+        </div>
+      ))}
+    </div>
+    <div style={{ height: 1, background: '#f3f4f6', margin: '0 16px' }} />
+  </div>
+);
+
+/* ─── Main component ──────────────────────────────────────────── */
+export const HotCarousel = () => {
+  const router = useRouter();
+  const [wallpapers, setWallpapers] = useState<Wallpaper[]>([]);
+  const [loading,    setLoading]    = useState(true);
+
+  useEffect(() => {
+    fetchHotWallpapers(10)
+      .then(setWallpapers)
+      .catch(e => console.error('Failed to load hot wallpapers:', e))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <><style>{CSS}</style><HotCarouselShimmer /></>;
+  if (!wallpapers.length) return null;
+
+  return (
+    <>
+      <style>{CSS}</style>
+      <div style={{ background: '#fff', paddingBottom: 4 }}>
+
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px 10px' }}>
+          <span style={{ fontSize: 15, fontWeight: 800, color: '#0a0a0a', letterSpacing: '-0.3px', display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ display: 'inline-block', animation: 'hotPulse 2s ease-in-out infinite' }}>🔥</span>
+            Hot Right Now
+          </span>
+          <button
+            onClick={() => { startLoader(); router.push('/hot'); }}
+            style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0' }}
+          >
+            See all →
+          </button>
+        </div>
+
+        {/* Scroll track */}
+        <div className="hot-scroll-track">
+          {wallpapers.map((wp, i) => {
+            const rank      = i + 1;
+            const rankStyle = getRankStyle(rank);
+            const imgSrc    = wp.thumbnail || wp.url;
+
+            return (
+              <div
+                key={wp.id}
+                style={{ flexShrink: 0, width: 110, scrollSnapAlign: 'start', cursor: 'pointer' }}
+                onClick={() => { startLoader(); router.push(`/details/${wp.id}`); }}
+              >
+                <div
+                  className="hot-card-img-wrap"
+                  style={{
+                    position: 'relative', width: 110, height: 175,
+                    borderRadius: 14, overflow: 'hidden',
+                    background: HOT_COLORS[i % HOT_COLORS.length],
+                  }}
+                >
+                  <img
+                    src={imgSrc}
+                    alt={wp.title}
+                    draggable={false}
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }}
+                  />
+                  {/* Gradient overlay */}
+                  <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(to top,rgba(0,0,0,.6) 0%,transparent 100%)', zIndex: 2 }} />
+                  {/* Rank badge */}
+                  <div style={{
+                    position: 'absolute', top: 7, left: 7, zIndex: 3,
+                    fontSize: 10, fontWeight: 800, color: '#fff',
+                    backdropFilter: 'blur(8px)',
+                    border: `1px solid ${rankStyle.borderColor}`,
+                    borderRadius: 7, padding: '3px 7px',
+                    background: rankStyle.background,
+                    letterSpacing: '0.02em',
+                  }}>
+                    #{rank}
+                  </div>
+                </div>
+
+                {/* Title */}
+                <p style={{
+                  fontSize: 10.5, fontWeight: 600, color: '#0a0a0a',
+                  margin: '6px 2px 0', whiteSpace: 'nowrap',
+                  overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.3,
+                }}>
+                  {wp.title}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Divider */}
+        <div style={{ height: 1, background: '#f3f4f6', margin: '0 16px' }} />
+      </div>
+    </>
+  );
+};
