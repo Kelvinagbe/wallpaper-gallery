@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -21,11 +20,11 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
   const [page,          setPage]          = useState(feedCache.page);
   const [filter,        setFilter]        = useState<Filter>(feedCache.filter);
   const [isInitialLoad, setIsInitialLoad] = useState(false);
+  const [sidebarOpen,   setSidebarOpen]   = useState(false);
 
   const loadingMoreRef   = useRef(false);
   const filterChangedRef = useRef(false);
 
-  // Restore scroll position on back-navigation
   useEffect(() => {
     if (feedCache.populated) {
       requestAnimationFrame(() => requestAnimationFrame(() =>
@@ -39,7 +38,6 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Filter change
   useEffect(() => {
     if (!filterChangedRef.current) { filterChangedRef.current = true; return; }
     let cancelled = false;
@@ -65,7 +63,7 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
     if (!hasMore || loadingMoreRef.current) return;
     loadingMoreRef.current = true;
     try {
-      const data = await fetchWallpapers(page, ITEMS_PER_PAGE, filter);
+      const data  = await fetchWallpapers(page, ITEMS_PER_PAGE, filter);
       const seen  = new Set(wallpapers.map(w => w.id));
       const fresh = data.wallpapers.filter((w: Wallpaper) => !seen.has(w.id));
       setWallpapers(prev => {
@@ -88,7 +86,6 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
     setFilter(newFilter);
   }, [filter]);
 
-  // Save scroll on page hide
   useEffect(() => {
     const save = () => { feedCache.scrollY = window.scrollY; };
     window.addEventListener('pagehide', save);
@@ -98,20 +95,11 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
   return (
     <div style={{ minHeight: '100vh', background: '#fff', color: '#0a0a0a' }}>
       <GlobalStyles />
-
-      {/* Navigation — self-contained, no props needed */}
-      <Navigation />
-
-      {/* Sidebar offset on desktop */}
-      <div style={{ paddingLeft: 0 }} className="lg:pl-[220px]">
-        <Header filter={filter} setFilter={handleFilterChange} />
-
-        <main style={{ maxWidth: 1400, margin: '0 auto', paddingBottom: 100 }}>
-
-          {/* Hot carousel — only on 'all' feed */}
+      <Navigation isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <div className="sidebar-offset">
+        <Header filter={filter} setFilter={handleFilterChange} onMenuOpen={() => setSidebarOpen(true)} />
+        <main style={{ maxWidth: 1400, margin: '0 auto', paddingBottom: 40 }}>
           {filter === 'all' && <HotCarousel />}
-
-          {/* Grid */}
           <div style={{ padding: '8px 16px 0' }}>
             <WallpaperGrid
               wallpapers={wallpapers}
@@ -122,7 +110,6 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
           </div>
         </main>
       </div>
-
       <MonetizationInfoModal />
     </div>
   );
