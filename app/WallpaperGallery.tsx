@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { fetchWallpapers } from '@/lib/stores/wallpaperStore';
 import { feedCache } from '@/lib/feedCache';
 import { Header } from './components/Header';
-import { Navigation } from './components/Navigation';
 import { WallpaperGrid } from './components/WallpaperGrid';
 import { GlobalStyles } from './components/GlobalStyles';
 import { HotCarousel } from '@/app/components/HotCarousel';
@@ -20,7 +19,6 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
   const [page,          setPage]          = useState(feedCache.page);
   const [filter,        setFilter]        = useState<Filter>(feedCache.filter);
   const [isInitialLoad, setIsInitialLoad] = useState(false);
-  const [sidebarOpen,   setSidebarOpen]   = useState(false);
 
   const loadingMoreRef   = useRef(false);
   const filterChangedRef = useRef(false);
@@ -95,21 +93,18 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
   return (
     <div style={{ minHeight: '100vh', background: '#fff', color: '#0a0a0a' }}>
       <GlobalStyles />
-      <Navigation isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-      <div className="sidebar-offset">
-        <Header filter={filter} setFilter={handleFilterChange} onMenuOpen={() => setSidebarOpen(true)} />
-        <main style={{ maxWidth: 1400, margin: '0 auto', paddingBottom: 40 }}>
-          {filter === 'all' && <HotCarousel />}
-          <div style={{ padding: '8px 16px 0' }}>
-            <WallpaperGrid
-              wallpapers={wallpapers}
-              isLoading={isInitialLoad}
-              onLoadMore={handleLoadMore}
-              hasMore={hasMore}
-            />
-          </div>
-        </main>
-      </div>
+      <Header filter={filter} setFilter={handleFilterChange} onMenuOpen={() => {}} />
+      <main style={{ maxWidth: 1400, margin: '0 auto', paddingBottom: 40 }}>
+        {filter === 'all' && <HotCarousel />}
+        <div style={{ padding: '8px 16px 0' }}>
+          <WallpaperGrid
+            wallpapers={wallpapers}
+            isLoading={isInitialLoad}
+            onLoadMore={handleLoadMore}
+            hasMore={hasMore}
+          />
+        </div>
+      </main>
       <MonetizationInfoModal />
     </div>
   );
