@@ -21,7 +21,7 @@ const HOT_COLORS = [
 ];
 
 const HOT_CACHE_KEY = 'hot_wallpapers';
-const HOT_CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
+const HOT_CACHE_TTL = 6 * 60 * 60 * 1000;
 
 const getHotCache = (): Wallpaper[] | null => {
   try {
@@ -117,6 +117,10 @@ export const HotCarousel = () => {
     if (cached) {
       setWallpapers(cached);
       setLoading(false);
+      currentIndexRef.current = 0;
+      requestAnimationFrame(() => {
+        if (trackRef.current) trackRef.current.scrollLeft = 0;
+      });
       return;
     }
 
@@ -162,7 +166,7 @@ export const HotCarousel = () => {
 
   // ── Pause / resume on interaction ─────────────────────────────
   const handleInteractionStart = useCallback(() => { isPausedRef.current = true; }, []);
-  const handleInteractionEnd   = useCallback(() => {
+  const handleInteractionEnd = useCallback(() => {
     setTimeout(() => {
       isPausedRef.current = false;
       const track = trackRef.current;
