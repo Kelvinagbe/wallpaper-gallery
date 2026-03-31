@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -94,7 +95,7 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
         <Header filter={filter} setFilter={handleFilterChange} onMenuOpen={() => setSidebarOpen(true)} />
         <main className="max-w-7xl mx-auto pb-8">
           {filter === 'all' && <HotCarousel />}
-          <div className="px-4 py-6">
+          <div className="px-4 pt-2 pb-6">  {/* ← was py-6 */}
             <WallpaperGrid
               wallpapers={wallpapers}
               isLoading={isInitialLoad}
