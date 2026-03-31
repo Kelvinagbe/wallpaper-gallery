@@ -28,7 +28,7 @@ export const LoginScreen = ({ onViewChange, redirectTo = '/' }: Props) => {
   const [showPass,   setShowPass]   = useState(false);
   const [isLoading,  setIsLoading]  = useState(false);
   const [error,      setError]      = useState('');
-  const [showToast,  setShowToast]  = useState(false);
+  const [success,    setSuccess]    = useState(false);
   const [focusField, setFocusField] = useState('');
   const supabase = createClient();
 
@@ -38,7 +38,7 @@ export const LoginScreen = ({ onViewChange, redirectTo = '/' }: Props) => {
     try {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
-      setShowToast(true);
+      setSuccess(true);
       setTimeout(() => { window.location.href = redirectTo; }, 1600);
     } catch (err: any) {
       setError(err.message || 'Invalid credentials');
@@ -53,29 +53,7 @@ export const LoginScreen = ({ onViewChange, redirectTo = '/' }: Props) => {
 
   return (
     <>
-      <style>{`
-        @keyframes spin { to { transform: rotate(360deg) } }
-        @keyframes toastIn { from { opacity: 0; transform: translateY(16px) } to { opacity: 1; transform: translateY(0) } }
-      `}</style>
-
-      {/* Toast */}
-      {showToast && (
-        <div style={{
-          position: 'fixed', bottom: 32, left: '50%', transform: 'translateX(-50%)',
-          zIndex: 9999,
-          background: '#0a0a0a', color: '#fff',
-          padding: '12px 20px', borderRadius: 14,
-          display: 'flex', alignItems: 'center', gap: 9,
-          fontSize: 13, fontWeight: 600, fontFamily: F,
-          boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
-          animation: 'toastIn .3s cubic-bezier(.16,1,.3,1)',
-          whiteSpace: 'nowrap',
-        }}>
-          <CheckCircle size={16} color="#4ade80" />
-          Signed in! Redirecting…
-        </div>
-      )}
-
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       <div style={{ display: 'flex', flexDirection: 'column', fontFamily: F }}>
 
         {/* Title */}
@@ -84,10 +62,19 @@ export const LoginScreen = ({ onViewChange, redirectTo = '/' }: Props) => {
           <p style={{ fontSize: 13, color: 'rgba(0,0,0,0.4)', margin: 0 }}>Welcome back to WALLS</p>
         </div>
 
-        {/* Error */}
-        {error && (
-          <div style={{ padding: '10px 14px', marginBottom: 14, background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10, fontSize: 13, color: '#dc2626', fontWeight: 500 }}>
-            {error}
+        {/* Feedback banner — error or success */}
+        {(error || success) && (
+          <div style={{
+            padding: '10px 14px', marginBottom: 14,
+            background: success ? 'rgba(22,163,74,0.06)' : 'rgba(239,68,68,0.06)',
+            border: `1px solid ${success ? 'rgba(22,163,74,0.25)' : 'rgba(239,68,68,0.2)'}`,
+            borderRadius: 10,
+            fontSize: 13, fontWeight: 500,
+            color: success ? '#16a34a' : '#dc2626',
+            display: 'flex', alignItems: 'center', gap: 7,
+          }}>
+            {success && <CheckCircle size={14} />}
+            {success ? 'Signed in! Redirecting…' : error}
           </div>
         )}
 
@@ -127,9 +114,12 @@ export const LoginScreen = ({ onViewChange, redirectTo = '/' }: Props) => {
             </div>
           </div>
 
-          <button type="submit" disabled={isLoading || showToast}
-            style={{ width: '100%', height: 46, borderRadius: 10, border: 'none', background: '#0a0a0a', color: '#fff', fontSize: 14, fontWeight: 700, fontFamily: F, cursor: isLoading || showToast ? 'not-allowed' : 'pointer', opacity: isLoading || showToast ? 0.6 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 4 }}>
-            {isLoading ? <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />Signing in...</> : 'Sign in'}
+          <button type="submit" disabled={isLoading || success}
+            style={{ width: '100%', height: 46, borderRadius: 10, border: 'none', background: success ? '#16a34a' : '#0a0a0a', color: '#fff', fontSize: 14, fontWeight: 700, fontFamily: F, cursor: isLoading || success ? 'not-allowed' : 'pointer', opacity: isLoading ? 0.6 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 4, transition: 'background .3s' }}>
+            {isLoading
+              ? <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />Signing in...</>
+              : success ? <><CheckCircle size={16} />Signed in!</>
+              : 'Sign in'}
           </button>
         </form>
 
