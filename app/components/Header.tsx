@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { Mail, UserPlus, ArrowRight, X, Check, Search, Menu, SlidersHorizontal } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { Mail, UserPlus, ArrowRight, X, Check, Search, SlidersHorizontal, Home, Bell, User, Menu } from 'lucide-react';
+import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/app/components/AuthProvider';
 import { useUploadModal } from '@/app/components/UploadModalProvider';
 import type { Filter } from '../types';
@@ -10,30 +10,33 @@ import type { Filter } from '../types';
 interface HeaderProps {
   filter: Filter;
   setFilter: (filter: Filter) => void;
-  onMenuOpen: () => void;
+  onMenuOpen?: () => void;
 }
 
 const FILTERS: { value: Filter; label: string }[] = [
-  { value: 'all',      label: 'All'        },
-  { value: 'trending', label: 'Trending'   },
-  { value: 'recent',   label: 'Recent'     },
-  { value: 'popular',  label: 'Popular'    },
+  { value: 'all',     label: 'All'     },
+  { value: 'recent',  label: 'Recent'  },
+  { value: 'popular', label: 'Popular' },
 ];
 
-// ── Tokens ───────────────────────────────────────────────────────
+const NAV = [
+  { href: '/',        icon: Home,   label: 'Home'    },
+  { href: '/search',  icon: Search, label: 'Search'  },
+  { href: '/alerts',  icon: Bell,   label: 'Alerts'  },
+  { href: '/profile', icon: User,   label: 'Profile' },
+];
+
 const F = "'Outfit', sans-serif";
 
-// ── Shared styles ────────────────────────────────────────────────
 const S: Record<string, React.CSSProperties> = {
-  row:      { display: 'flex', alignItems: 'center' },
-  iconBtn:  { width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, background: 'transparent', border: 'none', borderRadius: 8, cursor: 'pointer', transition: 'background .15s' },
-  authBtn:  { width: '100%', padding: '13px 18px', borderRadius: 10, cursor: 'pointer', fontFamily: F, fontWeight: 600, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', transition: 'all .2s' },
-  backdrop: { position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 },
-  modal:    { width: '100%', maxWidth: 370, background: '#fff', borderRadius: 18, overflow: 'hidden', boxShadow: '0 32px 80px rgba(0,0,0,0.35)' },
-  closeBtn: { width: 28, height: 28, borderRadius: '50%', background: 'rgba(0,0,0,0.06)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background .15s' },
+  row:     { display: 'flex', alignItems: 'center' },
+  iconBtn: { width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, background: 'transparent', border: 'none', borderRadius: 8, cursor: 'pointer', transition: 'background .15s' },
+  backdrop:{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 },
+  modal:   { width: '100%', maxWidth: 370, background: '#fff', borderRadius: 18, overflow: 'hidden', boxShadow: '0 32px 80px rgba(0,0,0,0.35)' },
+  authBtn: { width: '100%', padding: '13px 18px', borderRadius: 10, cursor: 'pointer', fontFamily: F, fontWeight: 600, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', transition: 'all .2s' },
+  closeBtn:{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(0,0,0,0.06)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' },
 };
 
-// ── Animations + tab pills + sheet rows ──────────────────────────
 const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap');
 
@@ -43,52 +46,56 @@ const CSS = `
   @keyframes mOut  { from{opacity:1;transform:scale(1)} to{opacity:0;transform:scale(.97)} }
   @keyframes shIn  { from{transform:translateY(100%)} to{transform:translateY(0)} }
   @keyframes shOut { from{transform:translateY(0)} to{transform:translateY(100%)} }
+  @keyframes sbIn  { from{transform:translateX(-100%)} to{transform:translateX(0)} }
+  @keyframes sbOut { from{transform:translateX(0)} to{transform:translateX(-100%)} }
 
-  .bd-in{animation:bdIn .2s ease forwards}   .bd-out{animation:bdOut .2s ease forwards}
-  .m-in{animation:mIn .28s cubic-bezier(.16,1,.3,1) forwards}  .m-out{animation:mOut .2s ease forwards}
+  .bd-in{animation:bdIn .2s ease forwards}    .bd-out{animation:bdOut .2s ease forwards}
+  .m-in{animation:mIn .28s cubic-bezier(.16,1,.3,1) forwards} .m-out{animation:mOut .2s ease forwards}
   .sh-in{animation:shIn .3s cubic-bezier(.16,1,.3,1) forwards} .sh-out{animation:shOut .24s ease forwards}
+  .sb-in{animation:sbIn .28s cubic-bezier(.16,1,.3,1) forwards} .sb-out{animation:sbOut .22s ease forwards}
 
-  /* ── Search bar ── */
   .wl-search-wrap { flex:1; max-width:560px; position:relative; }
   .wl-search-input {
-    width:100%; height:40px;
-    padding:0 16px 0 42px;
-    background:rgba(255,255,255,0.07);
-    border:1px solid rgba(255,255,255,0.1);
-    border-radius:10px;
-    color:#fff; font-family:'Outfit',sans-serif; font-size:13px; font-weight:400;
-    outline:none; transition:background .2s, border-color .2s;
+    width:100%; height:40px; padding:0 16px 0 42px;
+    background:rgba(255,255,255,0.07); border:1px solid rgba(255,255,255,0.1);
+    border-radius:10px; color:#fff; font-family:'Outfit',sans-serif;
+    font-size:13px; outline:none; transition:background .2s,border-color .2s;
   }
   .wl-search-input::placeholder { color:rgba(255,255,255,0.32); }
   .wl-search-input:focus { background:rgba(255,255,255,0.11); border-color:rgba(255,255,255,0.28); }
   .wl-search-icon { position:absolute; left:13px; top:50%; transform:translateY(-50%); pointer-events:none; opacity:.4; }
 
-  /* ── Filter pills row (Pexels-style) ── */
   .wl-pills {
-    display:flex; align-items:center; gap:6px;
-    padding:0 20px; height:38px;
+    display:flex; align-items:center; gap:6px; padding:0 20px; height:38px;
     overflow-x:auto; scrollbar-width:none;
     border-top:1px solid rgba(255,255,255,0.05);
   }
   .wl-pills::-webkit-scrollbar { display:none; }
   .wl-pill {
-    flex-shrink:0; padding:4px 14px;
-    background:transparent;
-    border:1px solid rgba(255,255,255,0.1);
-    border-radius:100px;
+    flex-shrink:0; padding:4px 14px; background:transparent;
+    border:1px solid rgba(255,255,255,0.1); border-radius:100px;
     font-family:'Outfit',sans-serif; font-size:12px; font-weight:500;
-    color:rgba(255,255,255,0.42); cursor:pointer;
-    transition:all .15s; white-space:nowrap;
+    color:rgba(255,255,255,0.42); cursor:pointer; transition:all .15s; white-space:nowrap;
   }
   .wl-pill:hover { color:rgba(255,255,255,.75); border-color:rgba(255,255,255,.28); }
   .wl-pill.active { background:#fff; color:#000; border-color:#fff; font-weight:600; }
 
-  /* ── Sheet rows ── */
   .sheet-row { width:100%; padding:15px 22px; display:flex; align-items:center; justify-content:space-between; background:transparent; border:none; border-top:1px solid rgba(0,0,0,.05); font-family:'Outfit',sans-serif; font-size:15px; color:rgba(0,0,0,.55); cursor:pointer; transition:background .12s; }
   .sheet-row.active { font-weight:600; color:#000; }
   .sheet-row:active { background:rgba(0,0,0,.03); }
 
-  /* ── Responsive ── */
+  /* Sidebar nav item */
+  .sb-nav-item {
+    display:flex; align-items:center; gap:12px; width:100%;
+    padding:11px 14px; border-radius:10px; border:none;
+    background:transparent; font-family:'Outfit',sans-serif;
+    font-size:14px; font-weight:500; color:rgba(0,0,0,0.45);
+    cursor:pointer; text-align:left; transition:all .15s;
+  }
+  .sb-nav-item:hover { background:rgba(0,0,0,0.04); color:#000; }
+  .sb-nav-item.active { background:#0a0a0a; color:#fff; font-weight:600; }
+  .sb-nav-item.active svg { opacity:1; }
+
   @media(min-width:768px) { .mob{display:none!important} }
   @media(max-width:767px) { .desk{display:none!important} }
 `;
@@ -96,84 +103,86 @@ const CSS = `
 const hov = (el: EventTarget, on: Partial<CSSStyleDeclaration>, off: Partial<CSSStyleDeclaration>, enter: boolean) =>
   Object.assign((el as HTMLElement).style, enter ? on : off);
 
+const Logo = ({ dark = false }: { dark?: boolean }) => (
+  <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+      <rect width="9" height="9" rx="2" fill={dark ? '#000' : '#fff'} />
+      <rect x="11" width="9" height="9" rx="2" fill={dark ? '#000' : '#fff'} />
+      <rect y="11" width="9" height="9" rx="2" fill={dark ? '#000' : '#fff'} />
+      <rect x="11" y="11" width="9" height="9" rx="2" fill={dark ? '#000' : '#fff'} opacity="0.3" />
+    </svg>
+    <span style={{ fontFamily: F, fontWeight: 800, fontSize: 16, letterSpacing: '-0.3px', color: dark ? '#000' : '#fff' }}>WALLS</span>
+  </div>
+);
+
 export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
-  const router = useRouter();
+  const router   = useRouter();
+  const pathname = usePathname();
   const { user } = useAuth();
   const { open: openUpload } = useUploadModal();
-  const [showAuth,     setShowAuth]     = useState(false);
-  const [closingAuth,  setClosingAuth]  = useState(false);
-  const [showSheet,    setShowSheet]    = useState(false);
-  const [closingSheet, setClosingSheet] = useState(false);
-  const [searchVal,    setSearchVal]    = useState('');
+
+  const [showAuth,      setShowAuth]      = useState(false);
+  const [closingAuth,   setClosingAuth]   = useState(false);
+  const [showSheet,     setShowSheet]     = useState(false);
+  const [closingSheet,  setClosingSheet]  = useState(false);
+  const [showSidebar,   setShowSidebar]   = useState(false);
+  const [closingSidebar,setClosingSidebar]= useState(false);
+  const [searchVal,     setSearchVal]     = useState('');
 
   useEffect(() => {
-    document.body.style.overflow = showAuth || showSheet ? 'hidden' : '';
+    document.body.style.overflow = showAuth || showSheet || showSidebar ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
-  }, [showAuth, showSheet]);
+  }, [showAuth, showSheet, showSidebar]);
 
-  const closeAuth  = (cb?: () => void) => { setClosingAuth(true);  setTimeout(() => { setShowAuth(false);  setClosingAuth(false);  cb?.(); }, 220); };
-  const closeSheet = (cb?: () => void) => { setClosingSheet(true); setTimeout(() => { setShowSheet(false); setClosingSheet(false); cb?.(); }, 260); };
-  const handleNav  = (path: string) => closeAuth(() => router.push(path));
+  const closeAuth    = (cb?: () => void) => { setClosingAuth(true);    setTimeout(() => { setShowAuth(false);    setClosingAuth(false);    cb?.(); }, 220); };
+  const closeSheet   = (cb?: () => void) => { setClosingSheet(true);   setTimeout(() => { setShowSheet(false);   setClosingSheet(false);   cb?.(); }, 260); };
+  const closeSidebar = (cb?: () => void) => { setClosingSidebar(true); setTimeout(() => { setShowSidebar(false); setClosingSidebar(false); cb?.(); }, 240); };
+
+  const handleNav = (path: string) => { closeAuth(() => router.push(path)); };
 
   return (
     <>
       <style>{CSS}</style>
 
+      {/* ── HEADER ── */}
       <header style={{ position: 'sticky', top: 0, zIndex: 50, background: 'rgba(10,10,10,0.9)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
 
-        {/* ── Top row: sidebar · logo · search · actions ── */}
-        {/* Inspired by Unsplash: logo left, search center-dominant, actions right */}
+        {/* Top row */}
         <div style={{ maxWidth: 1300, margin: '0 auto', padding: '0 16px', height: 54, ...S.row, gap: 10 }}>
 
-          {/* Sidebar toggle — always leftmost */}
-          <button onClick={onMenuOpen} style={S.iconBtn} aria-label="Open sidebar"
+          {/* Menu toggle */}
+          <button onClick={() => { onMenuOpen?.(); setShowSidebar(true); }} style={S.iconBtn} aria-label="Open menu"
             onMouseEnter={e => hov(e.currentTarget, { background: 'rgba(255,255,255,.07)' }, {}, true)}
             onMouseLeave={e => hov(e.currentTarget, {}, { background: 'transparent' }, false)}>
             <Menu size={19} color="rgba(255,255,255,0.65)" />
           </button>
 
-          {/* Logo + favicon — same unit, left of search (Unsplash pattern) */}
-          <button onClick={() => router.push('/')} style={{ ...S.row, gap: 7, background: 'none', border: 'none', cursor: 'pointer', flexShrink: 0, padding: '0 2px' }}>
-            {/* Favicon: 4-grid SVG, white on dark */}
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
-              <rect width="9" height="9" rx="2" fill="white"/>
-              <rect x="11" y="0" width="9" height="9" rx="2" fill="white"/>
-              <rect x="0" y="11" width="9" height="9" rx="2" fill="white"/>
-              <rect x="11" y="11" width="9" height="9" rx="2" fill="white" opacity="0.3"/>
-            </svg>
-            <span style={{ fontFamily: F, fontWeight: 800, fontSize: 16, letterSpacing: '-0.3px', color: '#fff' }}>WALLS</span>
+          {/* Logo */}
+          <button onClick={() => router.push('/')} style={{ background: 'none', border: 'none', cursor: 'pointer', flexShrink: 0, padding: '0 2px' }}>
+            <Logo />
           </button>
 
-          {/* Search — Unsplash/Pexels style: takes all remaining space */}
+          {/* Search — desktop */}
           <div className="wl-search-wrap desk">
             <Search size={14} color="#fff" className="wl-search-icon" />
-            <input
-              type="text"
-              className="wl-search-input"
-              placeholder="Search wallpapers, colors, moods…"
-              value={searchVal}
-              onChange={e => setSearchVal(e.target.value)}
-            />
+            <input className="wl-search-input" type="text" placeholder="Search wallpapers, colors, moods…"
+              value={searchVal} onChange={e => setSearchVal(e.target.value)} />
           </div>
 
           <div style={{ flex: 1 }} />
 
-          {/* Mobile: search icon + filter */}
+          {/* Mobile icons */}
           <div className="mob" style={{ ...S.row, gap: 6 }}>
-            <button style={S.iconBtn} aria-label="Search"
-              onMouseEnter={e => hov(e.currentTarget, { background: 'rgba(255,255,255,.07)' }, {}, true)}
-              onMouseLeave={e => hov(e.currentTarget, {}, { background: 'transparent' }, false)}>
+            <button style={S.iconBtn} aria-label="Search">
               <Search size={18} color="rgba(255,255,255,0.65)" />
             </button>
-            <button onClick={() => setShowSheet(true)} style={{ ...S.iconBtn, position: 'relative' }} aria-label="Filter"
-              onMouseEnter={e => hov(e.currentTarget, { background: 'rgba(255,255,255,.07)' }, {}, true)}
-              onMouseLeave={e => hov(e.currentTarget, {}, { background: 'transparent' }, false)}>
+            <button onClick={() => setShowSheet(true)} style={{ ...S.iconBtn, position: 'relative' }} aria-label="Filter">
               <SlidersHorizontal size={17} color="rgba(255,255,255,0.65)" strokeWidth={2} />
               {filter !== 'all' && <span style={{ position: 'absolute', top: 6, right: 6, width: 5, height: 5, borderRadius: '50%', background: '#fff', border: '1.5px solid #0a0a0a' }} />}
             </button>
           </div>
 
-          {/* Right actions — Pexels: ghost Upload + solid Sign in */}
+          {/* Actions */}
           <div style={{ ...S.row, gap: 8, flexShrink: 0 }}>
             {user ? (
               <button onClick={openUpload}
@@ -193,8 +202,7 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
           </div>
         </div>
 
-        {/* ── Pills row: Pexels-style category strip below main bar ── */}
-        {/* Desktop only — mobile uses sheet */}
+        {/* Filter pills — desktop */}
         <div className="wl-pills desk">
           {FILTERS.map(({ value, label }) => (
             <button key={value} className={`wl-pill${filter === value ? ' active' : ''}`} onClick={() => setFilter(value)}>
@@ -202,11 +210,67 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
             </button>
           ))}
         </div>
-
       </header>
 
+      {/* ── WHITE SIDEBAR ── */}
+      {(showSidebar || closingSidebar) && (
+        <>
+          {/* Backdrop */}
+          <div
+            className={closingSidebar ? 'bd-out' : 'bd-in'}
+            onClick={() => closeSidebar()}
+            style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
+          />
+
+          {/* Panel */}
+          <aside
+            className={closingSidebar ? 'sb-out' : 'sb-in'}
+            style={{ position: 'fixed', top: 0, left: 0, bottom: 0, width: 260, background: '#fff', zIndex: 100, display: 'flex', flexDirection: 'column', boxShadow: '4px 0 40px rgba(0,0,0,0.12)' }}>
+
+            {/* Sidebar header */}
+            <div style={{ padding: '18px 16px', borderBottom: '1px solid rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Logo dark />
+              <button onClick={() => closeSidebar()} style={{ ...S.closeBtn, background: 'rgba(0,0,0,0.05)' }}>
+                <X size={13} color="rgba(0,0,0,0.4)" />
+              </button>
+            </div>
+
+            {/* Nav links */}
+            <nav style={{ flex: 1, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <p style={{ fontSize: 10, fontWeight: 700, color: 'rgba(0,0,0,0.25)', letterSpacing: '.09em', textTransform: 'uppercase', margin: '4px 4px 8px 14px' }}>Navigate</p>
+              {NAV.map(({ href, icon: Icon, label }) => {
+                const active = pathname === href;
+                return (
+                  <button key={href} className={`sb-nav-item${active ? ' active' : ''}`}
+                    onClick={() => closeSidebar(() => router.push(href))}>
+                    <Icon size={16} strokeWidth={active ? 2.5 : 2} />
+                    {label}
+                  </button>
+                );
+              })}
+            </nav>
+
+            {/* Footer */}
+            <div style={{ padding: '14px 10px', borderTop: '1px solid rgba(0,0,0,0.06)' }}>
+              {user ? (
+                <button onClick={() => { closeSidebar(); openUpload(); }}
+                  style={{ width: '100%', padding: '12px 0', borderRadius: 10, border: 'none', background: '#0a0a0a', color: '#fff', fontFamily: F, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                  Upload Wallpaper
+                </button>
+              ) : (
+                <button onClick={() => { closeSidebar(() => setShowAuth(true)); }}
+                  style={{ width: '100%', padding: '12px 0', borderRadius: 10, border: 'none', background: '#0a0a0a', color: '#fff', fontFamily: F, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                  Sign in
+                </button>
+              )}
+              <p style={{ textAlign: 'center', fontSize: 11, color: 'rgba(0,0,0,0.2)', marginTop: 14, fontFamily: F }}>WALLS v1.0.0</p>
+            </div>
+          </aside>
+        </>
+      )}
+
       {/* ── MOBILE FILTER SHEET ── */}
-      {showSheet && (
+      {(showSheet || closingSheet) && (
         <div className={closingSheet ? 'bd-out' : 'bd-in'} onClick={() => closeSheet()}
           style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}>
           <div className={closingSheet ? 'sh-out' : 'sh-in'} onClick={e => e.stopPropagation()}
@@ -216,7 +280,8 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
             </div>
             <div style={{ padding: '8px 22px 10px', fontFamily: F, fontSize: 11, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'rgba(0,0,0,.28)' }}>Browse by</div>
             {FILTERS.map(({ value, label }) => (
-              <button key={value} className={`sheet-row${filter === value ? ' active' : ''}`} onClick={() => { setFilter(value); closeSheet(); }}>
+              <button key={value} className={`sheet-row${filter === value ? ' active' : ''}`}
+                onClick={() => { setFilter(value); closeSheet(); }}>
                 <span>{label}</span>
                 {filter === value && <Check size={15} strokeWidth={2.5} color="#000" />}
               </button>
@@ -230,33 +295,21 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
       )}
 
       {/* ── AUTH MODAL ── */}
-      {showAuth && (
+      {(showAuth || closingAuth) && (
         <div className={closingAuth ? 'bd-out' : 'bd-in'} onClick={() => closeAuth()} style={S.backdrop}>
           <div className={closingAuth ? 'm-out' : 'm-in'} onClick={e => e.stopPropagation()} style={S.modal}>
-
             <div style={{ padding: '28px 26px 30px' }}>
-              {/* Header row */}
-              <div style={{ ...S.row, justifyContent: 'space-between', marginBottom: 24 }}>
-                {/* Logo in modal — inverted (black bg) */}
-                <div style={{ ...S.row, gap: 7 }}>
-                  <svg width="22" height="22" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <rect width="9" height="9" rx="2" fill="#000"/>
-                    <rect x="11" y="0" width="9" height="9" rx="2" fill="#000"/>
-                    <rect x="0" y="11" width="9" height="9" rx="2" fill="#000"/>
-                    <rect x="11" y="11" width="9" height="9" rx="2" fill="#000" opacity="0.25"/>
-                  </svg>
-                  <span style={{ fontFamily: F, fontWeight: 800, fontSize: 16, letterSpacing: '-0.3px', color: '#000' }}>WALLS</span>
-                </div>
-                <button onClick={() => closeAuth()} style={S.closeBtn}
-                  onMouseEnter={e => hov(e.currentTarget, { background: 'rgba(0,0,0,.1)' }, {}, true)}
-                  onMouseLeave={e => hov(e.currentTarget, {}, { background: 'rgba(0,0,0,.06)' }, false)}>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+                <Logo dark />
+                <button onClick={() => closeAuth()} style={S.closeBtn}>
                   <X size={13} color="rgba(0,0,0,0.4)" />
                 </button>
               </div>
 
               <div style={{ marginBottom: 24 }}>
-                <div style={{ fontFamily: F, fontWeight: 800, fontSize: 22, color: '#0a0a0a', letterSpacing: '-0.4px', marginBottom: 5, lineHeight: 1.2 }}>Welcome back</div>
-                <p style={{ fontSize: 13, color: 'rgba(0,0,0,.4)', fontFamily: F, lineHeight: 1.6 }}>Sign in to save, upload and discover wallpapers.</p>
+                <p style={{ fontFamily: F, fontWeight: 800, fontSize: 22, color: '#0a0a0a', letterSpacing: '-0.4px', margin: '0 0 5px', lineHeight: 1.2 }}>Welcome back</p>
+                <p style={{ fontSize: 13, color: 'rgba(0,0,0,.4)', fontFamily: F, lineHeight: 1.6, margin: 0 }}>Sign in to save, upload and discover wallpapers.</p>
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
@@ -268,7 +321,7 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
                     style={{ ...S.authBtn, background: primary ? '#000' : 'transparent', color: primary ? '#fff' : '#000', border: primary ? 'none' : '1.5px solid rgba(0,0,0,.12)' }}
                     onMouseEnter={e => hov(e.currentTarget, primary ? { background: '#222' } : { borderColor: 'rgba(0,0,0,.3)', background: 'rgba(0,0,0,.03)' }, {}, true)}
                     onMouseLeave={e => hov(e.currentTarget, {}, primary ? { background: '#000' } : { borderColor: 'rgba(0,0,0,.12)', background: 'transparent' }, false)}>
-                    <div style={{ ...S.row, gap: 10 }}><Icon size={15} strokeWidth={2} /><span>{label}</span></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Icon size={15} strokeWidth={2} /><span>{label}</span></div>
                     <ArrowRight size={14} strokeWidth={2} style={{ opacity: 0.4 }} />
                   </button>
                 ))}
