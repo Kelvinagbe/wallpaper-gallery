@@ -21,11 +21,11 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
   const [page,          setPage]          = useState(feedCache.page);
   const [filter,        setFilter]        = useState<Filter>(feedCache.filter);
   const [isInitialLoad, setIsInitialLoad] = useState(false);
-  const [sidebarOpen,   setSidebarOpen]   = useState(false);
 
   const loadingMoreRef   = useRef(false);
   const filterChangedRef = useRef(false);
 
+  // Restore scroll position on back-navigation
   useEffect(() => {
     if (feedCache.populated) {
       requestAnimationFrame(() => requestAnimationFrame(() =>
@@ -33,9 +33,13 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
       ));
       return;
     }
-    Object.assign(feedCache, { wallpapers: initialWallpapers, page: 1, hasMore: initialHasMore, filter, populated: true });
+    Object.assign(feedCache, {
+      wallpapers: initialWallpapers, page: 1,
+      hasMore: initialHasMore, filter, populated: true,
+    });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Filter change
   useEffect(() => {
     if (!filterChangedRef.current) { filterChangedRef.current = true; return; }
     let cancelled = false;
@@ -47,7 +51,10 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
         setWallpapers(data.wallpapers);
         setHasMore(data.hasMore);
         setPage(1);
-        Object.assign(feedCache, { wallpapers: data.wallpapers, page: 1, hasMore: data.hasMore, filter, populated: true });
+        Object.assign(feedCache, {
+          wallpapers: data.wallpapers, page: 1,
+          hasMore: data.hasMore, filter, populated: true,
+        });
       })
       .catch(e => console.error('Filter change failed:', e))
       .finally(() => { if (!cancelled) setIsInitialLoad(false); });
@@ -59,7 +66,7 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
     loadingMoreRef.current = true;
     try {
       const data = await fetchWallpapers(page, ITEMS_PER_PAGE, filter);
-      const seen = new Set(wallpapers.map(w => w.id));
+      const seen  = new Set(wallpapers.map(w => w.id));
       const fresh = data.wallpapers.filter((w: Wallpaper) => !seen.has(w.id));
       setWallpapers(prev => {
         const next = [...prev, ...fresh];
@@ -81,6 +88,7 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
     setFilter(newFilter);
   }, [filter]);
 
+  // Save scroll on page hide
   useEffect(() => {
     const save = () => { feedCache.scrollY = window.scrollY; };
     window.addEventListener('pagehide', save);
@@ -88,14 +96,23 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
   }, []);
 
   return (
-    <div className="min-h-screen bg-white text-gray-900">
+    <div style={{ minHeight: '100vh', background: '#fff', color: '#0a0a0a' }}>
       <GlobalStyles />
-      <Navigation isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-      <div className="sidebar-offset">
-        <Header filter={filter} setFilter={handleFilterChange} onMenuOpen={() => setSidebarOpen(true)} />
-        <main className="max-w-7xl mx-auto pb-8">
+
+      {/* Navigation — self-contained, no props needed */}
+      <Navigation />
+
+      {/* Sidebar offset on desktop */}
+      <div style={{ paddingLeft: 0 }} className="lg:pl-[220px]">
+        <Header filter={filter} setFilter={handleFilterChange} />
+
+        <main style={{ maxWidth: 1400, margin: '0 auto', paddingBottom: 100 }}>
+
+          {/* Hot carousel — only on 'all' feed */}
           {filter === 'all' && <HotCarousel />}
-          <div className="px-4 pt-2 pb-6">  {/* ← was py-6 */}
+
+          {/* Grid */}
+          <div style={{ padding: '8px 16px 0' }}>
             <WallpaperGrid
               wallpapers={wallpapers}
               isLoading={isInitialLoad}
@@ -105,6 +122,7 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
           </div>
         </main>
       </div>
+
       <MonetizationInfoModal />
     </div>
   );
