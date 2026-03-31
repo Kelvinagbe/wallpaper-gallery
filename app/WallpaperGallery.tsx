@@ -5,7 +5,7 @@ import { fetchWallpapers } from '@/lib/stores/wallpaperStore';
 import { feedCache } from '@/lib/feedCache';
 import { Header } from './components/Header';
 import { WallpaperGrid } from './components/WallpaperGrid';
-import { GlobalStyles } from './components/GlobalStyles';
+import { GlobalStyles } from './components/GlobalStyles'; 
 import { HotCarousel } from '@/app/components/HotCarousel';
 import { MonetizationInfoModal } from '@/app/components/MonetizationInfoModal';
 import type { Wallpaper, Filter } from './types';
