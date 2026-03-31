@@ -46,11 +46,11 @@ export const Navigation = ({ isOpen = false, onClose = () => {} }: NavigationPro
   return (
     <>
       <style>{`
-        @keyframes sheetIn  { from { transform: translateY(100%); } to { transform: translateY(0); } }
-        @keyframes sheetOut { from { transform: translateY(0); }    to { transform: translateY(100%); } }
-        @keyframes bdIn     { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes bdOut    { from { opacity: 1; } to { opacity: 0; } }
-        @keyframes itemIn   { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes drawerIn  { from { transform: translateX(100%); } to { transform: translateX(0); } }
+        @keyframes drawerOut { from { transform: translateX(0); }    to { transform: translateX(100%); } }
+        @keyframes bdIn      { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes bdOut     { from { opacity: 1; } to { opacity: 0; } }
+        @keyframes itemIn    { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: translateX(0); } }
         .nav-item-1 { animation: itemIn .28s cubic-bezier(.16,1,.3,1) .06s forwards; }
         .nav-item-2 { animation: itemIn .28s cubic-bezier(.16,1,.3,1) .10s forwards; }
         .nav-item-3 { animation: itemIn .28s cubic-bezier(.16,1,.3,1) .14s forwards; }
@@ -141,7 +141,7 @@ export const Navigation = ({ isOpen = false, onClose = () => {} }: NavigationPro
         </div>
       </aside>
 
-      {/* ── MOBILE BOTTOM SHEET ── */}
+      {/* ── MOBILE SIDE DRAWER ── */}
       {mounted && (
         <>
           {/* Backdrop */}
@@ -156,26 +156,26 @@ export const Navigation = ({ isOpen = false, onClose = () => {} }: NavigationPro
             }}
           />
 
-          {/* Sheet */}
+          {/* Drawer */}
           <div style={{
-            position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 60,
+            position: 'fixed', top: 0, right: 0, bottom: 0, zIndex: 60,
+            width: 'min(80vw, 300px)',
             background: '#fff',
-            borderRadius: '24px 24px 0 0',
+            borderRadius: '20px 0 0 20px',
+            display: 'flex', flexDirection: 'column',
             paddingBottom: 'max(20px, env(safe-area-inset-bottom))',
-            boxShadow: '0 -4px 40px rgba(0,0,0,0.1)',
-            animation: `${closing ? 'sheetOut' : 'sheetIn'} ${closing ? CLOSE_MS : 320}ms ${closing ? 'cubic-bezier(.4,0,1,1)' : 'cubic-bezier(.16,1,.3,1)'} forwards`,
+            paddingTop: 'env(safe-area-inset-top)',
+            boxShadow: '-4px 0 40px rgba(0,0,0,0.1)',
+            animation: `${closing ? 'drawerOut' : 'drawerIn'} ${closing ? CLOSE_MS : 320}ms ${closing ? 'cubic-bezier(.4,0,1,1)' : 'cubic-bezier(.16,1,.3,1)'} forwards`,
             willChange: 'transform',
           }}>
 
-            {/* Drag handle */}
-            <div style={{ display: 'flex', justifyContent: 'center', padding: '14px 0 6px' }}>
-              <div style={{ width: 36, height: 4, borderRadius: 2, background: 'rgba(0,0,0,0.1)' }} />
-            </div>
-
-            {/* Sheet header */}
+            {/* Drawer header */}
             <div style={{
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '4px 20px 14px',
+              padding: '18px 20px 14px',
+              borderBottom: '1px solid rgba(0,0,0,0.07)',
+              flexShrink: 0,
             }}>
               <span style={{
                 fontFamily: "'Syne', sans-serif",
@@ -198,7 +198,7 @@ export const Navigation = ({ isOpen = false, onClose = () => {} }: NavigationPro
             </div>
 
             {/* Nav items */}
-            <nav style={{ padding: '0 12px 8px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <nav style={{ padding: '12px 12px 8px', display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}>
               {NAV.map(({ href, icon: Icon, label }, i) => {
                 const active = pathname === href;
                 return (
@@ -215,7 +215,7 @@ export const Navigation = ({ isOpen = false, onClose = () => {} }: NavigationPro
                       width: '100%', textAlign: 'left', cursor: 'pointer',
                       fontFamily: "'DM Sans', sans-serif",
                       fontSize: 15, fontWeight: active ? 600 : 400,
-                      opacity: 0, // reset — animation fills to 1
+                      opacity: 0,
                       transition: 'background 0.15s, color 0.15s',
                     }}
                   >
@@ -245,7 +245,7 @@ export const Navigation = ({ isOpen = false, onClose = () => {} }: NavigationPro
                   color: '#0a0a0a',
                   fontFamily: "'DM Sans', sans-serif",
                   fontSize: 14, fontWeight: 600, cursor: 'pointer',
-                  opacity: 0, // reset — animation fills to 1
+                  opacity: 0,
                   transition: 'all 0.18s',
                 }}
               >
