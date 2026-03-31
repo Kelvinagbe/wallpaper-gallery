@@ -1,8 +1,9 @@
+
 'use client';
 
 import { useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { Loader2, Eye, EyeOff, Check, X } from 'lucide-react';
+import { Loader2, Eye, EyeOff, Check, X, CheckCircle } from 'lucide-react';
 import type { AuthView } from './AuthUI';
 
 type Props = { onViewChange: (view: AuthView) => void; redirectTo?: string; };
@@ -30,6 +31,7 @@ export const SignupScreen = ({ onViewChange, redirectTo = '/' }: Props) => {
   const [showPass,   setShowPass]   = useState(false);
   const [isLoading,  setIsLoading]  = useState(false);
   const [error,      setError]      = useState('');
+  const [success,    setSuccess]    = useState(false);
   const [focusField, setFocusField] = useState('');
   const [usernameStatus, setUsernameStatus] = useState<'idle' | 'checking' | 'available' | 'taken' | 'invalid'>('idle');
   const [usernameTimer,  setUsernameTimer]  = useState<ReturnType<typeof setTimeout> | null>(null);
@@ -41,8 +43,8 @@ export const SignupScreen = ({ onViewChange, redirectTo = '/' }: Props) => {
     if (usernameTimer) clearTimeout(usernameTimer);
     const cleaned = val.toLowerCase().replace(/[^a-z0-9_]/g, '');
     setUsername(cleaned);
-    if (!cleaned)          { setUsernameStatus('idle');    return; }
-    if (cleaned.length < 3){ setUsernameStatus('invalid'); return; }
+    if (!cleaned)           { setUsernameStatus('idle');    return; }
+    if (cleaned.length < 3) { setUsernameStatus('invalid'); return; }
     setUsernameStatus('checking');
     const t = setTimeout(async () => {
       const { data } = await supabase.from('profiles').select('id').eq('username', cleaned).maybeSingle();
@@ -65,7 +67,8 @@ export const SignupScreen = ({ onViewChange, redirectTo = '/' }: Props) => {
         },
       });
       if (error) throw error;
-      window.location.href = redirectTo;
+      setSuccess(true);
+      setTimeout(() => { window.location.href = redirectTo; }, 1600);
     } catch (err: any) {
       setError(err.message || 'Signup failed');
     } finally { setIsLoading(false); }
@@ -91,7 +94,7 @@ export const SignupScreen = ({ onViewChange, redirectTo = '/' }: Props) => {
     return null;
   };
 
-  const canSubmit = !isLoading && usernameStatus !== 'taken' && usernameStatus !== 'invalid' && usernameStatus !== 'checking';
+  const canSubmit = !isLoading && !success && usernameStatus !== 'taken' && usernameStatus !== 'invalid' && usernameStatus !== 'checking';
 
   return (
     <>
@@ -104,10 +107,19 @@ export const SignupScreen = ({ onViewChange, redirectTo = '/' }: Props) => {
           <p style={{ fontSize: 13, color: 'rgba(0,0,0,0.4)', margin: 0 }}>Join and explore beautiful wallpapers</p>
         </div>
 
-        {/* Error */}
-        {error && (
-          <div style={{ padding: '10px 14px', marginBottom: 14, background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10, fontSize: 13, color: '#dc2626', fontWeight: 500 }}>
-            {error}
+        {/* Feedback banner */}
+        {(error || success) && (
+          <div style={{
+            padding: '10px 14px', marginBottom: 14,
+            background: success ? 'rgba(22,163,74,0.06)' : 'rgba(239,68,68,0.06)',
+            border: `1px solid ${success ? 'rgba(22,163,74,0.25)' : 'rgba(239,68,68,0.2)'}`,
+            borderRadius: 10,
+            fontSize: 13, fontWeight: 500,
+            color: success ? '#16a34a' : '#dc2626',
+            display: 'flex', alignItems: 'center', gap: 7,
+          }}>
+            {success && <CheckCircle size={14} />}
+            {success ? 'Account created! Redirecting…' : error}
           </div>
         )}
 
@@ -147,7 +159,7 @@ export const SignupScreen = ({ onViewChange, redirectTo = '/' }: Props) => {
                 {usernameIndicator()}
               </div>
             </div>
-            {usernameStatus === 'taken' && <p style={{ fontSize: 11, color: '#ef4444', marginTop: 4, fontFamily: F }}>Username already taken</p>}
+            {usernameStatus === 'taken'     && <p style={{ fontSize: 11, color: '#ef4444', marginTop: 4, fontFamily: F }}>Username already taken</p>}
             {usernameStatus === 'available' && <p style={{ fontSize: 11, color: '#10b981', marginTop: 4, fontFamily: F }}>Username available</p>}
           </div>
 
@@ -180,8 +192,11 @@ export const SignupScreen = ({ onViewChange, redirectTo = '/' }: Props) => {
 
           {/* Submit */}
           <button type="submit" disabled={!canSubmit}
-            style={{ width: '100%', height: 46, borderRadius: 10, border: 'none', background: '#0a0a0a', color: '#fff', fontSize: 14, fontWeight: 700, fontFamily: F, cursor: canSubmit ? 'pointer' : 'not-allowed', opacity: canSubmit ? 1 : 0.5, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 4 }}>
-            {isLoading ? <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />Creating account...</> : 'Create account'}
+            style={{ width: '100%', height: 46, borderRadius: 10, border: 'none', background: success ? '#16a34a' : '#0a0a0a', color: '#fff', fontSize: 14, fontWeight: 700, fontFamily: F, cursor: canSubmit ? 'pointer' : 'not-allowed', opacity: canSubmit ? 1 : 0.5, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 4, transition: 'background .3s' }}>
+            {isLoading
+              ? <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />Creating account...</>
+              : success ? <><CheckCircle size={16} />Account created!</>
+              : 'Create account'}
           </button>
         </form>
 
