@@ -2,103 +2,132 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, Camera, ChevronLeft, X } from 'lucide-react';
+import { Search, X, ChevronLeft } from 'lucide-react';
+import { fetchHotWallpapers } from '@/lib/stores/wallpaperStore';
 import { startLoader } from '@/app/components/TopLoader';
+import type { Wallpaper } from '@/app/types';
 
-// ── Static data ────────────────────────────────────────────────
-const HERO_SLIDES = [
-  { tag: 'Dark Aesthetic',  label: 'Moody & cinematic',  gradient: 'linear-gradient(160deg,#0d0d0d 0%,#1a0a2e 60%,#0d0d0d 100%)', accent: '#9b5de5' },
-  { tag: 'Nature',          label: 'Into the wild',       gradient: 'linear-gradient(160deg,#0a1a0a 0%,#0d2b1a 60%,#0a1a0a 100%)', accent: '#06d6a0' },
-  { tag: 'Minimal',         label: 'Less is everything',  gradient: 'linear-gradient(160deg,#111 0%,#1c1c1c 60%,#111 100%)',       accent: '#e8e8e8' },
-  { tag: 'Space',           label: 'Beyond the horizon',  gradient: 'linear-gradient(160deg,#020818 0%,#0a1628 60%,#020818 100%)', accent: '#4cc9f0' },
+// ── Cache ──────────────────────────────────────────────────────
+const HOT_CACHE_KEY = 'hot_wallpapers';
+const HOT_CACHE_TTL = 6 * 60 * 60 * 1000;
+
+const getHotCache = (): Wallpaper[] | null => {
+  try {
+    const raw = localStorage.getItem(HOT_CACHE_KEY);
+    if (!raw) return null;
+    const { data, cachedAt } = JSON.parse(raw);
+    if (Date.now() - cachedAt > HOT_CACHE_TTL) return null;
+    return data;
+  } catch { return null; }
+};
+const setHotCache = (data: Wallpaper[]) => {
+  try { localStorage.setItem(HOT_CACHE_KEY, JSON.stringify({ data, cachedAt: Date.now() })); } catch {}
+};
+
+// ── Static ─────────────────────────────────────────────────────
+const TRENDING_TAGS = [
+  'Dark', 'Minimal', 'Nature', 'Anime',
+  'Abstract', 'Space', 'Cars', 'Ocean', 'Retro', 'Lofi',
 ];
 
 const COLLECTIONS = [
-  { title: 'Ultra Dark',   sub: 'Amoled · 240 walls',    colors: ['#0a0a0a','#141414','#1a0a2e','#0d0d0d'] },
-  { title: 'Neon City',    sub: 'Cyberpunk · 180 walls',  colors: ['#0d0221','#1a0530','#2d0a4e','#120318'] },
-  { title: 'Soft Pastel',  sub: 'Dreamy · 95 walls',      colors: ['#fce4ec','#f8bbd0','#f3e5f5','#ede7f6'] },
-  { title: 'Abstract',     sub: 'Digital art · 310 walls',colors: ['#1a237e','#283593','#0d47a1','#1565c0'] },
-  { title: 'Anime',        sub: 'Fan art · 420 walls',    colors: ['#b71c1c','#880e4f','#4a148c','#1a237e'] },
+  { title: 'Ultra Dark',  sub: 'Amoled · 240 walls',     wallOffset: 0 },
+  { title: 'Neon City',   sub: 'Cyberpunk · 180 walls',   wallOffset: 1 },
+  { title: 'Soft Pastel', sub: 'Dreamy · 95 walls',       wallOffset: 2 },
+  { title: 'Abstract',    sub: 'Digital art · 310 walls', wallOffset: 3 },
+  { title: 'Anime',       sub: 'Fan art · 420 walls',     wallOffset: 4 },
 ];
 
-const TRENDING_TAGS = [
-  'Lofi','Amoled','Retro','Cyberpunk','Ocean',
-  'Mountains','Cars','Botanical','Geometric','Film',
-];
-
-// ── CSS ────────────────────────────────────────────────────────
+// ── Styles ─────────────────────────────────────────────────────
 const CSS = `
-  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=DM+Sans:wght@300;400;500;600;700&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@400;500;600;700&display=swap');
   * { box-sizing: border-box; }
 
-  @keyframes fadeUp   { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
-  @keyframes heroPan  { 0%{transform:scale(1.05) translateX(0)} 100%{transform:scale(1.05) translateX(-1.5%)} }
+  @keyframes fadeUp  { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
 
-  .fade-up  { animation: fadeUp .3s ease forwards; }
-  .hero-bg  { animation: heroPan 9s ease-in-out infinite alternate; will-change:transform; }
+  .fade-up { animation: fadeUp .28s ease forwards; }
 
-  .search-wrap:focus-within .search-inner {
-    border-color: rgba(255,255,255,0.2) !important;
-    background: rgba(255,255,255,0.11) !important;
+  .shimmer {
+    background: linear-gradient(105deg,#ebebeb 40%,#f8f8f8 50%,#ebebeb 60%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s ease-in-out infinite;
   }
 
-  .col-card { transition: transform .18s ease, box-shadow .18s ease; cursor: pointer; }
-  .col-card:hover  { transform: translateY(-4px); box-shadow: 0 14px 36px rgba(0,0,0,0.6) !important; }
-  .col-card:active { transform: scale(.97); }
-
-  .recent-row { transition: background .1s; cursor: pointer; }
-  .recent-row:hover  { background: rgba(255,255,255,0.06) !important; }
-  .recent-row:active { background: rgba(255,255,255,0.1) !important; }
+  .hero-search:focus-within {
+    box-shadow: 0 0 0 3px rgba(255,255,255,0.55) !important;
+  }
 
   .hero-dot { transition: width .3s ease, opacity .3s ease; border: none; padding: 0; cursor: pointer; }
 
-  .h-scroll::-webkit-scrollbar { display: none; }
-  .h-scroll { -ms-overflow-style: none; scrollbar-width: none; }
+  .col-card { transition: transform .18s ease, box-shadow .18s ease; cursor: pointer; flex-shrink: 0; }
+  .col-card:hover  { transform: translateY(-3px); box-shadow: 0 10px 28px rgba(0,0,0,0.14) !important; }
+  .col-card:active { transform: scale(.97); }
+
+  .tag-card { transition: transform .15s ease; cursor: pointer; }
+  .tag-card:hover  { transform: scale(1.02); }
+  .tag-card:active { transform: scale(.97); }
+
+  .recent-row { transition: background .1s; cursor: pointer; }
+  .recent-row:hover  { background: #f7f7f7 !important; }
+  .recent-row:active { background: #f0f0f0 !important; }
+
+  .h-scroll { display:flex; gap:10px; overflow-x:auto; padding:0 16px 4px; scroll-snap-type:x mandatory; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+  .h-scroll::-webkit-scrollbar { display:none; }
 `;
 
-// ── Colour mosaic ──────────────────────────────────────────────
-function ColourMosaic({ colors }: { colors: string[] }) {
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr', width: '100%', height: '100%' }}>
-      {colors.map((c, i) => <div key={i} style={{ background: c }} />)}
-    </div>
-  );
-}
-
-// ── Page ───────────────────────────────────────────────────────
 export default function SearchPage() {
-  const router    = useRouter();
-  const inputRef  = useRef<HTMLInputElement>(null);
-  const timerRef  = useRef<ReturnType<typeof setInterval> | null>(null);
+  const router   = useRouter();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pauseRef = useRef(false);
 
   const [query,   setQuery]   = useState('');
   const [recent,  setRecent]  = useState<string[]>([]);
+  const [walls,   setWalls]   = useState<Wallpaper[]>([]);
+  const [loading, setLoading] = useState(true);
   const [heroIdx, setHeroIdx] = useState(0);
   const [fading,  setFading]  = useState(false);
 
+  // ── Fetch ──
+  useEffect(() => {
+    const cached = getHotCache();
+    if (cached?.length) { setWalls(cached); setLoading(false); return; }
+    fetchHotWallpapers(10)
+      .then(d => { setHotCache(d); setWalls(d); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  // ── Recent + focus ──
   useEffect(() => {
     try { const s = localStorage.getItem('recentSearches'); if (s) setRecent(JSON.parse(s)); } catch {}
-    setTimeout(() => inputRef.current?.focus(), 120);
-
-    timerRef.current = setInterval(() => {
-      setFading(true);
-      setTimeout(() => { setHeroIdx(i => (i + 1) % HERO_SLIDES.length); setFading(false); }, 380);
-    }, 5200);
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+    setTimeout(() => inputRef.current?.focus(), 180);
   }, []);
+
+  // ── Auto-advance ──
+  useEffect(() => {
+    if (walls.length < 2) return;
+    timerRef.current = setInterval(() => {
+      if (pauseRef.current) return;
+      setFading(true);
+      setTimeout(() => { setHeroIdx(i => (i + 1) % Math.min(walls.length, 8)); setFading(false); }, 420);
+    }, 4800);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [walls.length]);
 
   const goSlide = (i: number) => {
     if (i === heroIdx) return;
+    pauseRef.current = true;
     setFading(true);
-    setTimeout(() => { setHeroIdx(i); setFading(false); }, 350);
+    setTimeout(() => { setHeroIdx(i); setFading(false); setTimeout(() => { pauseRef.current = false; }, 3000); }, 400);
   };
 
   const saveAndGo = (q: string) => {
     const t = q.trim();
     if (!t) return;
     try {
-      const raw  = localStorage.getItem('recentSearches');
-      const prev = raw ? JSON.parse(raw) : [];
+      const prev = JSON.parse(localStorage.getItem('recentSearches') || '[]');
       const next = [t, ...prev.filter((s: string) => s.toLowerCase() !== t.toLowerCase())].slice(0, 6);
       localStorage.setItem('recentSearches', JSON.stringify(next));
     } catch {}
@@ -113,82 +142,73 @@ export default function SearchPage() {
     localStorage.setItem('recentSearches', JSON.stringify(next));
   };
 
-  const slide = HERO_SLIDES[heroIdx];
+  const heroWall = walls[heroIdx];
+  const heroCount = Math.min(walls.length, 8);
 
   return (
-    <div style={{ minHeight: '100dvh', background: '#0a0a0a', fontFamily: "'DM Sans', system-ui, sans-serif", color: '#fff' }}>
+    <div style={{ minHeight: '100dvh', background: '#fff', fontFamily: "'DM Sans', system-ui, sans-serif", color: '#0a0a0a' }}>
       <style>{CSS}</style>
 
-      {/* ══════ HERO ══════ */}
-      <div style={{ position: 'relative', height: 'min(52vw, 320px)', minHeight: 210, overflow: 'hidden' }}>
+      {/* ══════════════════════════════════
+          HERO — real wallpaper + search
+      ══════════════════════════════════ */}
+      <div style={{ position: 'relative', height: 'min(60vw, 420px)', minHeight: 300, overflow: 'hidden', background: '#1a1a1a' }}>
 
-        {/* Animated gradient bg */}
-        <div className="hero-bg" style={{
-          position: 'absolute', inset: '-5%',
-          background: slide.gradient,
-          opacity: fading ? 0 : 1,
-          transition: 'opacity .38s ease',
-        }} />
+        {/* Slide images */}
+        {loading ? (
+          <div className="shimmer" style={{ position: 'absolute', inset: 0 }} />
+        ) : walls.map((wp, i) => (
+          <img
+            key={wp.id}
+            src={wp.thumbnail || wp.url}
+            alt={wp.title}
+            style={{
+              position: 'absolute', inset: 0, width: '100%', height: '100%',
+              objectFit: 'cover',
+              opacity: i === heroIdx ? (fading ? 0 : 1) : 0,
+              transition: 'opacity .45s ease',
+            }}
+          />
+        ))}
 
-        {/* Accent glow */}
-        <div style={{
-          position: 'absolute', inset: 0,
-          background: `radial-gradient(ellipse 65% 55% at 72% 38%, ${slide.accent}28, transparent 68%)`,
-          opacity: fading ? 0 : 1,
-          transition: 'opacity .38s ease',
-        }} />
+        {/* Gradient */}
+        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(0,0,0,0.32) 0%, transparent 30%, transparent 50%, rgba(0,0,0,0.68) 100%)' }} />
 
-        {/* Grain */}
-        <div style={{
-          position: 'absolute', inset: 0, opacity: 0.55,
-          backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.045'/%3E%3C/svg%3E")`,
-        }} />
-
-        {/* Bottom fade */}
-        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '60%', background: 'linear-gradient(to bottom, transparent, #0a0a0a)' }} />
-
-        {/* Back */}
-        <button onClick={() => { startLoader(); router.back(); }}
-          style={{ position: 'absolute', top: 14, left: 14, zIndex: 10, width: 36, height: 36, borderRadius: '50%', background: 'rgba(0,0,0,0.38)', backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+        {/* Back button */}
+        <button
+          onClick={() => { startLoader(); router.back(); }}
+          style={{ position: 'absolute', top: 50, left: 16, zIndex: 20, width: 36, height: 36, borderRadius: '50%', background: 'rgba(0,0,0,0.28)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
           <ChevronLeft size={18} color="#fff" strokeWidth={2.5} />
         </button>
 
-        {/* Hero label + title */}
-        <div style={{
-          position: 'absolute', bottom: 42, left: 20,
-          opacity: fading ? 0 : 1,
-          transform: fading ? 'translateY(6px)' : 'translateY(0)',
-          transition: 'opacity .35s ease, transform .35s ease',
-        }}>
-          <p style={{ margin: '0 0 5px', fontSize: 10, fontWeight: 600, color: slide.accent, textTransform: 'uppercase', letterSpacing: '0.14em' }}>
-            {slide.label}
-          </p>
-          <p style={{ margin: 0, fontSize: 28, fontWeight: 700, fontFamily: "'Playfair Display', serif", lineHeight: 1.1, color: '#fff' }}>
-            {slide.tag}
-          </p>
-        </div>
+        {/* Bottom: title + search bar + dots */}
+        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '0 16px 22px', zIndex: 10 }}>
 
-        {/* Dot nav */}
-        <div style={{ position: 'absolute', bottom: 16, left: 20, display: 'flex', gap: 5, alignItems: 'center' }}>
-          {HERO_SLIDES.map((_, i) => (
-            <button key={i} className="hero-dot" onClick={() => goSlide(i)}
-              style={{ height: 5, width: i === heroIdx ? 22 : 5, borderRadius: 9, background: i === heroIdx ? slide.accent : 'rgba(255,255,255,0.22)', opacity: i === heroIdx ? 1 : 0.5 }} />
-          ))}
-        </div>
-      </div>
+          {/* Wallpaper title */}
+          {heroWall && !loading && (
+            <p style={{
+              fontSize: 12, fontWeight: 500, color: 'rgba(255,255,255,0.7)',
+              marginBottom: 10, letterSpacing: '0.01em',
+              opacity: fading ? 0 : 1, transition: 'opacity .35s ease',
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            }}>
+              {heroWall.title}
+            </p>
+          )}
 
-      {/* ══════ STICKY SEARCH ══════ */}
-      <div style={{
-        position: 'sticky', top: 0, zIndex: 30,
-        background: 'rgba(10,10,10,0.9)',
-        backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
-        borderBottom: '1px solid rgba(255,255,255,0.06)',
-        padding: '10px 14px',
-      }}>
-        <div className="search-wrap" style={{ display: 'flex', alignItems: 'center', gap: 10, maxWidth: 680, margin: '0 auto' }}>
-          <div className="search-inner"
-            style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: 'rgba(255,255,255,0.08)', borderRadius: 14, border: '1.5px solid rgba(255,255,255,0.08)', transition: 'all .15s' }}>
-            <Search size={14} color="rgba(255,255,255,0.38)" strokeWidth={2} style={{ flexShrink: 0 }} />
+          {/* Search bar */}
+          <div
+            className="hero-search"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              background: 'rgba(255,255,255,0.97)',
+              backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)',
+              borderRadius: 16, padding: '11px 14px',
+              boxShadow: '0 6px 28px rgba(0,0,0,0.28)',
+              border: '1.5px solid rgba(255,255,255,0.9)',
+              transition: 'box-shadow .15s',
+            }}>
+            <Search size={16} color="#999" strokeWidth={2} style={{ flexShrink: 0 }} />
             <input
               ref={inputRef}
               type="text"
@@ -196,57 +216,64 @@ export default function SearchPage() {
               onChange={e => setQuery(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') saveAndGo(query); }}
               placeholder="Search wallpapers…"
-              style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', fontSize: 14, color: '#fff', fontFamily: 'inherit' }}
+              style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', fontSize: 15, color: '#0a0a0a', fontFamily: 'inherit', fontWeight: 500 }}
             />
-            {query
-              ? <button onClick={() => { setQuery(''); inputRef.current?.focus(); }}
-                  style={{ width: 18, height: 18, borderRadius: '50%', background: 'rgba(255,255,255,0.2)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                  <X size={10} color="#fff" strokeWidth={2.5} />
-                </button>
-              : <Camera size={14} color="rgba(255,255,255,0.3)" strokeWidth={2} />
-            }
+            {query ? (
+              <button
+                onClick={() => { setQuery(''); inputRef.current?.focus(); }}
+                style={{ width: 20, height: 20, borderRadius: '50%', background: 'rgba(0,0,0,0.1)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
+                <X size={10} color="#666" strokeWidth={2.5} />
+              </button>
+            ) : (
+              <button
+                onClick={() => saveAndGo(query)}
+                style={{ height: 32, padding: '0 14px', borderRadius: 10, background: '#0a0a0a', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
+                Go
+              </button>
+            )}
           </div>
-          <button
-            onClick={() => saveAndGo(query)}
-            disabled={!query.trim()}
-            style={{
-              height: 40, padding: '0 18px', borderRadius: 13,
-              background: query.trim() ? '#fff' : 'rgba(255,255,255,0.1)',
-              color: query.trim() ? '#0a0a0a' : 'rgba(255,255,255,0.22)',
-              border: 'none', fontSize: 13, fontWeight: 700,
-              cursor: query.trim() ? 'pointer' : 'default',
-              fontFamily: 'inherit', flexShrink: 0, transition: 'all .15s',
-            }}>
-            Go
-          </button>
+
+          {/* Dots */}
+          {heroCount > 1 && (
+            <div style={{ display: 'flex', gap: 5, alignItems: 'center', justifyContent: 'center', marginTop: 14 }}>
+              {Array.from({ length: heroCount }).map((_, i) => (
+                <button key={i} className="hero-dot" onClick={() => goSlide(i)}
+                  style={{ height: 4, width: i === heroIdx ? 20 : 4, borderRadius: 9, background: i === heroIdx ? '#fff' : 'rgba(255,255,255,0.38)' }} />
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* ══════ BODY ══════ */}
-      <div style={{ maxWidth: 680, margin: '0 auto' }}>
+      {/* ══════════════════════════════════
+          BODY
+      ══════════════════════════════════ */}
+      <div style={{ background: '#fff' }}>
 
         {/* Recent searches */}
         {recent.length > 0 && (
           <div className="fade-up" style={{ padding: '24px 16px 0' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-              <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.28)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Recent</p>
-              <button onClick={() => { setRecent([]); localStorage.removeItem('recentSearches'); }}
-                style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.28)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
+              <p style={{ fontSize: 10, fontWeight: 700, color: '#c0c0c0', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Recent</p>
+              <button
+                onClick={() => { setRecent([]); localStorage.removeItem('recentSearches'); }}
+                style={{ fontSize: 12, fontWeight: 600, color: '#c0c0c0', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
                 Clear all
               </button>
             </div>
-            <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 18, border: '1px solid rgba(255,255,255,0.07)', overflow: 'hidden' }}>
+            <div style={{ borderRadius: 18, border: '1px solid #f0f0f0', overflow: 'hidden', background: '#fafafa' }}>
               {recent.map((term, i) => (
                 <div key={i} className="recent-row"
                   onClick={() => saveAndGo(term)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: i < recent.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none', background: 'transparent' }}>
-                  <div style={{ width: 30, height: 30, borderRadius: 10, background: 'rgba(255,255,255,0.07)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <Search size={12} color="rgba(255,255,255,0.3)" strokeWidth={2} />
+                  style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: i < recent.length - 1 ? '1px solid #f3f3f3' : 'none', background: 'transparent' }}>
+                  <div style={{ width: 30, height: 30, borderRadius: 10, background: '#f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <Search size={12} color="#ccc" strokeWidth={2} />
                   </div>
-                  <span style={{ flex: 1, fontSize: 14, color: 'rgba(255,255,255,0.8)', fontWeight: 400 }}>{term}</span>
-                  <button onClick={e => removeRecent(term, e)}
-                    style={{ width: 22, height: 22, borderRadius: '50%', background: 'rgba(255,255,255,0.08)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                    <X size={9} color="rgba(255,255,255,0.38)" strokeWidth={2.5} />
+                  <span style={{ flex: 1, fontSize: 14, color: '#0a0a0a', fontWeight: 500 }}>{term}</span>
+                  <button
+                    onClick={e => removeRecent(term, e)}
+                    style={{ width: 22, height: 22, borderRadius: '50%', background: '#ebebeb', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                    <X size={9} color="#bbb" strokeWidth={2.5} />
                   </button>
                 </div>
               ))}
@@ -255,55 +282,33 @@ export default function SearchPage() {
         )}
 
         {/* Featured Collections */}
-        <div style={{ padding: '28px 0 0' }}>
+        <div style={{ paddingTop: 28 }}>
           <div style={{ padding: '0 16px', marginBottom: 16 }}>
-            <p style={{ margin: '0 0 4px', fontSize: 10, fontWeight: 600, color: 'rgba(255,255,255,0.28)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Explore featured collections</p>
-            <p style={{ margin: 0, fontSize: 21, fontWeight: 700, fontFamily: "'Playfair Display', serif", color: '#fff', lineHeight: 1.2 }}>Bring your screen to life</p>
+            <p style={{ fontSize: 10, fontWeight: 700, color: '#c0c0c0', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 5 }}>Explore collections</p>
+            <p style={{ fontSize: 21, fontWeight: 700, color: '#0a0a0a', lineHeight: 1.15, fontFamily: "'Instrument Serif', Georgia, serif", fontStyle: 'italic' }}>
+              Bring your screen to life
+            </p>
           </div>
 
-          <div className="h-scroll" style={{ display: 'flex', gap: 10, paddingLeft: 16, paddingRight: 16, overflowX: 'auto' }}>
-            {COLLECTIONS.map((col, i) => (
-              <div key={i} className="col-card"
-                onClick={() => saveAndGo(col.title)}
-                style={{ width: 150, flexShrink: 0, borderRadius: 18, overflow: 'hidden', background: '#111', boxShadow: '0 4px 20px rgba(0,0,0,0.5)' }}>
-                <div style={{ width: '100%', height: 108, overflow: 'hidden', borderRadius: '18px 18px 0 0' }}>
-                  <ColourMosaic colors={col.colors} />
-                </div>
-                <div style={{ padding: '10px 12px 13px' }}>
-                  <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#fff', marginBottom: 2 }}>{col.title}</p>
-                  <p style={{ margin: 0, fontSize: 11, color: 'rgba(255,255,255,0.32)' }}>{col.sub}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Trending Tags Grid */}
-        <div style={{ padding: '28px 16px 48px' }}>
-          <div style={{ marginBottom: 16 }}>
-            <p style={{ margin: '0 0 4px', fontSize: 10, fontWeight: 600, color: 'rgba(255,255,255,0.28)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Ideas for you</p>
-            <p style={{ margin: 0, fontSize: 21, fontWeight: 700, fontFamily: "'Playfair Display', serif", color: '#fff', lineHeight: 1.2 }}>Trending now</p>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-            {TRENDING_TAGS.map((tag, i) => {
-              const tall = i % 5 === 0;
-              const h    = `hsl(${(i * 49) % 360},28%,13%)`;
-              const h2   = `hsl(${(i * 49 + 55) % 360},22%,19%)`;
+          <div className="h-scroll">
+            {COLLECTIONS.map((col) => {
+              const wp = walls[col.wallOffset % (walls.length || 1)];
               return (
-                <div key={tag} className="col-card"
-                  onClick={() => saveAndGo(tag)}
-                  style={{
-                    borderRadius: 16,
-                    background: `linear-gradient(135deg, ${h} 0%, ${h2} 100%)`,
-                    border: '1px solid rgba(255,255,255,0.06)',
-                    padding: tall ? '26px 16px 16px' : '20px 16px 14px',
-                    display: 'flex', alignItems: 'flex-end',
-                    minHeight: tall ? 112 : 82,
-                  }}>
-                  <div>
-                    <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#fff', fontFamily: "'Playfair Display', serif", lineHeight: 1.2 }}>{tag}</p>
-                    <p style={{ margin: '3px 0 0', fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>wallpapers</p>
+                <div key={col.title} className="col-card"
+                  onClick={() => saveAndGo(col.title)}
+                  style={{ width: 148, borderRadius: 18, overflow: 'hidden', background: '#f0f0f0', border: '1px solid #ebebeb', boxShadow: '0 2px 10px rgba(0,0,0,0.06)' }}>
+                  {/* Image */}
+                  <div style={{ width: '100%', height: 108, position: 'relative', overflow: 'hidden', background: '#e8e8e8' }}>
+                    {wp
+                      ? <img src={wp.thumbnail || wp.url} alt={col.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      : <div className="shimmer" style={{ position: 'absolute', inset: 0 }} />
+                    }
+                    <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, transparent 50%, rgba(0,0,0,0.3) 100%)' }} />
+                  </div>
+                  {/* Label */}
+                  <div style={{ padding: '10px 12px 13px' }}>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: '#0a0a0a', marginBottom: 2 }}>{col.title}</p>
+                    <p style={{ fontSize: 11, color: '#bbb' }}>{col.sub}</p>
                   </div>
                 </div>
               );
@@ -311,6 +316,39 @@ export default function SearchPage() {
           </div>
         </div>
 
+        {/* Trending Now */}
+        <div style={{ padding: '28px 16px 48px' }}>
+          <div style={{ marginBottom: 16 }}>
+            <p style={{ fontSize: 10, fontWeight: 700, color: '#c0c0c0', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 5 }}>Ideas for you</p>
+            <p style={{ fontSize: 21, fontWeight: 700, color: '#0a0a0a', lineHeight: 1.15, fontFamily: "'Instrument Serif', Georgia, serif", fontStyle: 'italic' }}>
+              Trending now
+            </p>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            {TRENDING_TAGS.map((tag, i) => {
+              const wp   = walls[(i + 3) % (walls.length || 1)];
+              const tall = i % 5 === 0;
+              return (
+                <div key={tag} className="tag-card"
+                  onClick={() => saveAndGo(tag)}
+                  style={{ borderRadius: 16, overflow: 'hidden', minHeight: tall ? 120 : 88, position: 'relative', background: '#f0f0f0', border: '1px solid #ebebeb' }}>
+                  {wp
+                    ? <img src={wp.thumbnail || wp.url} alt={tag} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                    : <div className="shimmer" style={{ position: 'absolute', inset: 0 }} />
+                  }
+                  {/* Overlay */}
+                  <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(0,0,0,0.06) 0%, rgba(0,0,0,0.58) 100%)' }} />
+                  {/* Label */}
+                  <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '10px 12px 12px' }}>
+                    <p style={{ fontSize: 14, fontWeight: 700, color: '#fff', lineHeight: 1.2 }}>{tag}</p>
+                    <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)', marginTop: 2 }}>wallpapers</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
     </div>
   );
