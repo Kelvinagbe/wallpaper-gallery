@@ -5,15 +5,19 @@ import { fetchWallpapers } from '@/lib/stores/wallpaperStore';
 import { feedCache } from '@/lib/feedCache';
 import { Header } from './components/Header';
 import { WallpaperGrid } from './components/WallpaperGrid';
-import { GlobalStyles } from './components/GlobalStyles'; 
+import { GlobalStyles } from './components/GlobalStyles';
 import { HotCarousel } from '@/app/components/HotCarousel';
 import { MonetizationInfoModal } from '@/app/components/MonetizationInfoModal';
+import { useRouter } from 'next/navigation';
 import type { Wallpaper, Filter } from './types';
 
 const ITEMS_PER_PAGE = 10;
+
 type Props = { initialWallpapers: Wallpaper[]; initialHasMore: boolean; };
 
 export default function WallpaperGallery({ initialWallpapers, initialHasMore }: Props) {
+  const router = useRouter();
+
   const [wallpapers,    setWallpapers]    = useState<Wallpaper[]>(feedCache.populated ? feedCache.wallpapers : initialWallpapers);
   const [hasMore,       setHasMore]       = useState(feedCache.populated ? feedCache.hasMore : initialHasMore);
   const [page,          setPage]          = useState(feedCache.page);
@@ -84,6 +88,12 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
     setFilter(newFilter);
   }, [filter]);
 
+  const handleSearch = useCallback((query: string) => {
+    const t = query.trim();
+    if (!t) return;
+    router.push(`/search/${encodeURIComponent(t)}`);
+  }, [router]);
+
   useEffect(() => {
     const save = () => { feedCache.scrollY = window.scrollY; };
     window.addEventListener('pagehide', save);
@@ -93,7 +103,12 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
   return (
     <div style={{ minHeight: '100vh', background: '#fff', color: '#0a0a0a' }}>
       <GlobalStyles />
-      <Header filter={filter} setFilter={handleFilterChange} onMenuOpen={() => {}} />
+      <Header
+        filter={filter}
+        setFilter={handleFilterChange}
+        onMenuOpen={() => {}}
+        startLoader={() => router.push}
+      />
       <main style={{ maxWidth: 1400, margin: '0 auto', paddingBottom: 40 }}>
         {filter === 'all' && <HotCarousel />}
         <div style={{ padding: '8px 16px 0' }}>
