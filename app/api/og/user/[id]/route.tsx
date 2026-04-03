@@ -6,7 +6,7 @@
 // Cache:        60 min public CDN + 10 min stale-while-revalidate
 
 import { ImageResponse } from '@vercel/og';
-import { createClient }  from '@/lib/supabase/server';
+import { createClient } from '@supabase/supabase-js';
 import { NextRequest }   from 'next/server';
 
 export const runtime = 'edge';
@@ -29,7 +29,11 @@ export async function GET(
   const { id: userId } = params;
 
   // -- Fetch profile + counts -----------------------------------------------
-  const supabase = await createClient();
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { persistSession: false } },
+  );
 
   type CountsShape = { followers: number; following: number; posts: number };
 
