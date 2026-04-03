@@ -18,7 +18,7 @@ const CSS = `
 
   /* Sticky header — no background, just floats */
   .sticky-bar {
-    position: sticky;
+    position: fixed;
     top: 0;
     z-index: 50;
   }
