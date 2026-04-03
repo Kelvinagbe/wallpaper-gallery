@@ -6,7 +6,7 @@ const fmt = (n: number) =>
   : n >= 1_000   ? `${(n / 1_000).toFixed(1)}k`
   : String(n);
 
-const APP_URL  = process.env.NEXT_PUBLIC_APP_URL ?? 'https://walls.ovrica.name.ng';
+const APP_URL  = process.env.NEXT_PUBLIC_APP_URL ?? 'https://walls.app';
 const APP_NAME = 'WALLS';
 
 type CountsShape = { followers: number; following: number; posts: number };
@@ -14,16 +14,25 @@ type CountsShape = { followers: number; following: number; posts: number };
 async function getProfileMeta(userId: string) {
   const supabase = await createClient();
 
-  const [{ data: profile }, { data: rawCounts }] = await Promise.all([
-    supabase
-      .from('profiles')
-      .select('id, name, username, bio, avatar, verified')
-      .eq('id', userId)
-      .single(),
-    supabase
-      .rpc('get_user_counts', { target_user_id: userId })
-      .single(),
-  ]);
+  // Fetch profile — uses anon key, so RLS must allow public SELECT on profiles
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('id, name, username, bio, avatar, verified')
+    .eq('id', userId)
+    .single();
+
+  if (profileError) {
+    console.error('[OG layout] profile fetch error:', profileError.message, '| userId:', userId);
+  }
+
+  // Fetch counts — adjust the RPC name + param to match your Supabase function exactly
+  const { data: rawCounts, error: countsError } = await supabase
+    .rpc('get_user_counts', { target_user_id: userId })
+    .single();
+
+  if (countsError) {
+    console.error('[OG layout] counts RPC error:', countsError.message);
+  }
 
   const counts = rawCounts as CountsShape | null;
   return { profile, counts };
@@ -34,12 +43,14 @@ export async function generateMetadata({
 }: {
   params: { id: string };
 }): Promise<Metadata> {
-  const { profile, counts } = await getProfileMeta(params.id);
+  const { id: userId } = params;
+  const { profile, counts } = await getProfileMeta(userId);
 
   if (!profile) {
+    // Check your server logs — profileError above will tell you why
     return {
-      title: `Profile not found · ${APP_NAME}`,
-      description: 'This profile does not exist.',
+      title: `${APP_NAME} · Wallpapers`,
+      description: `Discover wallpapers on ${APP_NAME}.`,
     };
   }
 
@@ -49,12 +60,10 @@ export async function generateMetadata({
   const following = counts?.following ?? 0;
   const posts     = counts?.posts     ?? 0;
 
-  // "Aria Nakamura (@arianakamura) · WALLS"
   const title = username
     ? `${name} (@${username}) · ${APP_NAME}`
     : `${name} · ${APP_NAME}`;
 
-  // "Bio text · 14.8k followers · 312 following · 94 posts"
   const parts: string[] = [];
   if (bio) parts.push(bio);
   parts.push(`${fmt(followers)} followers`);
@@ -82,7 +91,7 @@ export async function generateMetadata({
           url:    ogImageUrl,
           width:  1200,
           height: 630,
-          alt:    `${name}'s profile — ${fmt(followers)} followers, ${fmt(posts)} posts`,
+          alt:    `${name}'s profile on ${APP_NAME} — ${fmt(followers)} followers, ${fmt(posts)} posts`,
         },
       ],
     },
@@ -98,12 +107,12 @@ export async function generateMetadata({
       canonical: profileUrl,
     },
     other: {
-      'og:profile:username':   username ?? name,
+      'og:profile:username': username ?? name,
       ...(verified && { 'profile:verified': 'true' }),
-      'profile:followers':     String(followers),
-      'profile:following':     String(following),
-      'profile:posts':         String(posts),
-      'robots':                'index, follow',
+      'profile:followers':   String(followers),
+      'profile:following':   String(following),
+      'profile:posts':       String(posts),
+      'robots':              'index, follow',
     },
   };
 }
