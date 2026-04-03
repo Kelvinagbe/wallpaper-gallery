@@ -1,6 +1,6 @@
 // app/api/og/user/[id]/route.tsx
-// Generates a 1200×630 GitHub-style OG card for each user profile.
-// Next.js ImageResponse renders JSX → PNG at the edge — no canvas, no sharp.
+// Generates a 1200x630 GitHub-style OG card for each user profile.
+// Next.js ImageResponse renders JSX -> PNG at the edge -- no canvas, no sharp.
 //
 // URL pattern:  GET /api/og/user/<userId>
 // Cache:        60 min public CDN + 10 min stale-while-revalidate
@@ -12,7 +12,7 @@ import { NextRequest }   from 'next/server';
 export const runtime = 'edge';
 export const revalidate = 3600; // 1 hour ISR
 
-// ── Helpers ────────────────────────────────────────────────────────────────
+// -- Helpers ----------------------------------------------------------------
 const fmt = (n: number) =>
   n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M`
   : n >= 1_000   ? `${(n / 1_000).toFixed(1)}k`
@@ -21,17 +21,19 @@ const fmt = (n: number) =>
 const APP_URL  = process.env.NEXT_PUBLIC_APP_URL ?? 'https://walls.app';
 const APP_NAME = 'WALLS';
 
-// ── Route handler ──────────────────────────────────────────────────────────
+// -- Route handler ----------------------------------------------------------
 export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string } },
 ) {
   const { id: userId } = params;
 
-  // ── Fetch profile + counts ───────────────────────────────────────────────
+  // -- Fetch profile + counts -----------------------------------------------
   const supabase = await createClient();
 
-  const [{ data: profile }, { data: counts }] = await Promise.all([
+  type CountsShape = { followers: number; following: number; posts: number };
+
+  const [{ data: profile }, countsResult] = await Promise.all([
     supabase
       .from('profiles')
       .select('id, name, username, bio, avatar, verified')
@@ -46,13 +48,14 @@ export async function GET(
     return new Response('Not found', { status: 404 });
   }
 
+  const counts = countsResult.data as CountsShape | null;
   const followers = counts?.followers ?? 0;
   const following = counts?.following ?? 0;
   const posts     = counts?.posts     ?? 0;
 
   const { name, username, bio, avatar, verified } = profile;
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // -- Render ----------------------------------------------------------------
   return new ImageResponse(
     (
       <div
@@ -67,7 +70,7 @@ export async function GET(
           overflow: 'hidden',
         }}
       >
-        {/* ── Subtle grid ── */}
+        {/* -- Subtle grid -- */}
         <div
           style={{
             position: 'absolute',
@@ -79,7 +82,7 @@ export async function GET(
           }}
         />
 
-        {/* ── Accent glows ── */}
+        {/* -- Accent glows -- */}
         <div
           style={{
             position: 'absolute',
@@ -107,7 +110,7 @@ export async function GET(
           }}
         />
 
-        {/* ── Main content ── */}
+        {/* -- Main content -- */}
         <div
           style={{
             position: 'relative',
@@ -167,12 +170,12 @@ export async function GET(
                   color: '#fff',
                 }}
               >
-                ✓
+                ?
               </div>
             )}
           </div>
 
-          {/* Right column — name / bio / stats */}
+          {/* Right column -- name / bio / stats */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
             {/* Name */}
             <div
@@ -266,7 +269,7 @@ export async function GET(
           </div>
         </div>
 
-        {/* ── Footer bar ── */}
+        {/* -- Footer bar -- */}
         <div
           style={{
             position: 'absolute',
