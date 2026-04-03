@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Mail, UserPlus, ArrowRight, X, Check, Search, SlidersHorizontal, Home, Bell, User, Menu } from 'lucide-react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/app/components/AuthProvider';
@@ -11,6 +11,7 @@ interface HeaderProps {
   filter: Filter;
   setFilter: (filter: Filter) => void;
   onMenuOpen?: () => void;
+  startLoader?: () => void;
 }
 
 const FILTERS: { value: Filter; label: string }[] = [
@@ -49,6 +50,12 @@ const CSS = `
   @keyframes sbIn  { from{transform:translateX(-100%)} to{transform:translateX(0)} }
   @keyframes sbOut { from{transform:translateX(0)} to{transform:translateX(-100%)} }
 
+  /* Mobile search bar drop-down */
+  @keyframes mobSrchIn  { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes mobSrchOut { from{opacity:1;transform:translateY(0)} to{opacity:0;transform:translateY(-8px)} }
+  .mob-srch-in  { animation: mobSrchIn  .22s cubic-bezier(.16,1,.3,1) forwards; }
+  .mob-srch-out { animation: mobSrchOut .18s ease forwards; }
+
   .bd-in{animation:bdIn .2s ease forwards}    .bd-out{animation:bdOut .2s ease forwards}
   .m-in{animation:mIn .28s cubic-bezier(.16,1,.3,1) forwards} .m-out{animation:mOut .2s ease forwards}
   .sh-in{animation:shIn .3s cubic-bezier(.16,1,.3,1) forwards} .sh-out{animation:shOut .24s ease forwards}
@@ -64,6 +71,43 @@ const CSS = `
   .wl-search-input::placeholder { color:rgba(255,255,255,0.32); }
   .wl-search-input:focus { background:rgba(255,255,255,0.11); border-color:rgba(255,255,255,0.28); }
   .wl-search-icon { position:absolute; left:13px; top:50%; transform:translateY(-50%); pointer-events:none; opacity:.4; }
+
+  /* Mobile search dropdown */
+  .mob-search-bar {
+    border-top: 1px solid rgba(255,255,255,0.07);
+    padding: 10px 14px 12px;
+    background: rgba(10,10,10,0.96);
+  }
+  .mob-search-inner {
+    position: relative;
+  }
+  .mob-search-input {
+    width: 100%; height: 42px;
+    padding: 0 42px 0 42px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.13);
+    border-radius: 11px; color: #fff;
+    font-family: 'Outfit', sans-serif; font-size: 14px;
+    outline: none; transition: background .2s, border-color .2s;
+    box-sizing: border-box;
+  }
+  .mob-search-input::placeholder { color: rgba(255,255,255,0.3); }
+  .mob-search-input:focus {
+    background: rgba(255,255,255,0.12);
+    border-color: rgba(255,255,255,0.32);
+  }
+  .mob-search-left-icon {
+    position: absolute; left: 13px; top: 50%;
+    transform: translateY(-50%); pointer-events: none; opacity: .45;
+  }
+  .mob-search-clear {
+    position: absolute; right: 9px; top: 50%; transform: translateY(-50%);
+    width: 24px; height: 24px; border-radius: 50%;
+    background: rgba(255,255,255,0.1); border: none;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; transition: background .15s;
+  }
+  .mob-search-clear:hover { background: rgba(255,255,255,0.18); }
 
   .wl-pills {
     display:flex; align-items:center; gap:6px; padding:0 20px; height:38px;
@@ -84,7 +128,6 @@ const CSS = `
   .sheet-row.active { font-weight:600; color:#000; }
   .sheet-row:active { background:rgba(0,0,0,.03); }
 
-  /* Sidebar nav item */
   .sb-nav-item {
     display:flex; align-items:center; gap:12px; width:100%;
     padding:11px 14px; border-radius:10px; border:none;
@@ -115,28 +158,59 @@ const Logo = ({ dark = false }: { dark?: boolean }) => (
   </div>
 );
 
-export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
+export const Header = ({ filter, setFilter, onMenuOpen, startLoader }: HeaderProps) => {
   const router   = useRouter();
   const pathname = usePathname();
   const { user } = useAuth();
   const { open: openUpload } = useUploadModal();
 
-  const [showAuth,      setShowAuth]      = useState(false);
-  const [closingAuth,   setClosingAuth]   = useState(false);
-  const [showSheet,     setShowSheet]     = useState(false);
-  const [closingSheet,  setClosingSheet]  = useState(false);
-  const [showSidebar,   setShowSidebar]   = useState(false);
-  const [closingSidebar,setClosingSidebar]= useState(false);
-  const [searchVal,     setSearchVal]     = useState('');
+  const [showAuth,        setShowAuth]        = useState(false);
+  const [closingAuth,     setClosingAuth]      = useState(false);
+  const [showSheet,       setShowSheet]        = useState(false);
+  const [closingSheet,    setClosingSheet]     = useState(false);
+  const [showSidebar,     setShowSidebar]      = useState(false);
+  const [closingSidebar,  setClosingSidebar]   = useState(false);
+
+  // Desktop search
+  const [searchVal,       setSearchVal]        = useState('');
+
+  // Mobile search dropdown
+  const [mobSearchOpen,   setMobSearchOpen]    = useState(false);
+  const [mobSearchClosing,setMobSearchClosing] = useState(false);
+  const [mobSearchVal,    setMobSearchVal]     = useState('');
+  const mobInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     document.body.style.overflow = showAuth || showSheet || showSidebar ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
   }, [showAuth, showSheet, showSidebar]);
 
+  // Auto-focus mobile search input when opened
+  useEffect(() => {
+    if (mobSearchOpen && !mobSearchClosing) {
+      setTimeout(() => mobInputRef.current?.focus(), 80);
+    }
+  }, [mobSearchOpen, mobSearchClosing]);
+
   const closeAuth    = (cb?: () => void) => { setClosingAuth(true);    setTimeout(() => { setShowAuth(false);    setClosingAuth(false);    cb?.(); }, 220); };
   const closeSheet   = (cb?: () => void) => { setClosingSheet(true);   setTimeout(() => { setShowSheet(false);   setClosingSheet(false);   cb?.(); }, 260); };
   const closeSidebar = (cb?: () => void) => { setClosingSidebar(true); setTimeout(() => { setShowSidebar(false); setClosingSidebar(false); cb?.(); }, 240); };
+
+  const openMobSearch  = () => { setMobSearchOpen(true); setMobSearchClosing(false); };
+  const closeMobSearch = () => {
+    setMobSearchClosing(true);
+    setTimeout(() => { setMobSearchOpen(false); setMobSearchClosing(false); setMobSearchVal(''); }, 200);
+  };
+
+  /** Shared search submit — used by both desktop and mobile */
+  const handleSearch = (val: string) => {
+    const t = val.trim();
+    if (!t) return;
+    startLoader?.();
+    router.push(`/search/${encodeURIComponent(t)}`);
+    closeMobSearch();
+    setSearchVal('');
+  };
 
   const handleNav = (path: string) => { closeAuth(() => router.push(path)); };
 
@@ -165,17 +239,32 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
           {/* Search — desktop */}
           <div className="wl-search-wrap desk">
             <Search size={14} color="#fff" className="wl-search-icon" />
-            <input className="wl-search-input" type="text" placeholder="Search wallpapers, colors, moods…"
-              value={searchVal} onChange={e => setSearchVal(e.target.value)} />
+            <input
+              className="wl-search-input"
+              type="text"
+              placeholder="Search wallpapers, colors, moods…"
+              value={searchVal}
+              onChange={e => setSearchVal(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleSearch(searchVal); }}
+            />
           </div>
 
           <div style={{ flex: 1 }} />
 
           {/* Mobile icons */}
           <div className="mob" style={{ ...S.row, gap: 6 }}>
-            <button style={S.iconBtn} aria-label="Search">
-              <Search size={18} color="rgba(255,255,255,0.65)" />
+            {/* Mobile search toggle */}
+            <button
+              style={{ ...S.iconBtn, background: mobSearchOpen && !mobSearchClosing ? 'rgba(255,255,255,0.1)' : 'transparent' }}
+              aria-label="Search"
+              onClick={() => mobSearchOpen ? closeMobSearch() : openMobSearch()}
+            >
+              {mobSearchOpen && !mobSearchClosing
+                ? <X size={18} color="rgba(255,255,255,0.75)" />
+                : <Search size={18} color="rgba(255,255,255,0.65)" />
+              }
             </button>
+
             <button onClick={() => setShowSheet(true)} style={{ ...S.iconBtn, position: 'relative' }} aria-label="Filter">
               <SlidersHorizontal size={17} color="rgba(255,255,255,0.65)" strokeWidth={2} />
               {filter !== 'all' && <span style={{ position: 'absolute', top: 6, right: 6, width: 5, height: 5, borderRadius: '50%', background: '#fff', border: '1.5px solid #0a0a0a' }} />}
@@ -202,6 +291,33 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
           </div>
         </div>
 
+        {/* Mobile search dropdown */}
+        {(mobSearchOpen || mobSearchClosing) && (
+          <div className={`mob mob-search-bar ${mobSearchClosing ? 'mob-srch-out' : 'mob-srch-in'}`}>
+            <div className="mob-search-inner">
+              <Search size={15} color="#fff" className="mob-search-left-icon" />
+              <input
+                ref={mobInputRef}
+                className="mob-search-input"
+                type="search"
+                placeholder="Search wallpapers, colors, moods…"
+                value={mobSearchVal}
+                onChange={e => setMobSearchVal(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleSearch(mobSearchVal); }}
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck={false}
+              />
+              {mobSearchVal.length > 0 && (
+                <button className="mob-search-clear" onClick={() => setMobSearchVal('')} aria-label="Clear search">
+                  <X size={12} color="rgba(255,255,255,0.6)" />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Filter pills — desktop */}
         <div className="wl-pills desk">
           {FILTERS.map(({ value, label }) => (
@@ -215,19 +331,15 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
       {/* ── WHITE SIDEBAR ── */}
       {(showSidebar || closingSidebar) && (
         <>
-          {/* Backdrop */}
           <div
             className={closingSidebar ? 'bd-out' : 'bd-in'}
             onClick={() => closeSidebar()}
             style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
           />
-
-          {/* Panel */}
           <aside
             className={closingSidebar ? 'sb-out' : 'sb-in'}
             style={{ position: 'fixed', top: 0, left: 0, bottom: 0, width: 260, background: '#fff', zIndex: 100, display: 'flex', flexDirection: 'column', boxShadow: '4px 0 40px rgba(0,0,0,0.12)' }}>
 
-            {/* Sidebar header */}
             <div style={{ padding: '18px 16px', borderBottom: '1px solid rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <Logo dark />
               <button onClick={() => closeSidebar()} style={{ ...S.closeBtn, background: 'rgba(0,0,0,0.05)' }}>
@@ -235,7 +347,6 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
               </button>
             </div>
 
-            {/* Nav links */}
             <nav style={{ flex: 1, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: 2 }}>
               <p style={{ fontSize: 10, fontWeight: 700, color: 'rgba(0,0,0,0.25)', letterSpacing: '.09em', textTransform: 'uppercase', margin: '4px 4px 8px 14px' }}>Navigate</p>
               {NAV.map(({ href, icon: Icon, label }) => {
@@ -250,7 +361,95 @@ export const Header = ({ filter, setFilter, onMenuOpen }: HeaderProps) => {
               })}
             </nav>
 
-            {/* Footer */}
+            <div style={{ padding: '14px 10px', borderTop: '1px solid rgba(0,0,0,0.06)' }}>
+              {user ? (
+                <button onClick={() => { closeSidebar(); openUpload(); }}
+                  style={{ width: '100%', padding: '12px 0', borderRadius: 10, border: 'none', background: '#0a0a0a', color: '#fff', fontFamily: F, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                  Upload Wallpaper
+                </button>
+              ) : (
+                <button onClick={() => { closeSidebar(() => setShowAuth(true)); }}
+                  style={{ width: '100%', padding: '12px 0', borderRadius: 10, border: 'none', background: '#0a0a0a', color: '#fff', fontFamily: F, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                  Sign in
+                </button>
+              )}
+              <p style={{ textAlign: 'center', fontSize: 11, color: 'rgba(0,0,0,0.2)', marginTop: 14, fontFamily: F }}>WALLS v1.0.0</p>
+            </div>
+          </aside>
+        </>
+      )}
+
+      
+        {/* Mobile search dropdown */}
+        {(mobSearchOpen || mobSearchClosing) && (
+          <div className={`mob mob-search-bar ${mobSearchClosing ? 'mob-srch-out' : 'mob-srch-in'}`}>
+            <div className="mob-search-inner">
+              <Search size={15} color="#fff" className="mob-search-left-icon" />
+              <input
+                ref={mobInputRef}
+                className="mob-search-input"
+                type="search"
+                placeholder="Search wallpapers, colors, moods…"
+                value={mobSearchVal}
+                onChange={e => setMobSearchVal(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleSearch(mobSearchVal); }}
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck={false}
+              />
+              {mobSearchVal.length > 0 && (
+                <button className="mob-search-clear" onClick={() => setMobSearchVal('')} aria-label="Clear search">
+                  <X size={12} color="rgba(255,255,255,0.6)" />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Filter pills — desktop */}
+        <div className="wl-pills desk">
+          {FILTERS.map(({ value, label }) => (
+            <button key={value} className={`wl-pill${filter === value ? ' active' : ''}`} onClick={() => setFilter(value)}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </header>
+
+      {/* ── WHITE SIDEBAR ── */}
+      {(showSidebar || closingSidebar) && (
+        <>
+          <div
+            className={closingSidebar ? 'bd-out' : 'bd-in'}
+            onClick={() => closeSidebar()}
+            style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
+          />
+          <aside
+            className={closingSidebar ? 'sb-out' : 'sb-in'}
+            style={{ position: 'fixed', top: 0, left: 0, bottom: 0, width: 260, background: '#fff', zIndex: 100, display: 'flex', flexDirection: 'column', boxShadow: '4px 0 40px rgba(0,0,0,0.12)' }}>
+
+            <div style={{ padding: '18px 16px', borderBottom: '1px solid rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Logo dark />
+              <button onClick={() => closeSidebar()} style={{ ...S.closeBtn, background: 'rgba(0,0,0,0.05)' }}>
+                <X size={13} color="rgba(0,0,0,0.4)" />
+              </button>
+            </div>
+
+            <nav style={{ flex: 1, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <p style={{ fontSize: 10, fontWeight: 700, color: 'rgba(0,0,0,0.25)', letterSpacing: '.09em', textTransform: 'uppercase', margin: '4px 4px 8px 14px' }}>Navigate</p>
+              {NAV.map(({ href, icon: Icon, label }) => {
+                const active = pathname === href;
+                return (
+                  <button key={href} className={`sb-nav-item${active ? ' active' : ''}`}
+                    onClick={() => closeSidebar(() => router.push(href))}>
+                    <Icon size={16} strokeWidth={active ? 2.5 : 2} />
+                    {label}
+                  </button>
+                );
+              })}
+            </nav>
+
             <div style={{ padding: '14px 10px', borderTop: '1px solid rgba(0,0,0,0.06)' }}>
               {user ? (
                 <button onClick={() => { closeSidebar(); openUpload(); }}
