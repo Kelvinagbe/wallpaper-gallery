@@ -29,7 +29,7 @@ export async function GET(
   const { id: userId } = params;
 
   // ── Fetch profile + counts ───────────────────────────────────────────────
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const [{ data: profile }, { data: counts }] = await Promise.all([
     supabase
