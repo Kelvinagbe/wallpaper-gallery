@@ -5,7 +5,7 @@
 // URL pattern:  GET /api/og/user/<userId>
 // Cache:        60 min public CDN + 10 min stale-while-revalidate
 
-import { ImageResponse } from 'next/og';
+import { ImageResponse } from '@vercel/og';
 import { createClient }  from '@/lib/supabase/server';
 import { NextRequest }   from 'next/server';
 
@@ -18,7 +18,7 @@ const fmt = (n: number) =>
   : n >= 1_000   ? `${(n / 1_000).toFixed(1)}k`
   : String(n);
 
-const APP_URL  = process.env.NEXT_PUBLIC_APP_URL ?? 'https://walls.ovrica.name.ng';
+const APP_URL  = process.env.NEXT_PUBLIC_APP_URL ?? 'https://walls.app';
 const APP_NAME = 'WALLS';
 
 // ── Route handler ──────────────────────────────────────────────────────────
