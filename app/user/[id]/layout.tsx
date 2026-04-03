@@ -1,19 +1,11 @@
 import type { Metadata } from 'next';
 import { createClient } from '@supabase/supabase-js';
+import { fmt, APP_URL, APP_NAME } from './_lib/utils';
 
-// ── Shared constants ────────────────────────────────────────────────────────
-export const fmt = (n: number) =>
-  n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M`
-  : n >= 1_000   ? `${(n / 1_000).toFixed(1)}k`
-  : String(n);
-
-export const APP_URL  = process.env.NEXT_PUBLIC_APP_URL ?? 'https://walls.app';
-export const APP_NAME = 'WALLS';
-
-// ── Types ───────────────────────────────────────────────────────────────────
+// ── Types ────────────────────────────────────────────────────────────────────
 type Counts = { followers: number; following: number; posts: number };
 
-// ── Admin Supabase client (server-only, bypasses RLS) ───────────────────────
+// ── Admin Supabase client (server-only, bypasses RLS) ────────────────────────
 function adminClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -22,7 +14,7 @@ function adminClient() {
   );
 }
 
-// ── Data fetcher ─────────────────────────────────────────────────────────────
+// ── Data fetcher ──────────────────────────────────────────────────────────────
 async function getProfileMeta(userId: string) {
   const sb = adminClient();
   const [{ data: profile }, { data: counts }] = await Promise.all([
@@ -35,7 +27,7 @@ async function getProfileMeta(userId: string) {
   return { profile, counts: counts as Counts | null };
 }
 
-// ── Metadata ─────────────────────────────────────────────────────────────────
+// ── Metadata ──────────────────────────────────────────────────────────────────
 export async function generateMetadata({
   params,
 }: {
@@ -110,7 +102,7 @@ export async function generateMetadata({
   };
 }
 
-// ── Layout ───────────────────────────────────────────────────────────────────
+// ── Layout ────────────────────────────────────────────────────────────────────
 export default function UserProfileLayout({
   children,
 }: {
