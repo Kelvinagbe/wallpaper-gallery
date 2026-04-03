@@ -88,7 +88,8 @@ export const NativeAdCard = ({ ad, placeholderIndex = 0 }: { ad: Ad; placeholder
         <div style={{ position: 'absolute', top: 8, left: 8, zIndex: 4, padding: '3px 7px', borderRadius: 6, background: 'rgba(0,0,0,.5)', backdropFilter: 'blur(8px)', fontSize: 8, fontWeight: 800, color: 'rgba(255,255,255,.75)', letterSpacing: '.08em', border: '1px solid rgba(255,255,255,.1)' }}>AD</div>
       </div>
 
-      <div style={{ padding: '6px 2px 0', display: 'flex', flexDirection: 'column', gap: 3 }}>
+      {/* ── info below card — no horizontal padding ── */}
+      <div style={{ padding: '5px 0 0', display: 'flex', flexDirection: 'column', gap: 3 }}>
         <p style={{ fontSize: 11, fontWeight: 600, color: '#0a0a0a', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.3 }}>{ad.title}</p>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
           <span style={{ fontSize: 10, color: 'rgba(0,0,0,.4)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ad.brandName}</span>
@@ -275,8 +276,9 @@ export const WallpaperCard = ({ wp, onClick, priority = false, placeholderIndex 
         )}
       </div>
 
+      {/* ── info below card — no horizontal padding ── */}
       {s.loaded && (
-        <div style={{ padding: '6px 2px 0', display: 'flex', flexDirection: 'column', gap: 3 }}>
+        <div style={{ padding: '5px 0 0', display: 'flex', flexDirection: 'column', gap: 3 }}>
           <p style={{ fontSize: 11, fontWeight: 600, color: '#0a0a0a', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.3 }}>{wp.title}</p>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
             {wp.uploadedBy && (
