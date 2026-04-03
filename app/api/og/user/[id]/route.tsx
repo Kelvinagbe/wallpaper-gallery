@@ -1,18 +1,17 @@
 // app/api/og/user/[id]/route.tsx
-// Generates a 1200x630 GitHub-style OG card for each user profile.
-// Next.js ImageResponse renders JSX -> PNG at the edge -- no canvas, no sharp.
+// Generates a 1200×630 OG card for each user profile.
+// Next.js 13 · @vercel/og · Edge runtime
 //
-// URL pattern:  GET /api/og/user/<userId>
-// Cache:        60 min public CDN + 10 min stale-while-revalidate
+// GET /api/og/user/<userId>
+// Cache: 1 h public CDN + 10 min stale-while-revalidate
 
 import { ImageResponse } from '@vercel/og';
-import { createClient } from '@supabase/supabase-js';
+import { createClient }  from '@supabase/supabase-js';
 import { NextRequest }   from 'next/server';
 
 export const runtime = 'edge';
-export const revalidate = 3600; // 1 hour ISR
 
-// -- Helpers ----------------------------------------------------------------
+// ── Shared helpers ────────────────────────────────────────────────────────────
 const fmt = (n: number) =>
   n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M`
   : n >= 1_000   ? `${(n / 1_000).toFixed(1)}k`
@@ -21,45 +20,71 @@ const fmt = (n: number) =>
 const APP_URL  = process.env.NEXT_PUBLIC_APP_URL ?? 'https://walls.app';
 const APP_NAME = 'WALLS';
 
-// -- Route handler ----------------------------------------------------------
+type Counts = { followers: number; following: number; posts: number };
+
+// ── Avatar → base64 helper ────────────────────────────────────────────────────
+// Satori (used by @vercel/og) fetches images at render time on the edge.
+// Vercel Blob URLs can cause cross-origin failures silently, so we pre-fetch
+// the avatar server-side and pass it as a data URI instead.
+async function toDataUri(url: string): Promise<string> {
+  try {
+    const res  = await fetch(url);
+    if (!res.ok) throw new Error(`${res.status}`);
+    const buf  = await res.arrayBuffer();
+    const mime = res.headers.get('content-type') ?? 'image/jpeg';
+    const b64  = Buffer.from(buf).toString('base64');
+    return `data:${mime};base64,${b64}`;
+  } catch {
+    return ''; // caller will use a fallback
+  }
+}
+
+// ── Route handler ─────────────────────────────────────────────────────────────
 export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string } },
 ) {
   const { id: userId } = params;
 
-  // -- Fetch profile + counts -----------------------------------------------
-  const supabase = createClient(
+  // Supabase admin client — bypasses RLS, never sent to the browser
+  const sb = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     { auth: { persistSession: false } },
   );
 
-  type CountsShape = { followers: number; following: number; posts: number };
-
-  const [{ data: profile }, countsResult] = await Promise.all([
-    supabase
-      .from('profiles')
+  const [{ data: profile }, { data: rawCounts }] = await Promise.all([
+    sb.from('profiles')
       .select('id, name, username, bio, avatar, verified')
       .eq('id', userId)
       .single(),
-    supabase
-      .rpc('get_user_counts', { target_user_id: userId })
-      .single(),
+    sb.rpc('get_user_counts', { target_user_id: userId }).single(),
   ]);
 
   if (!profile) {
     return new Response('Not found', { status: 404 });
   }
 
-  const counts = countsResult.data as CountsShape | null;
+  const counts    = rawCounts as Counts | null;
   const followers = counts?.followers ?? 0;
   const following = counts?.following ?? 0;
   const posts     = counts?.posts     ?? 0;
-
   const { name, username, bio, avatar, verified } = profile;
 
-  // -- Render ----------------------------------------------------------------
+  // Pre-fetch avatar as base64 to avoid Satori cross-origin issues
+  const avatarSrc = avatar
+    ? await toDataUri(avatar)
+    : `${APP_URL}/default-avatar.png`;
+
+  // Truncate bio in JS — Satori does NOT support webkit-line-clamp
+  const bioText = bio && bio.length > 120 ? `${bio.slice(0, 117)}…` : bio;
+
+  const stats = [
+    { label: 'posts',     value: fmt(posts)     },
+    { label: 'followers', value: fmt(followers) },
+    { label: 'following', value: fmt(following) },
+  ];
+
   return new ImageResponse(
     (
       <div
@@ -74,7 +99,7 @@ export async function GET(
           overflow: 'hidden',
         }}
       >
-        {/* -- Subtle grid -- */}
+        {/* Subtle dot grid */}
         <div
           style={{
             position: 'absolute',
@@ -86,27 +111,25 @@ export async function GET(
           }}
         />
 
-        {/* -- Accent glows -- */}
+        {/* Top-right glow */}
         <div
           style={{
             position: 'absolute',
-            top: -160,
-            right: -100,
-            width: 540,
-            height: 540,
+            top: -160, right: -100,
+            width: 540, height: 540,
             borderRadius: '50%',
             background:
               'radial-gradient(circle, rgba(88,166,255,.14) 0%, transparent 70%)',
             display: 'flex',
           }}
         />
+
+        {/* Bottom-left glow */}
         <div
           style={{
             position: 'absolute',
-            bottom: -120,
-            left: -80,
-            width: 440,
-            height: 440,
+            bottom: -120, left: -80,
+            width: 440, height: 440,
             borderRadius: '50%',
             background:
               'radial-gradient(circle, rgba(63,185,80,.09) 0%, transparent 70%)',
@@ -114,7 +137,7 @@ export async function GET(
           }}
         />
 
-        {/* -- Main content -- */}
+        {/* ── Main content ── */}
         <div
           style={{
             position: 'relative',
@@ -126,13 +149,11 @@ export async function GET(
             width: '100%',
           }}
         >
-          {/* Avatar */}
+          {/* Avatar with gradient ring */}
           <div style={{ position: 'relative', flexShrink: 0, display: 'flex' }}>
-            {/* Gradient ring */}
             <div
               style={{
-                width: 196,
-                height: 196,
+                width: 196, height: 196,
                 borderRadius: 44,
                 background: 'linear-gradient(135deg, #58a6ff 0%, #3fb950 100%)',
                 padding: 3,
@@ -143,27 +164,20 @@ export async function GET(
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={avatar}
+                src={avatarSrc}
                 alt={name}
                 width={190}
                 height={190}
-                style={{
-                  borderRadius: 42,
-                  objectFit: 'cover',
-                  background: '#161b22',
-                }}
+                style={{ borderRadius: 42, objectFit: 'cover', background: '#161b22' }}
               />
             </div>
 
-            {/* Verified badge */}
             {verified && (
               <div
                 style={{
                   position: 'absolute',
-                  bottom: 8,
-                  right: 8,
-                  width: 44,
-                  height: 44,
+                  bottom: 8, right: 8,
+                  width: 44, height: 44,
                   borderRadius: '50%',
                   background: '#238636',
                   border: '3px solid #0d1117',
@@ -174,50 +188,36 @@ export async function GET(
                   color: '#fff',
                 }}
               >
-                ?
+                ✓
               </div>
             )}
           </div>
 
-          {/* Right column -- name / bio / stats */}
+          {/* Right column */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
             {/* Name */}
-            <div
+            <span
               style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 12,
+                fontSize: 54,
+                fontWeight: 800,
+                color: '#e6edf3',
+                letterSpacing: '-2px',
+                lineHeight: 1,
                 marginBottom: 6,
               }}
             >
-              <span
-                style={{
-                  fontSize: 54,
-                  fontWeight: 800,
-                  color: '#e6edf3',
-                  letterSpacing: '-2px',
-                  lineHeight: 1,
-                }}
-              >
-                {name}
-              </span>
-            </div>
+              {name}
+            </span>
 
             {/* Username */}
             {username && (
-              <p
-                style={{
-                  fontSize: 28,
-                  color: '#8b949e',
-                  margin: '0 0 18px',
-                }}
-              >
+              <p style={{ fontSize: 28, color: '#8b949e', margin: '0 0 18px' }}>
                 @{username}
               </p>
             )}
 
-            {/* Bio */}
-            {bio && (
+            {/* Bio — truncated in JS, no webkit-line-clamp */}
+            {bioText && (
               <p
                 style={{
                   fontSize: 24,
@@ -225,28 +225,16 @@ export async function GET(
                   lineHeight: 1.5,
                   margin: '0 0 32px',
                   maxWidth: 580,
-                  // Truncate long bios
-                  overflow: 'hidden',
-                  display: '-webkit-box',
-                  WebkitLineClamp: 2,
-                  WebkitBoxOrient: 'vertical',
                 }}
               >
-                {bio}
+                {bioText}
               </p>
             )}
 
             {/* Stats row */}
             <div style={{ display: 'flex', gap: 44 }}>
-              {[
-                { label: 'posts',     value: fmt(posts)     },
-                { label: 'followers', value: fmt(followers) },
-                { label: 'following', value: fmt(following) },
-              ].map(({ label, value }) => (
-                <div
-                  key={label}
-                  style={{ display: 'flex', flexDirection: 'column' }}
-                >
+              {stats.map(({ label, value }) => (
+                <div key={label} style={{ display: 'flex', flexDirection: 'column' }}>
                   <span
                     style={{
                       fontSize: 38,
@@ -257,14 +245,7 @@ export async function GET(
                   >
                     {value}
                   </span>
-                  <span
-                    style={{
-                      fontSize: 18,
-                      color: '#8b949e',
-                      marginTop: 4,
-                      textTransform: 'lowercase',
-                    }}
-                  >
+                  <span style={{ fontSize: 18, color: '#8b949e', marginTop: 4 }}>
                     {label}
                   </span>
                 </div>
@@ -273,13 +254,11 @@ export async function GET(
           </div>
         </div>
 
-        {/* -- Footer bar -- */}
+        {/* ── Footer bar ── */}
         <div
           style={{
             position: 'absolute',
-            bottom: 28,
-            left: 88,
-            right: 88,
+            bottom: 28, left: 88, right: 88,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -289,8 +268,7 @@ export async function GET(
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div
               style={{
-                width: 30,
-                height: 30,
+                width: 30, height: 30,
                 background: '#58a6ff',
                 borderRadius: 8,
                 display: 'flex',
