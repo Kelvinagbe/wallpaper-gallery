@@ -7,9 +7,10 @@ import type { Wallpaper, Ad } from '../types';
 
 /* ─── responsive helpers ─────────────────────────────────────────────── */
 const getColCount = (w: number) => w >= 1024 ? 5 : w >= 768 ? 4 : w >= 480 ? 3 : 2;
-const getGap      = (w: number) => w >= 1024 ? 12 : w >= 768 ? 10 : w >= 480 ? 8 : 6;
-const getPad      = (w: number) => w >= 1024 ? 12 : w >= 768 ? 10 : w >= 480 ? 8 : 6;
-const getItemGap  = (cols: number) => cols >= 4 ? 14 : cols >= 3 ? 12 : 10;
+const getGap      = (w: number) => w >= 1024 ? 10 : w >= 768 ? 8 : w >= 480 ? 6 : 5;
+// Tight side padding: 4px on mobile, slightly more on larger screens
+const getPad      = (w: number) => w >= 1024 ? 8 : w >= 768 ? 6 : 4;
+const getItemGap  = (cols: number) => cols >= 4 ? 12 : cols >= 3 ? 10 : 8;
 
 /* ─── shimmer ─────────────────────────────────────────────────────────── */
 const COLORS = [
@@ -39,7 +40,8 @@ const Shimmer = ({ i, o = 1 }: { i: number; o?: number }) => {
       <div style={{ position: 'relative', width: '100%', borderRadius: 16, overflow: 'hidden', aspectRatio: '9/16', background: c.bg }}>
         <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(105deg,transparent 40%,${c.shimmer}80 50%,transparent 60%)`, ...anim }} />
       </div>
-      <div style={{ padding: '6px 2px 0', display: 'flex', flexDirection: 'column', gap: 4 }}>
+      {/* shimmer info rows — no horizontal padding */}
+      <div style={{ padding: '5px 0 0', display: 'flex', flexDirection: 'column', gap: 4 }}>
         <div style={{ height: 10, borderRadius: 4, background: c.bg, width: '80%', ...anim }} />
         <div style={{ height: 8, borderRadius: 4, background: c.bg, width: '50%', ...anim, animationDelay: '0.1s' }} />
       </div>
@@ -141,7 +143,7 @@ export const WallpaperGrid = ({
   });
   const triggerRef = useRef<HTMLDivElement>(null);
   const loadingRef = useRef(false);
-  const failedRef  = useRef(false); // true when last fetch failed (e.g. network dropped)
+  const failedRef  = useRef(false);
 
   const nativeAds = useMemo<Ad[]>(() =>
     typeof window === 'undefined'
@@ -164,7 +166,6 @@ export const WallpaperGrid = ({
     if (wallpapers.length > 0 && !hasEverLoaded) setHasEverLoaded(true);
   }, [wallpapers.length, hasEverLoaded]);
 
-  // Auto-retry when network comes back after a failed fetch
   useEffect(() => {
     if (!onLoadMore || !hasMore) return;
     const retry = async () => {
@@ -206,7 +207,6 @@ export const WallpaperGrid = ({
   const { cols, gap, pad } = dims;
   const itemGap = getItemGap(cols);
 
-  /* Build flat masonry item list — native ads injected every N wallpapers */
   const items = useMemo<MasonryItem[]>(() => {
     const result: MasonryItem[] = [];
     let nativeIdx = 0;
