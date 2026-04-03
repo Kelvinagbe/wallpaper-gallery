@@ -12,10 +12,12 @@ import { useRouter } from 'next/navigation';
 import type { Wallpaper, Filter } from './types';
 
 const ITEMS_PER_PAGE = 10;
+
 type Props = { initialWallpapers: Wallpaper[]; initialHasMore: boolean };
 
 export default function WallpaperGallery({ initialWallpapers, initialHasMore }: Props) {
   const router = useRouter();
+
   const [wallpapers,    setWallpapers]    = useState<Wallpaper[]>(feedCache.populated ? feedCache.wallpapers : initialWallpapers);
   const [hasMore,       setHasMore]       = useState(feedCache.populated ? feedCache.hasMore : initialHasMore);
   const [page,          setPage]          = useState(feedCache.page);
@@ -28,20 +30,32 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
   // ── Restore scroll / seed cache ──────────────────────────────
   useEffect(() => {
     if (feedCache.populated) {
-      requestAnimationFrame(() => requestAnimationFrame(() =>
-        window.scrollTo({ top: feedCache.scrollY, behavior: 'instant' })
-      ));
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() =>
+          window.scrollTo({ top: feedCache.scrollY, behavior: 'instant' })
+        )
+      );
       return;
     }
-    Object.assign(feedCache, { wallpapers: initialWallpapers, page: 1, hasMore: initialHasMore, filter, populated: true });
+    Object.assign(feedCache, {
+      wallpapers: initialWallpapers,
+      page: 1,
+      hasMore: initialHasMore,
+      filter,
+      populated: true,
+    });
   }, []); // eslint-disable-line
 
   // ── Filter change ─────────────────────────────────────────────
   useEffect(() => {
     if (!filterChangedRef.current) { filterChangedRef.current = true; return; }
     let cancelled = false;
-    setWallpapers([]); setPage(0); setHasMore(true); setIsInitialLoad(true);
+    setWallpapers([]);
+    setPage(0);
+    setHasMore(true);
+    setIsInitialLoad(true);
     Object.assign(feedCache, { populated: false, wallpapers: [], scrollY: 0 });
+
     fetchWallpapers(0, ITEMS_PER_PAGE, filter)
       .then(data => {
         if (cancelled) return;
@@ -52,15 +66,16 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
       })
       .catch(e => console.error('Filter change failed:', e))
       .finally(() => { if (!cancelled) setIsInitialLoad(false); });
+
     return () => { cancelled = true; };
   }, [filter]); // eslint-disable-line
 
-  // ── Real-time refetch on reconnect ────────────────────────────
+  // ── Real-time refetch on reconnect / poll ─────────────────────
   useEffect(() => {
     const refetch = async () => {
       try {
-        const data = await fetchWallpapers(0, ITEMS_PER_PAGE, feedCache.filter);
-        const seen = new Set(feedCache.wallpapers.map((w: Wallpaper) => w.id));
+        const data  = await fetchWallpapers(0, ITEMS_PER_PAGE, feedCache.filter);
+        const seen  = new Set(feedCache.wallpapers.map((w: Wallpaper) => w.id));
         const fresh = data.wallpapers.filter((w: Wallpaper) => !seen.has(w.id));
         if (!fresh.length) return;
         setWallpapers(prev => {
@@ -70,8 +85,8 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
         });
       } catch { /* silent */ }
     };
+
     window.addEventListener('online', refetch);
-    // Poll every 60 s for new wallpapers while tab is active
     const poll = setInterval(() => { if (navigator.onLine) refetch(); }, 60_000);
     return () => { window.removeEventListener('online', refetch); clearInterval(poll); };
   }, []);
@@ -91,26 +106,21 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
       });
       setHasMore(data.hasMore);
       setPage(p => p + 1);
-    } catch (e) { console.error('Load more failed:', e); }
-    finally { loadingMoreRef.current = false; }
+    } catch (e) {
+      console.error('Load more failed:', e);
+    } finally {
+      loadingMoreRef.current = false;
+    }
   }, [hasMore, page, filter, wallpapers]);
 
+  // ── Filter change handler ─────────────────────────────────────
   const handleFilterChange = useCallback((newFilter: Filter) => {
     if (newFilter === filter) return;
     window.scrollTo({ top: 0, behavior: 'instant' });
     setFilter(newFilter);
   }, [filter]);
 
-  const handleSearch = useCallback((query: string) => {
-    const t = query.trim();
-    if (t) router.push(`/search/${encodeURIComponent(t)}`);
-  }, [router]);
-
-  // ── Hash → open upload modal ──────────────────────────────────
-  const handleMenuOpen = useCallback(() => {
-    window.location.hash = 'upload';
-  }, []);
-
+  // ── Save scroll on unload ─────────────────────────────────────
   useEffect(() => {
     const save = () => { feedCache.scrollY = window.scrollY; };
     window.addEventListener('pagehide', save);
@@ -123,8 +133,7 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
       <Header
         filter={filter}
         setFilter={handleFilterChange}
-        onMenuOpen={handleMenuOpen}
-        startLoader={() => router.push}
+        startLoader={() => router.prefetch}
       />
       <main style={{ maxWidth: 1400, margin: '0 auto', paddingBottom: 40 }}>
         {filter === 'all' && <HotCarousel />}
