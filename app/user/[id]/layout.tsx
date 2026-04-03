@@ -12,7 +12,7 @@ const APP_NAME = 'WALLS';
 
 // ── Fetch helpers (server-side, no auth needed for public profiles) ─────────
 async function getProfileMeta(userId: string) {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const [{ data: profile }, { data: counts }] = await Promise.all([
     supabase
