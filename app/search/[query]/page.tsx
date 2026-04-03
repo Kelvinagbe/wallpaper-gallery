@@ -15,24 +15,13 @@ const CSS = `
   @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
   .fade-up { animation: fadeUp .28s ease forwards; }
   .shimmer { background:linear-gradient(105deg,#ebebeb 40%,#f8f8f8 50%,#ebebeb 60%); background-size:200% 100%; animation:shimmer 1.5s ease-in-out infinite; }
-
-  /* Sticky header — no background, just floats */
-  .sticky-bar {
-    position: fixed;
-    top: 0;
-    z-index: 50;
-  }
-
   .search-wrap:focus-within { box-shadow: 0 0 0 3px rgba(0,0,0,0.09) !important; }
-
   .back-btn { transition: background .12s, transform .1s; }
   .back-btn:hover  { background: #f0f0f0 !important; }
   .back-btn:active { transform: scale(.94); }
-
   .go-btn { transition: background .15s, transform .1s; }
   .go-btn:hover  { background: #222 !important; }
   .go-btn:active { transform: scale(.96); }
-
   .results-grid { columns:2; column-gap:10px; }
   .results-grid-item { break-inside:avoid; margin-bottom:10px; }
   .shimmer-card { break-inside:avoid; margin-bottom:10px; border-radius:16px; overflow:hidden; }
@@ -61,9 +50,11 @@ export default function SearchResultsPage({ params }: { params: { query: string 
   const inputRef = useRef<HTMLInputElement>(null);
   const decoded  = decodeURIComponent(params.query);
 
-  const [input,   setInput]   = useState(decoded);
-  const [walls,   setWalls]   = useState<Wallpaper[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [input,      setInput]      = useState(decoded);
+  const [walls,      setWalls]      = useState<Wallpaper[]>([]);
+  const [loading,    setLoading]    = useState(true);
+  const [headerH,    setHeaderH]    = useState(64);
+  const headerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setInput(decoded);
@@ -77,6 +68,14 @@ export default function SearchResultsPage({ params }: { params: { query: string 
     return () => { cancelled = true; };
   }, [decoded]);
 
+  // Measure header height so body padding stays accurate
+  useEffect(() => {
+    if (!headerRef.current) return;
+    const ro = new ResizeObserver(() => { if (headerRef.current) setHeaderH(headerRef.current.offsetHeight); });
+    ro.observe(headerRef.current);
+    return () => ro.disconnect();
+  }, [loading]);
+
   const goSearch = (q: string) => {
     const t = q.trim();
     if (!t || t.toLowerCase() === decoded.toLowerCase()) return;
@@ -88,17 +87,17 @@ export default function SearchResultsPage({ params }: { params: { query: string 
     <div style={{ minHeight: '100dvh', background: '#fff', fontFamily: "'DM Sans', system-ui, sans-serif", color: '#0a0a0a' }}>
       <style>{CSS}</style>
 
-      {/* ── Sticky header: no background, bare floating bar ── */}
-      <div className="sticky-bar">
+      {/* ── Fixed header: no background, bare floating bar ── */}
+      <div ref={headerRef} style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100, paddingTop: 'env(safe-area-inset-top, 0px)' }}>
         <div style={{ maxWidth: 1200, margin: '0 auto', padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
 
-          {/* Back — matches search page style: white pill */}
+          {/* Back button — white pill */}
           <button className="back-btn" onClick={() => { startLoader(); router.push('/search'); }}
             style={{ width: 44, height: 44, flexShrink: 0, borderRadius: 14, background: '#fff', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 2px 12px rgba(0,0,0,0.10)' }}>
             <ChevronLeft size={22} color="#0a0a0a" strokeWidth={2.5} />
           </button>
 
-          {/* Search bar — same pill style as search page */}
+          {/* Search pill */}
           <div className="search-wrap" style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.97)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', borderRadius: 16, padding: '10px 10px 10px 14px', boxShadow: '0 4px 24px rgba(0,0,0,0.10)', border: '1.5px solid rgba(0,0,0,0.07)', transition: 'box-shadow .15s' }}>
             <Search size={15} color="#999" strokeWidth={2} style={{ flexShrink: 0 }} />
             <input ref={inputRef} type="text" value={input}
@@ -111,7 +110,6 @@ export default function SearchResultsPage({ params }: { params: { query: string 
                 <X size={10} color="#666" strokeWidth={2.5} />
               </button>
             )}
-            {/* Go — same dark pill as search page, smaller on mobile */}
             <button className="go-btn" onClick={() => goSearch(input)}
               style={{ height: 34, padding: '0 14px', borderRadius: 11, background: '#0a0a0a', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
               Go
@@ -119,7 +117,7 @@ export default function SearchResultsPage({ params }: { params: { query: string 
           </div>
         </div>
 
-        {/* Result count — sits just below the bar */}
+        {/* Result count */}
         {!loading && (
           <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 16px 10px' }}>
             <p style={{ fontSize: 12, color: '#aaa', fontWeight: 500 }}>
@@ -132,8 +130,8 @@ export default function SearchResultsPage({ params }: { params: { query: string 
         )}
       </div>
 
-      {/* ── Results body ── */}
-      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '16px 16px 56px' }}>
+      {/* ── Body — padded by measured header height ── */}
+      <div style={{ paddingTop: headerH, maxWidth: 1200, margin: '0 auto', padding: `${headerH}px 16px 56px` }}>
         {loading ? <ResultsShimmer /> : walls.length > 0 ? (
           <div className="fade-up results-grid">
             {walls.map((wp, i) => (
