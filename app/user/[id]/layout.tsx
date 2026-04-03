@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { createClient } from '@/lib/supabase/server';
+import { createClient } from '@supabase/supabase-js';
 
 const fmt = (n: number) =>
   n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M`
@@ -11,10 +11,18 @@ const APP_NAME = 'WALLS';
 
 type CountsShape = { followers: number; following: number; posts: number };
 
-async function getProfileMeta(userId: string) {
-  const supabase = await createClient();
+// Service-role client — bypasses RLS, server-only, never sent to the browser
+function getAdminClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { persistSession: false } },
+  );
+}
 
-  // Fetch profile — uses anon key, so RLS must allow public SELECT on profiles
+async function getProfileMeta(userId: string) {
+  const supabase = getAdminClient();
+
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
     .select('id, name, username, bio, avatar, verified')
@@ -22,20 +30,18 @@ async function getProfileMeta(userId: string) {
     .single();
 
   if (profileError) {
-    console.error('[OG layout] profile fetch error:', profileError.message, '| userId:', userId);
+    console.error('[OG layout] profile error:', profileError.message);
   }
 
-  // Fetch counts — adjust the RPC name + param to match your Supabase function exactly
   const { data: rawCounts, error: countsError } = await supabase
     .rpc('get_user_counts', { target_user_id: userId })
     .single();
 
   if (countsError) {
-    console.error('[OG layout] counts RPC error:', countsError.message);
+    console.error('[OG layout] counts error:', countsError.message);
   }
 
-  const counts = rawCounts as CountsShape | null;
-  return { profile, counts };
+  return { profile, counts: rawCounts as CountsShape | null };
 }
 
 export async function generateMetadata({
@@ -43,11 +49,9 @@ export async function generateMetadata({
 }: {
   params: { id: string };
 }): Promise<Metadata> {
-  const { id: userId } = params;
-  const { profile, counts } = await getProfileMeta(userId);
+  const { profile, counts } = await getProfileMeta(params.id);
 
   if (!profile) {
-    // Check your server logs — profileError above will tell you why
     return {
       title: `${APP_NAME} · Wallpapers`,
       description: `Discover wallpapers on ${APP_NAME}.`,
