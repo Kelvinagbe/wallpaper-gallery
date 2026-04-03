@@ -49,17 +49,19 @@ const CSS = `
   @keyframes shOut { from{transform:translateY(0)} to{transform:translateY(100%)} }
   @keyframes sbIn  { from{transform:translateX(-100%)} to{transform:translateX(0)} }
   @keyframes sbOut { from{transform:translateX(0)} to{transform:translateX(-100%)} }
-
-  /* Mobile search bar drop-down */
   @keyframes mobSrchIn  { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:translateY(0)} }
   @keyframes mobSrchOut { from{opacity:1;transform:translateY(0)} to{opacity:0;transform:translateY(-8px)} }
+
   .mob-srch-in  { animation: mobSrchIn  .22s cubic-bezier(.16,1,.3,1) forwards; }
   .mob-srch-out { animation: mobSrchOut .18s ease forwards; }
-
-  .bd-in{animation:bdIn .2s ease forwards}    .bd-out{animation:bdOut .2s ease forwards}
-  .m-in{animation:mIn .28s cubic-bezier(.16,1,.3,1) forwards} .m-out{animation:mOut .2s ease forwards}
-  .sh-in{animation:shIn .3s cubic-bezier(.16,1,.3,1) forwards} .sh-out{animation:shOut .24s ease forwards}
-  .sb-in{animation:sbIn .28s cubic-bezier(.16,1,.3,1) forwards} .sb-out{animation:sbOut .22s ease forwards}
+  .bd-in  { animation: bdIn  .2s  ease forwards; }
+  .bd-out { animation: bdOut .2s  ease forwards; }
+  .m-in   { animation: mIn   .28s cubic-bezier(.16,1,.3,1) forwards; }
+  .m-out  { animation: mOut  .2s  ease forwards; }
+  .sh-in  { animation: shIn  .3s  cubic-bezier(.16,1,.3,1) forwards; }
+  .sh-out { animation: shOut .24s ease forwards; }
+  .sb-in  { animation: sbIn  .28s cubic-bezier(.16,1,.3,1) forwards; }
+  .sb-out { animation: sbOut .22s ease forwards; }
 
   .wl-search-wrap { flex:1; max-width:560px; position:relative; }
   .wl-search-input {
@@ -72,47 +74,29 @@ const CSS = `
   .wl-search-input:focus { background:rgba(255,255,255,0.11); border-color:rgba(255,255,255,0.28); }
   .wl-search-icon { position:absolute; left:13px; top:50%; transform:translateY(-50%); pointer-events:none; opacity:.4; }
 
-  /* Mobile search dropdown */
-  .mob-search-bar {
-    border-top: 1px solid rgba(255,255,255,0.07);
-    padding: 10px 14px 12px;
-    background: rgba(10,10,10,0.96);
-  }
-  .mob-search-inner {
-    position: relative;
-  }
+  .mob-search-bar { border-top:1px solid rgba(255,255,255,0.07); padding:10px 14px 12px; background:rgba(10,10,10,0.96); }
+  .mob-search-inner { position:relative; }
   .mob-search-input {
-    width: 100%; height: 42px;
-    padding: 0 42px 0 42px;
-    background: rgba(255,255,255,0.08);
-    border: 1px solid rgba(255,255,255,0.13);
-    border-radius: 11px; color: #fff;
-    font-family: 'Outfit', sans-serif; font-size: 14px;
-    outline: none; transition: background .2s, border-color .2s;
-    box-sizing: border-box;
+    width:100%; height:42px; padding:0 42px 0 42px;
+    background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.13);
+    border-radius:11px; color:#fff; font-family:'Outfit',sans-serif; font-size:14px;
+    outline:none; transition:background .2s,border-color .2s; box-sizing:border-box;
   }
-  .mob-search-input::placeholder { color: rgba(255,255,255,0.3); }
-  .mob-search-input:focus {
-    background: rgba(255,255,255,0.12);
-    border-color: rgba(255,255,255,0.32);
-  }
-  .mob-search-left-icon {
-    position: absolute; left: 13px; top: 50%;
-    transform: translateY(-50%); pointer-events: none; opacity: .45;
-  }
+  .mob-search-input::placeholder { color:rgba(255,255,255,0.3); }
+  .mob-search-input:focus { background:rgba(255,255,255,0.12); border-color:rgba(255,255,255,0.32); }
+  .mob-search-left-icon { position:absolute; left:13px; top:50%; transform:translateY(-50%); pointer-events:none; opacity:.45; }
   .mob-search-clear {
-    position: absolute; right: 9px; top: 50%; transform: translateY(-50%);
-    width: 24px; height: 24px; border-radius: 50%;
-    background: rgba(255,255,255,0.1); border: none;
-    display: flex; align-items: center; justify-content: center;
-    cursor: pointer; transition: background .15s;
+    position:absolute; right:9px; top:50%; transform:translateY(-50%);
+    width:24px; height:24px; border-radius:50%;
+    background:rgba(255,255,255,0.1); border:none;
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer; transition:background .15s;
   }
-  .mob-search-clear:hover { background: rgba(255,255,255,0.18); }
+  .mob-search-clear:hover { background:rgba(255,255,255,0.18); }
 
   .wl-pills {
     display:flex; align-items:center; gap:6px; padding:0 20px; height:38px;
-    overflow-x:auto; scrollbar-width:none;
-    border-top:1px solid rgba(255,255,255,0.05);
+    overflow-x:auto; scrollbar-width:none; border-top:1px solid rgba(255,255,255,0.05);
   }
   .wl-pills::-webkit-scrollbar { display:none; }
   .wl-pill {
@@ -121,10 +105,15 @@ const CSS = `
     font-family:'Outfit',sans-serif; font-size:12px; font-weight:500;
     color:rgba(255,255,255,0.42); cursor:pointer; transition:all .15s; white-space:nowrap;
   }
-  .wl-pill:hover { color:rgba(255,255,255,.75); border-color:rgba(255,255,255,.28); }
+  .wl-pill:hover  { color:rgba(255,255,255,.75); border-color:rgba(255,255,255,.28); }
   .wl-pill.active { background:#fff; color:#000; border-color:#fff; font-weight:600; }
 
-  .sheet-row { width:100%; padding:15px 22px; display:flex; align-items:center; justify-content:space-between; background:transparent; border:none; border-top:1px solid rgba(0,0,0,.05); font-family:'Outfit',sans-serif; font-size:15px; color:rgba(0,0,0,.55); cursor:pointer; transition:background .12s; }
+  .sheet-row {
+    width:100%; padding:15px 22px; display:flex; align-items:center; justify-content:space-between;
+    background:transparent; border:none; border-top:1px solid rgba(0,0,0,.05);
+    font-family:'Outfit',sans-serif; font-size:15px; color:rgba(0,0,0,.55);
+    cursor:pointer; transition:background .12s;
+  }
   .sheet-row.active { font-weight:600; color:#000; }
   .sheet-row:active { background:rgba(0,0,0,.03); }
 
@@ -135,12 +124,11 @@ const CSS = `
     font-size:14px; font-weight:500; color:rgba(0,0,0,0.45);
     cursor:pointer; text-align:left; transition:all .15s;
   }
-  .sb-nav-item:hover { background:rgba(0,0,0,0.04); color:#000; }
+  .sb-nav-item:hover  { background:rgba(0,0,0,0.04); color:#000; }
   .sb-nav-item.active { background:#0a0a0a; color:#fff; font-weight:600; }
-  .sb-nav-item.active svg { opacity:1; }
 
-  @media(min-width:768px) { .mob{display:none!important} }
-  @media(max-width:767px) { .desk{display:none!important} }
+  @media(min-width:768px) { .mob  { display:none!important; } }
+  @media(max-width:767px) { .desk { display:none!important; } }
 `;
 
 const hov = (el: EventTarget, on: Partial<CSSStyleDeclaration>, off: Partial<CSSStyleDeclaration>, enter: boolean) =>
@@ -164,20 +152,16 @@ export const Header = ({ filter, setFilter, onMenuOpen, startLoader }: HeaderPro
   const { user } = useAuth();
   const { open: openUpload } = useUploadModal();
 
-  const [showAuth,        setShowAuth]        = useState(false);
-  const [closingAuth,     setClosingAuth]      = useState(false);
-  const [showSheet,       setShowSheet]        = useState(false);
-  const [closingSheet,    setClosingSheet]     = useState(false);
-  const [showSidebar,     setShowSidebar]      = useState(false);
-  const [closingSidebar,  setClosingSidebar]   = useState(false);
-
-  // Desktop search
-  const [searchVal,       setSearchVal]        = useState('');
-
-  // Mobile search dropdown
-  const [mobSearchOpen,   setMobSearchOpen]    = useState(false);
-  const [mobSearchClosing,setMobSearchClosing] = useState(false);
-  const [mobSearchVal,    setMobSearchVal]     = useState('');
+  const [showAuth,         setShowAuth]         = useState(false);
+  const [closingAuth,      setClosingAuth]       = useState(false);
+  const [showSheet,        setShowSheet]         = useState(false);
+  const [closingSheet,     setClosingSheet]      = useState(false);
+  const [showSidebar,      setShowSidebar]       = useState(false);
+  const [closingSidebar,   setClosingSidebar]    = useState(false);
+  const [searchVal,        setSearchVal]         = useState('');
+  const [mobSearchOpen,    setMobSearchOpen]     = useState(false);
+  const [mobSearchClosing, setMobSearchClosing]  = useState(false);
+  const [mobSearchVal,     setMobSearchVal]      = useState('');
   const mobInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -185,7 +169,6 @@ export const Header = ({ filter, setFilter, onMenuOpen, startLoader }: HeaderPro
     return () => { document.body.style.overflow = ''; };
   }, [showAuth, showSheet, showSidebar]);
 
-  // Auto-focus mobile search input when opened
   useEffect(() => {
     if (mobSearchOpen && !mobSearchClosing) {
       setTimeout(() => mobInputRef.current?.focus(), 80);
@@ -202,7 +185,6 @@ export const Header = ({ filter, setFilter, onMenuOpen, startLoader }: HeaderPro
     setTimeout(() => { setMobSearchOpen(false); setMobSearchClosing(false); setMobSearchVal(''); }, 200);
   };
 
-  /** Shared search submit — used by both desktop and mobile */
   const handleSearch = (val: string) => {
     const t = val.trim();
     if (!t) return;
@@ -253,7 +235,6 @@ export const Header = ({ filter, setFilter, onMenuOpen, startLoader }: HeaderPro
 
           {/* Mobile icons */}
           <div className="mob" style={{ ...S.row, gap: 6 }}>
-            {/* Mobile search toggle */}
             <button
               style={{ ...S.iconBtn, background: mobSearchOpen && !mobSearchClosing ? 'rgba(255,255,255,0.1)' : 'transparent' }}
               aria-label="Search"
@@ -267,7 +248,9 @@ export const Header = ({ filter, setFilter, onMenuOpen, startLoader }: HeaderPro
 
             <button onClick={() => setShowSheet(true)} style={{ ...S.iconBtn, position: 'relative' }} aria-label="Filter">
               <SlidersHorizontal size={17} color="rgba(255,255,255,0.65)" strokeWidth={2} />
-              {filter !== 'all' && <span style={{ position: 'absolute', top: 6, right: 6, width: 5, height: 5, borderRadius: '50%', background: '#fff', border: '1.5px solid #0a0a0a' }} />}
+              {filter !== 'all' && (
+                <span style={{ position: 'absolute', top: 6, right: 6, width: 5, height: 5, borderRadius: '50%', background: '#fff', border: '1.5px solid #0a0a0a' }} />
+              )}
             </button>
           </div>
 
@@ -328,7 +311,7 @@ export const Header = ({ filter, setFilter, onMenuOpen, startLoader }: HeaderPro
         </div>
       </header>
 
-      {/* ── WHITE SIDEBAR ── */}
+      {/* ── SIDEBAR ── */}
       {(showSidebar || closingSidebar) && (
         <>
           <div
@@ -368,7 +351,7 @@ export const Header = ({ filter, setFilter, onMenuOpen, startLoader }: HeaderPro
                   Upload Wallpaper
                 </button>
               ) : (
-                <button onClick={() => { closeSidebar(() => setShowAuth(true)); }}
+                <button onClick={() => closeSidebar(() => setShowAuth(true))}
                   style={{ width: '100%', padding: '12px 0', borderRadius: 10, border: 'none', background: '#0a0a0a', color: '#fff', fontFamily: F, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
                   Sign in
                 </button>
@@ -379,95 +362,7 @@ export const Header = ({ filter, setFilter, onMenuOpen, startLoader }: HeaderPro
         </>
       )}
 
-      
-        {/* Mobile search dropdown */}
-        {(mobSearchOpen || mobSearchClosing) && (
-          <div className={`mob mob-search-bar ${mobSearchClosing ? 'mob-srch-out' : 'mob-srch-in'}`}>
-            <div className="mob-search-inner">
-              <Search size={15} color="#fff" className="mob-search-left-icon" />
-              <input
-                ref={mobInputRef}
-                className="mob-search-input"
-                type="search"
-                placeholder="Search wallpapers, colors, moods…"
-                value={mobSearchVal}
-                onChange={e => setMobSearchVal(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') handleSearch(mobSearchVal); }}
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="off"
-                spellCheck={false}
-              />
-              {mobSearchVal.length > 0 && (
-                <button className="mob-search-clear" onClick={() => setMobSearchVal('')} aria-label="Clear search">
-                  <X size={12} color="rgba(255,255,255,0.6)" />
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Filter pills — desktop */}
-        <div className="wl-pills desk">
-          {FILTERS.map(({ value, label }) => (
-            <button key={value} className={`wl-pill${filter === value ? ' active' : ''}`} onClick={() => setFilter(value)}>
-              {label}
-            </button>
-          ))}
-        </div>
-      </header>
-
-      {/* ── WHITE SIDEBAR ── */}
-      {(showSidebar || closingSidebar) && (
-        <>
-          <div
-            className={closingSidebar ? 'bd-out' : 'bd-in'}
-            onClick={() => closeSidebar()}
-            style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
-          />
-          <aside
-            className={closingSidebar ? 'sb-out' : 'sb-in'}
-            style={{ position: 'fixed', top: 0, left: 0, bottom: 0, width: 260, background: '#fff', zIndex: 100, display: 'flex', flexDirection: 'column', boxShadow: '4px 0 40px rgba(0,0,0,0.12)' }}>
-
-            <div style={{ padding: '18px 16px', borderBottom: '1px solid rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Logo dark />
-              <button onClick={() => closeSidebar()} style={{ ...S.closeBtn, background: 'rgba(0,0,0,0.05)' }}>
-                <X size={13} color="rgba(0,0,0,0.4)" />
-              </button>
-            </div>
-
-            <nav style={{ flex: 1, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <p style={{ fontSize: 10, fontWeight: 700, color: 'rgba(0,0,0,0.25)', letterSpacing: '.09em', textTransform: 'uppercase', margin: '4px 4px 8px 14px' }}>Navigate</p>
-              {NAV.map(({ href, icon: Icon, label }) => {
-                const active = pathname === href;
-                return (
-                  <button key={href} className={`sb-nav-item${active ? ' active' : ''}`}
-                    onClick={() => closeSidebar(() => router.push(href))}>
-                    <Icon size={16} strokeWidth={active ? 2.5 : 2} />
-                    {label}
-                  </button>
-                );
-              })}
-            </nav>
-
-            <div style={{ padding: '14px 10px', borderTop: '1px solid rgba(0,0,0,0.06)' }}>
-              {user ? (
-                <button onClick={() => { closeSidebar(); openUpload(); }}
-                  style={{ width: '100%', padding: '12px 0', borderRadius: 10, border: 'none', background: '#0a0a0a', color: '#fff', fontFamily: F, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
-                  Upload Wallpaper
-                </button>
-              ) : (
-                <button onClick={() => { closeSidebar(() => setShowAuth(true)); }}
-                  style={{ width: '100%', padding: '12px 0', borderRadius: 10, border: 'none', background: '#0a0a0a', color: '#fff', fontFamily: F, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
-                  Sign in
-                </button>
-              )}
-              <p style={{ textAlign: 'center', fontSize: 11, color: 'rgba(0,0,0,0.2)', marginTop: 14, fontFamily: F }}>WALLS v1.0.0</p>
-            </div>
-          </aside>
-        </>
-      )}
-
+     
       {/* ── MOBILE FILTER SHEET ── */}
       {(showSheet || closingSheet) && (
         <div className={closingSheet ? 'bd-out' : 'bd-in'} onClick={() => closeSheet()}
@@ -520,7 +415,10 @@ export const Header = ({ filter, setFilter, onMenuOpen, startLoader }: HeaderPro
                     style={{ ...S.authBtn, background: primary ? '#000' : 'transparent', color: primary ? '#fff' : '#000', border: primary ? 'none' : '1.5px solid rgba(0,0,0,.12)' }}
                     onMouseEnter={e => hov(e.currentTarget, primary ? { background: '#222' } : { borderColor: 'rgba(0,0,0,.3)', background: 'rgba(0,0,0,.03)' }, {}, true)}
                     onMouseLeave={e => hov(e.currentTarget, {}, primary ? { background: '#000' } : { borderColor: 'rgba(0,0,0,.12)', background: 'transparent' }, false)}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Icon size={15} strokeWidth={2} /><span>{label}</span></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <Icon size={15} strokeWidth={2} />
+                      <span>{label}</span>
+                    </div>
                     <ArrowRight size={14} strokeWidth={2} style={{ opacity: 0.4 }} />
                   </button>
                 ))}
