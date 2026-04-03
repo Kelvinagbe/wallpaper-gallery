@@ -11,16 +11,28 @@ import type { Wallpaper } from '@/app/types';
 const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@400;500;600;700&display=swap');
   * { box-sizing: border-box; }
-  @keyframes fadeUp   { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
-  @keyframes shimmer  { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+  @keyframes fadeUp  { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
   .fade-up { animation: fadeUp .28s ease forwards; }
   .shimmer { background:linear-gradient(105deg,#ebebeb 40%,#f8f8f8 50%,#ebebeb 60%); background-size:200% 100%; animation:shimmer 1.5s ease-in-out infinite; }
-  .sticky-bar { position:sticky; top:0; z-index:50; background:rgba(255,255,255,0.97); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); border-bottom:1px solid #f0f0f0; box-shadow:0 1px 12px rgba(0,0,0,0.06); }
-  .back-btn { transition:background .12s,transform .1s; }
-  .back-btn:hover  { background:#ebebeb !important; }
-  .back-btn:active { transform:scale(.94); }
-  .go-btn { transition:background .15s; }
-  .go-btn:hover { background:#222 !important; }
+
+  /* Sticky header — no background, just floats */
+  .sticky-bar {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+  }
+
+  .search-wrap:focus-within { box-shadow: 0 0 0 3px rgba(0,0,0,0.09) !important; }
+
+  .back-btn { transition: background .12s, transform .1s; }
+  .back-btn:hover  { background: #f0f0f0 !important; }
+  .back-btn:active { transform: scale(.94); }
+
+  .go-btn { transition: background .15s, transform .1s; }
+  .go-btn:hover  { background: #222 !important; }
+  .go-btn:active { transform: scale(.96); }
+
   .results-grid { columns:2; column-gap:10px; }
   .results-grid-item { break-inside:avoid; margin-bottom:10px; }
   .shimmer-card { break-inside:avoid; margin-bottom:10px; border-radius:16px; overflow:hidden; }
@@ -28,22 +40,6 @@ const CSS = `
   @media (min-width:768px)  { .results-grid { columns:4; } }
   @media (min-width:1024px) { .results-grid { columns:5; } }
   @media (min-width:1280px) { .results-grid { columns:6; } }
-
-  /* Go button: compact on mobile, full on desktop */
-  .go-btn {
-    height: 36px;
-    padding: 0 12px;
-    border-radius: 11px;
-    font-size: 13px;
-  }
-  @media (min-width: 480px) {
-    .go-btn {
-      height: 44px;
-      padding: 0 20px;
-      border-radius: 13px;
-      font-size: 14px;
-    }
-  }
 `;
 
 const SHIMMER_HEIGHTS = [180, 140, 220, 160, 200, 150, 190, 130, 210, 170, 180, 145];
@@ -92,16 +88,19 @@ export default function SearchResultsPage({ params }: { params: { query: string 
     <div style={{ minHeight: '100dvh', background: '#fff', fontFamily: "'DM Sans', system-ui, sans-serif", color: '#0a0a0a' }}>
       <style>{CSS}</style>
 
-      {/* ── Sticky header ── */}
+      {/* ── Sticky header: no background, bare floating bar ── */}
       <div className="sticky-bar">
-        <div style={{ maxWidth: 1200, margin: '0 auto', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ maxWidth: 1200, margin: '0 auto', padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
+
+          {/* Back — matches search page style: white pill */}
           <button className="back-btn" onClick={() => { startLoader(); router.push('/search'); }}
-            style={{ width: 44, height: 44, borderRadius: 13, background: '#f4f4f4', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
+            style={{ width: 44, height: 44, flexShrink: 0, borderRadius: 14, background: '#fff', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 2px 12px rgba(0,0,0,0.10)' }}>
             <ChevronLeft size={22} color="#0a0a0a" strokeWidth={2.5} />
           </button>
 
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10, background: '#f4f4f4', borderRadius: 14, padding: '10px 12px', border: '1px solid #ececec' }}>
-            <Search size={15} color="#aaa" strokeWidth={2} style={{ flexShrink: 0 }} />
+          {/* Search bar — same pill style as search page */}
+          <div className="search-wrap" style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.97)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', borderRadius: 16, padding: '10px 10px 10px 14px', boxShadow: '0 4px 24px rgba(0,0,0,0.10)', border: '1.5px solid rgba(0,0,0,0.07)', transition: 'box-shadow .15s' }}>
+            <Search size={15} color="#999" strokeWidth={2} style={{ flexShrink: 0 }} />
             <input ref={inputRef} type="text" value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') goSearch(input); }}
@@ -112,14 +111,15 @@ export default function SearchResultsPage({ params }: { params: { query: string 
                 <X size={10} color="#666" strokeWidth={2.5} />
               </button>
             )}
+            {/* Go — same dark pill as search page, smaller on mobile */}
+            <button className="go-btn" onClick={() => goSearch(input)}
+              style={{ height: 34, padding: '0 14px', borderRadius: 11, background: '#0a0a0a', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
+              Go
+            </button>
           </div>
-
-          <button className="go-btn" onClick={() => goSearch(input)}
-            style={{ background: '#0a0a0a', color: '#fff', border: 'none', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
-            Go
-          </button>
         </div>
 
+        {/* Result count — sits just below the bar */}
         {!loading && (
           <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 16px 10px' }}>
             <p style={{ fontSize: 12, color: '#aaa', fontWeight: 500 }}>
