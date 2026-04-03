@@ -18,7 +18,7 @@ const fmt = (n: number) =>
   : n >= 1_000   ? `${(n / 1_000).toFixed(1)}k`
   : String(n);
 
-const APP_URL  = process.env.NEXT_PUBLIC_APP_URL ?? 'https://walls.app';
+const APP_URL  = process.env.NEXT_PUBLIC_APP_URL ?? 'https://walls.ovrica.name.ng';
 const APP_NAME = 'WALLS';
 
 // ── Route handler ──────────────────────────────────────────────────────────
