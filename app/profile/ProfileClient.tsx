@@ -4,8 +4,9 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Settings, Share2, LogOut, Shield,
-  ChevronRight, TrendingUp, Clock, WifiOff, RefreshCw, Grid,
+  ChevronRight, ChevronLeft, TrendingUp, Clock, WifiOff, RefreshCw, Grid,
 } from 'lucide-react';
+import Image from 'next/image';
 import { useAuth } from '@/app/components/AuthProvider';
 import { SettingsModal } from '@/app/components/profile/SettingsModal';
 import { PrivacyModal } from '@/app/components/profile/PrivacyModal';
@@ -26,16 +27,15 @@ const fmt = (n: number) =>
   : n >= 1_000   ? `${(n / 1_000).toFixed(1)}K`
   : String(n);
 
-// ── Tokens: pure white + black, no blue ──────────────────────────────────────
 const T = {
   bg:      '#f0f2f5',
   surface: '#ffffff',
   border:  'rgba(0,0,0,.1)',
-  ink:     '#050505',       // primary text
-  ink2:    '#65676b',       // secondary text
+  ink:     '#050505',
+  ink2:    '#65676b',
   ink3:    'rgba(5,5,5,.3)',
-  black:   '#050505',       // primary button fill
-  tile:    '#e4e6eb',       // grey tile (image-1 button style)
+  black:   '#050505',
+  tile:    '#e4e6eb',
   green:   '#42b72a',
   red:     '#e41e3f',
   amber:   '#f59e0b',
@@ -58,7 +58,6 @@ const GLOBAL_CSS = `
   .d4{animation-delay:.20s} .d5{animation-delay:.25s}
   .tap:active  { filter: brightness(.88) }
   .cell:active { opacity:.72 }
-  /* Grey rounded-rect tile — mirrors image-1 FB menu buttons */
   .fb-tile {
     display: flex; align-items: center; justify-content: center;
     border-radius: 8px; background: ${T.tile};
@@ -68,12 +67,19 @@ const GLOBAL_CSS = `
   }
   .fb-tile:active { background: #d0d2d6; transform: scale(.96) }
   .fb-tile:hover  { background: #dddfe3 }
-  /* Tab underline active = black */
   .tab-active { border-bottom: 3px solid #050505 !important; color: #050505 !important; font-weight: 700 !important; }
   .tab-idle   { border-bottom: 3px solid transparent !important; color: #65676b !important; }
+  /* Prevent long-press image save on mobile */
+  img {
+    -webkit-user-select: none;
+    user-select: none;
+    pointer-events: none;
+    -webkit-touch-callout: none;
+  }
+  /* Re-enable pointer events on buttons that contain images */
+  button img { pointer-events: none; }
 `;
 
-// ── Micro helpers ─────────────────────────────────────────────────────────────
 const Shimmer = ({ w, h, r = 8 }: { w: string | number; h: string | number; r?: number }) => (
   <div style={{ width: w, height: h, borderRadius: r, flexShrink: 0, background: 'linear-gradient(90deg,#e8e8e8 25%,#f4f4f4 50%,#e8e8e8 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease infinite' }} />
 );
@@ -115,7 +121,13 @@ const getMonetBtn = (status: string, eligible: boolean) => {
   return { show: false, label: '', sub: '', disabled: true };
 };
 
-// ── Main ──────────────────────────────────────────────────────────────────────
+// Dollar icon SVG (no external dep)
+const DollarIcon = ({ size = 10, color = T.ink }: { size?: number; color?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 12 12" fill="none">
+    <text x="50%" y="50%" dominantBaseline="central" textAnchor="middle" fontSize="10" fontWeight="700" fill={color} fontFamily="inherit">$</text>
+  </svg>
+);
+
 export default function ProfileClient({ initialStats, initialWallpapers }: Props) {
   const router   = useRouter();
   const supabase = createClient();
@@ -129,7 +141,7 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
   const [netState,     setNetState]     = useState<NetState>('online');
   const [modals,       setModals]       = useState<Modals>({ logout: false, settings: false, settingsClosing: false, privacy: false, privacyClosing: false, allPosts: false });
   const [isDesktop,    setIsDesktop]    = useState(false);
-  const [activeTab,    setActiveTab]    = useState<'posts' | 'reels' | 'photos'>('posts');
+  const [activeTab,    setActiveTab]    = useState<'posts' | 'photos'>('posts');
 
   const slowTimer     = useRef<ReturnType<typeof setTimeout> | null>(null);
   const offlineTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -198,7 +210,7 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
 
   const monetBtn = getMonetBtn(monetStatus, eligible);
 
-  // ── Stats row ────────────────────────────────────────────────────────────────
+  // ── Stats row ─────────────────────────────────────────────────────────────────
   const StatsBar = () => (
     <div style={{ display: 'flex', borderTop: `1px solid ${T.border}`, marginTop: 12 }}>
       {[
@@ -215,11 +227,8 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
   );
 
   // ── Action buttons ────────────────────────────────────────────────────────────
-  // Primary = solid BLACK (image-1 dark button aesthetic)
-  // Secondary = grey tile (image-1 light buttons)
   const ActionButtons = () => (
     <div style={{ display: 'flex', gap: 8, padding: '12px 16px 16px' }}>
-      {/* Edit Profile — solid black */}
       <button
         className="tap"
         onClick={() => open('settings')}
@@ -234,7 +243,6 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
         Edit Profile
       </button>
 
-      {/* Share — grey tile */}
       <button
         className="fb-tile tap"
         onClick={handleShare}
@@ -244,7 +252,6 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
         <span style={{ fontFamily: font, fontSize: 14, fontWeight: 600, color: T.ink }}>Share</span>
       </button>
 
-      {/* More ··· — grey tile square */}
       <button
         className="fb-tile tap"
         onClick={() => open('privacy')}
@@ -256,10 +263,10 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
     </div>
   );
 
-  // ── Tabs ──────────────────────────────────────────────────────────────────────
+  // ── Tabs — Posts + Photos only ────────────────────────────────────────────────
   const Tabs = () => (
     <div style={{ display: 'flex', borderTop: `1px solid ${T.border}` }}>
-      {(['posts', 'reels', 'photos'] as const).map(tab => (
+      {(['posts', 'photos'] as const).map(tab => (
         <button
           key={tab}
           onClick={() => setActiveTab(tab)}
@@ -276,7 +283,7 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
     </div>
   );
 
-  // ── Menu tile grid (image-1 FB 2-col style) ───────────────────────────────────
+  // ── Menu tile grid ────────────────────────────────────────────────────────────
   const menuTiles = [
     { icon: <Settings size={20} color={T.ink} strokeWidth={2} />, label: 'Account Settings',   action: () => open('settings') },
     { icon: <Shield   size={20} color={T.ink} strokeWidth={2} />, label: 'Privacy & Security', action: () => open('privacy')  },
@@ -343,7 +350,7 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
     );
   };
 
-  // ── Hero (no cover photo) ─────────────────────────────────────────────────────
+  // ── Hero ──────────────────────────────────────────────────────────────────────
   const HeroBlock = () => {
     if (authLoading) return (
       <div style={{ background: T.surface, padding: '24px 16px 0' }}>
@@ -360,16 +367,24 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
     );
     if (!profile) return null;
 
+    // Strip leading "@" if the DB value already includes it
+    const username = profile.username
+      ? profile.username.startsWith('@') ? profile.username : `@${profile.username}`
+      : null;
+
     return (
       <div style={{ background: T.surface, borderBottom: `1px solid ${T.border}` }}>
-        {/* ── Avatar + name in one horizontal row, no cover ── */}
         <div style={{ padding: '20px 16px 0', display: 'flex', alignItems: 'center', gap: 14 }}>
-          {/* Avatar — simple ring */}
+          {/* Avatar */}
           <div style={{ position: 'relative', flexShrink: 0 }}>
             <div style={{ width: 80, height: 80, borderRadius: '50%', padding: 2.5, background: T.black, boxShadow: '0 0 0 2px #fff' }}>
-              <img
+              <Image
                 src={profile.avatar}
                 alt={profile.name}
+                width={80}
+                height={80}
+                draggable={false}
+                onContextMenu={e => e.preventDefault()}
                 style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover', display: 'block' }}
               />
             </div>
@@ -377,7 +392,7 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
             <div style={{ position: 'absolute', bottom: 3, right: 2, width: 13, height: 13, borderRadius: '50%', background: netState === 'online' ? T.green : T.amber, border: '2.5px solid #fff', transition: 'background .4s' }} />
           </div>
 
-         {/* Name + username + badge */}
+        {/* Name + username + badge */}
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
               <span style={{ fontFamily: font, fontSize: 20, fontWeight: 800, color: T.ink, letterSpacing: '-.02em', lineHeight: 1.2 }}>
@@ -385,12 +400,13 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
               </span>
               {profile.verified && <VerifiedBadge size="md" />}
             </div>
-            {profile.username && (
-              <p style={{ fontFamily: font, fontSize: 13, color: T.ink2, margin: '3px 0 0' }}>@{profile.username}</p>
+            {username && (
+              <p style={{ fontFamily: font, fontSize: 13, color: T.ink2, margin: '3px 0 0' }}>{username}</p>
             )}
+            {/* Monetized Creator pill — dollar sign icon */}
             {monetStatus === 'approved' && (
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 6, padding: '3px 9px', borderRadius: 20, background: 'rgba(5,5,5,.06)', border: `1px solid rgba(5,5,5,.12)` }}>
-                <TrendingUp size={10} color={T.ink} />
+                <span style={{ fontFamily: font, fontSize: 11, fontWeight: 800, color: T.ink, lineHeight: 1 }}>$</span>
                 <span style={{ fontFamily: font, fontSize: 10, fontWeight: 600, color: T.ink, letterSpacing: '.04em' }}>Monetized Creator</span>
               </div>
             )}
@@ -415,15 +431,27 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
     );
   };
 
-  // ── Wall grid ─────────────────────────────────────────────────────────────────
+  // ── Wall grid — images block long-press/context menu ─────────────────────────
   const WallGrid = () => (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 2 }}>
       {walls.slice(0, 9).map(wp => (
-        <button key={wp.id} className="cell"
+        <button
+          key={wp.id}
+          className="cell"
           onClick={() => router.push(`/details/${wp.id}`)}
-          style={{ aspectRatio: '3/4', border: 'none', padding: 0, cursor: 'pointer', background: '#e8e8e8', overflow: 'hidden', display: 'block' }}>
-          <img src={wp.thumbnail || wp.url} alt={wp.title} loading="lazy"
-            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          onContextMenu={e => e.preventDefault()}
+          style={{ aspectRatio: '3/4', border: 'none', padding: 0, cursor: 'pointer', background: '#e8e8e8', overflow: 'hidden', display: 'block', position: 'relative', WebkitUserSelect: 'none', userSelect: 'none' }}
+        >
+          <Image
+            src={wp.thumbnail || wp.url}
+            alt={wp.title}
+            fill
+            sizes="(max-width: 680px) 33vw, 226px"
+            loading="lazy"
+            draggable={false}
+            onContextMenu={e => e.preventDefault()}
+            style={{ objectFit: 'cover', display: 'block', WebkitUserSelect: 'none', userSelect: 'none', WebkitTouchCallout: 'none' } as React.CSSProperties}
+          />
         </button>
       ))}
     </div>
@@ -444,10 +472,41 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
 
       <div style={{ maxWidth: isDesktop ? 680 : '100%', margin: '0 auto' }}>
 
+        {/* BLACK HEADER WITH BACK BUTTON */}
+        <div style={{
+          position: 'sticky', top: 0, zIndex: 100,
+          background: '#050505',
+          display: 'flex', alignItems: 'center', gap: 10,
+          padding: '0 12px',
+          height: 52,
+          borderBottom: '1px solid rgba(255,255,255,.08)',
+        }}>
+          <button
+            className="tap"
+            onClick={() => router.back()}
+            style={{
+              width: 36, height: 36, borderRadius: '50%',
+              border: 'none', background: 'rgba(255,255,255,.12)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', flexShrink: 0,
+            }}
+            aria-label="Go back"
+          >
+            <ChevronLeft size={20} color="#ffffff" strokeWidth={2.5} />
+          </button>
+          <span style={{
+            fontFamily: font, fontSize: 17, fontWeight: 700,
+            color: '#ffffff', letterSpacing: '-.01em',
+            flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            {profile?.name ?? 'Profile'}
+          </span>
+        </div>
+
         {/* HERO */}
         <div className="up"><HeroBlock /></div>
 
-        {/* TABS */}
+        {/* TABS — Posts + Photos only */}
         <div className="up d1" style={{ background: T.surface, marginTop: 8, borderTop: `1px solid ${T.border}`, borderBottom: `1px solid ${T.border}` }}>
           <Tabs />
         </div>
@@ -467,8 +526,19 @@ export default function ProfileClient({ initialStats, initialWallpapers }: Props
                 </>
               : <EmptyTab msg="Upload your first wallpaper to get started." />
           )}
-          {activeTab === 'reels'  && <EmptyTab msg="Your reels will appear here." />}
-          {activeTab === 'photos' && (walls.length > 0 ? <WallGrid /> : <EmptyTab msg="Your photos will appear here." />)}
+
+          {/* Photos tab — shows wall grid + always-visible View All Posts button */}
+          {activeTab === 'photos' && (
+            walls.length > 0
+              ? <>
+                  <WallGrid />
+                  <button className="tap" onClick={() => open('allPosts')}
+                    style={{ width: '100%', padding: '14px 0', background: T.surface, border: 'none', borderTop: `1px solid ${T.border}`, fontFamily: font, fontSize: 14, fontWeight: 600, color: T.ink, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                    <Grid size={15} color={T.ink} /> View all posts
+                  </button>
+                </>
+              : <EmptyTab msg="Your photos will appear here." />
+          )}
         </div>
 
         {/* MONETIZATION */}
