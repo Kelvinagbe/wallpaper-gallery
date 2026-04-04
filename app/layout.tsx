@@ -6,10 +6,10 @@ import Script from 'next/script';
 import { AuthProvider } from '@/app/components/AuthProvider';
 import { UploadModalProvider } from '@/app/components/UploadModalProvider';
 import { TopLoader } from '@/app/components/TopLoader';
+import { RouterRefresher } from '@/app/components/RouterRefresher';
 import { createClient } from '@/lib/supabase/server';
 
 const inter = Inter({ subsets: ['latin'] });
-
 const BASE_URL = 'https://wallpaper-gallery-sooty.vercel.app';
 
 export const metadata: Metadata = {
@@ -21,15 +21,8 @@ export const metadata: Metadata = {
     description: 'Discover and download stunning wallpapers to transform your spaces.',
     url: BASE_URL,
     siteName: 'Walls',
-    images: [
-      {
-        url: '/banner.png',
-        width: 1200,
-        height: 630,
-        alt: 'Walls – Transform Your Spaces',
-      },
-    ],
     type: 'website',
+    images: [{ url: '/banner.png', width: 1200, height: 630, alt: 'Walls – Transform Your Spaces' }],
   },
   twitter: {
     card: 'summary_large_image',
@@ -39,11 +32,7 @@ export const metadata: Metadata = {
   },
 };
 
-export default async function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
   const { data: { session } } = await supabase.auth.getSession();
 
@@ -53,13 +42,10 @@ export default async function RootLayout({
         <Script src="/ads.js" strategy="beforeInteractive" />
       </head>
       <body className={inter.className}>
-        <Suspense fallback={null}>
-          <TopLoader />
-        </Suspense>
+        <RouterRefresher />
+        <Suspense fallback={null}><TopLoader /></Suspense>
         <AuthProvider initialSession={session}>
-          <UploadModalProvider>
-            {children}
-          </UploadModalProvider>
+          <UploadModalProvider>{children}</UploadModalProvider>
         </AuthProvider>
       </body>
     </html>
