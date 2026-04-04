@@ -5,7 +5,7 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr';
 const PUBLIC_ROUTES = new Set(['/', '/search', '/trending']);
 const AUTH_ROUTES   = new Set(['/login', '/signup', '/auth/callback']);
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // ── 1. Speed: cache static-ish pages at the CDN edge ──────────────────────
