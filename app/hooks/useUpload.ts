@@ -163,7 +163,7 @@ export const useUpload = (userId: string | null) => {
     online,
     speed,
     canResume:    false,
-    getCachedData: () => null,
+    getCachedData: (): null => null,
     uploadFile,
     reset,
     cancel,
