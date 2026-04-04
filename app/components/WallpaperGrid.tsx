@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useMemo, memo } from 'react';
+import { useState, useEffect, useMemo, memo } from 'react';
 import { WallpaperCard, NativeAdCard } from './WallpaperCard';
 import type { Wallpaper, Ad } from '../types';
 
@@ -92,12 +92,19 @@ type Props = {
   hasMore?:          boolean;
   nativeEvery?:      number;
   chunkSize?:        number;
-  // debug
   debugLog?:         string[];
   debugStats?:       { page: number; total: number };
 };
 
 const CHUNK_SIZE = 10;
+
+const logColor = (line: string) => {
+  if (line.includes('ERROR')) return '#f87171';
+  if (line.includes('GOT'))   return '#34d399';
+  if (line.includes('FETCH')) return '#60a5fa';
+  if (line.includes('TAP'))   return '#fbbf24';
+  return '#d1d5db';
+};
 
 /* ─── main ───────────────────────────────────────────────────────────── */
 export const WallpaperGrid = ({
@@ -194,7 +201,7 @@ export const WallpaperGrid = ({
       {/* ── debug overlay ── */}
       {debugStats && (
         <div style={{ margin: '8px 12px 0', borderRadius: 12, overflow: 'hidden', border: '1px solid #e5e7eb' }}>
-          <div style={{ background: '#1f2937', padding: '8px 12px', display: 'flex', gap: 16 }}>
+          <div style={{ background: '#1f2937', padding: '8px 12px', display: 'flex', gap: 16, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#34d399' }}>page: {debugStats.page}</span>
             <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#60a5fa' }}>total: {debugStats.total}</span>
             <span style={{ fontSize: 11, fontFamily: 'monospace', color: hasMore ? '#fbbf24' : '#f87171' }}>hasMore: {String(hasMore)}</span>
@@ -204,10 +211,10 @@ export const WallpaperGrid = ({
             {debugLog.length === 0
               ? <span style={{ fontSize: 10, fontFamily: 'monospace', color: '#6b7280' }}>Tap Load More to see logs…</span>
               : debugLog.map((line, i) => (
-                <div key={i} style={{ fontSize: 10, fontFamily: 'monospace', color: '#d1d5db', lineHeight: 1.7,
-                  color: line.includes('ERROR') ? '#f87171' : line.includes('GOT') ? '#34d399' : line.includes('FETCH') ? '#60a5fa' : '#d1d5db'
-                }}>{line}</div>
-              ))
+                  <div key={i} style={{ fontSize: 10, fontFamily: 'monospace', lineHeight: 1.7, color: logColor(line) }}>
+                    {line}
+                  </div>
+                ))
             }
           </div>
         </div>
