@@ -137,7 +137,7 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
       />
       <main style={{ maxWidth: 1400, margin: '0 auto', paddingBottom: 40 }}>
         {filter === 'all' && <HotCarousel />}
-        <div style={{ padding: '8px 16px 0' }}>
+        <div style={{ padding: '8px 4px 0' }}>
           <WallpaperGrid
             wallpapers={wallpapers}
             isLoading={isInitialLoad}
