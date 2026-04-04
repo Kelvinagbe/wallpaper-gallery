@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
-
+ 
 // ─── Routes that never need auth ──────────────────────────────────────────────
 const PUBLIC_ROUTES = new Set(['/', '/search', '/trending']);
 const AUTH_ROUTES   = new Set(['/login', '/signup', '/auth/callback']);
