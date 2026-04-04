@@ -21,7 +21,6 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
 
   const [wallpapers,    setWallpapers]    = useState<Wallpaper[]>(feedCache.populated ? feedCache.wallpapers : initialWallpapers);
   const [hasMore,       setHasMore]       = useState(feedCache.populated ? feedCache.hasMore : initialHasMore);
-  const [page,          setPage]          = useState(feedCache.page);
   const [filter,        setFilter]        = useState<Filter>(feedCache.filter);
   const [isInitialLoad, setIsInitialLoad] = useState(false);
 
@@ -29,8 +28,9 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
   const filterChangedRef = useRef(false);
   const isScrollingRef   = useRef(false);
   const scrollTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Ref-based wallpaper IDs for dedup — avoids wallpapers in handleLoadMore deps
   const seenIdsRef       = useRef<Set<string>>(new Set(initialWallpapers.map(w => w.id)));
+  // pageRef — always current, never stale inside callbacks
+  const pageRef          = useRef<number>(feedCache.page ?? 1);
 
   // ── Track scrolling state ─────────────────────────────────────
   useEffect(() => {
@@ -43,7 +43,7 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  // ── Restore scroll / seed cache ──────────────────────────────
+  // ── Restore scroll / seed cache ───────────────────────────────
   useEffect(() => {
     if (feedCache.populated) {
       requestAnimationFrame(() =>
@@ -54,6 +54,7 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
       return;
     }
     Object.assign(feedCache, { wallpapers: initialWallpapers, page: 1, hasMore: initialHasMore, filter, populated: true });
+    pageRef.current = 1;
   }, []); // eslint-disable-line
 
   // ── Filter change ─────────────────────────────────────────────
@@ -61,19 +62,19 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
     if (!filterChangedRef.current) { filterChangedRef.current = true; return; }
     let cancelled = false;
     setWallpapers([]);
-    setPage(0);
     setHasMore(true);
     setIsInitialLoad(true);
     seenIdsRef.current = new Set();
+    pageRef.current    = 0;
     Object.assign(feedCache, { populated: false, wallpapers: [], scrollY: 0 });
 
     fetchWallpapers(0, ITEMS_PER_PAGE, filter)
       .then(data => {
         if (cancelled) return;
         seenIdsRef.current = new Set(data.wallpapers.map((w: Wallpaper) => w.id));
+        pageRef.current    = 1;
         setWallpapers(data.wallpapers);
         setHasMore(data.hasMore);
-        setPage(1);
         Object.assign(feedCache, { wallpapers: data.wallpapers, page: 1, hasMore: data.hasMore, filter, populated: true });
       })
       .catch(e => console.error('Filter change failed:', e))
@@ -85,7 +86,7 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
   // ── Real-time refetch on reconnect / poll (skips if scrolling) ─
   useEffect(() => {
     const refetch = async () => {
-      if (isScrollingRef.current) return; // don't update mid-scroll
+      if (isScrollingRef.current) return;
       try {
         const data  = await fetchWallpapers(0, ITEMS_PER_PAGE, feedCache.filter);
         const fresh = data.wallpapers.filter((w: Wallpaper) => !seenIdsRef.current.has(w.id));
@@ -104,27 +105,27 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
     return () => { window.removeEventListener('online', refetch); clearInterval(poll); };
   }, []);
 
-  // ── Load more — no wallpapers in deps, uses seenIdsRef ───────
+  // ── Load more — pageRef used so it's never stale ──────────────
   const handleLoadMore = useCallback(async () => {
     if (!hasMore || loadingMoreRef.current) return;
     loadingMoreRef.current = true;
     try {
-      const data  = await fetchWallpapers(page, ITEMS_PER_PAGE, filter);
+      const data  = await fetchWallpapers(pageRef.current, ITEMS_PER_PAGE, filter);
       const fresh = data.wallpapers.filter((w: Wallpaper) => !seenIdsRef.current.has(w.id));
       fresh.forEach((w: Wallpaper) => seenIdsRef.current.add(w.id));
+      pageRef.current += 1; // increment immediately — never stale
       setWallpapers(prev => {
         const next = [...prev, ...fresh];
-        Object.assign(feedCache, { wallpapers: next, page: page + 1, hasMore: data.hasMore });
+        Object.assign(feedCache, { wallpapers: next, page: pageRef.current, hasMore: data.hasMore });
         return next;
       });
       setHasMore(data.hasMore);
-      setPage(p => p + 1);
     } catch (e) {
       console.error('Load more failed:', e);
     } finally {
       loadingMoreRef.current = false;
     }
-  }, [hasMore, page, filter]); // wallpapers removed — dedup via seenIdsRef
+  }, [hasMore, filter]); // page removed — pageRef handles it
 
   // ── Filter change handler ─────────────────────────────────────
   const handleFilterChange = useCallback((newFilter: Filter) => {
