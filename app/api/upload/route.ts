@@ -1,6 +1,13 @@
 // app/api/upload/route.ts
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 import sharp from 'sharp';
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  { auth: { autoRefreshToken: false, persistSession: false } },
+);
 
 const BLOB_URL   = process.env.BLOB_UPLOAD_URL!;
 const SE_USER    = process.env.SIGHTENGINE_USER!;
@@ -217,26 +224,25 @@ async function saveToDatabase(payload: {
   category: string; wallType: string;
   imageUrl: string; thumbnailUrl: string;
 }) {
-  const res = await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/save-wallpaper`, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
+  const { data, error } = await supabase
+    .from('wallpapers')
+    .insert({
       user_id:       payload.userId,
       title:         payload.title.trim(),
-      description:   payload.description.trim() || null,
-      category:      payload.category.trim()    || null,
-      type:          payload.wallType,
+      description:   payload.description.trim()  || null,
       image_url:     payload.imageUrl,
       thumbnail_url: payload.thumbnailUrl,
-    }),
-  });
+      category:      payload.category.trim()     || 'Other',
+      type:          payload.wallType             || 'mobile',
+      tags:          [],
+      is_public:     true,
+      views:         0,
+      downloads:     0,
+    })
+    .select()
+    .single();
 
-  if (!res.ok) {
-    const e = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(e.error || 'Database save failed');
-  }
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error || 'Database save failed');
+  if (error) throw new Error(error.message);
   return data;
 }
 
