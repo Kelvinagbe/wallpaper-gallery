@@ -144,8 +144,7 @@ const UploadModal = ({ onClose }: { onClose: ()=>void }) => {
         const [count, susp] = await Promise.all([getTodayCount(supabase, u.id), checkSuspension(supabase, u.id)]);
         setTodayCount(count); setSuspension(susp);
       }
-      const cached = getCachedData();
-      if (cached) { setTitle(cached.title||''); setDesc(cached.description||''); setCategory(cached.category||''); setType(cached.wallType||'mobile'); }
+     
       setAuthLoading(false);
     })();
     document.body.style.overflow = 'hidden';
