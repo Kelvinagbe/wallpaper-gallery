@@ -16,7 +16,7 @@ const COLORS = [
   { bg: '#f0ede8', shimmer: '#e8dcc8' },
 ];
 
-/* ─── shimmer ─────────────────────────────────────────────────────────── */
+/* ─── shimmer ────────────────────────────────────────────────────────── */
 const Shimmer = ({ i, o = 1 }: { i: number; o?: number }) => {
   const c = COLORS[i % COLORS.length];
   const anim: React.CSSProperties = { backgroundSize: '200% 100%', animation: 'shimmerSweep 1.6s ease-in-out infinite' };
@@ -51,14 +51,12 @@ const ShimmerGrid = ({ count, opacity, cols, gap, pad, itemGap }: {
 
 /* ─── types ──────────────────────────────────────────────────────────── */
 type MasonryItem = { kind: 'wallpaper'; wp: Wallpaper } | { kind: 'native'; ad: Ad };
-type Dims = { cols: number; gap: number; pad: number };
 
-/* ─── frozen masonry chunk — memo so it never re-renders ─────────────── */
+/* ─── frozen masonry chunk ───────────────────────────────────────────── */
 const MasonryChunk = memo(({ items, cols, gap, pad, itemGap, chunkOffset, onWallpaperClick }: {
   items: MasonryItem[]; cols: number; gap: number; pad: number; itemGap: number;
   chunkOffset: number; onWallpaperClick?: (w: Wallpaper) => void;
 }) => {
-  // Build columns once — frozen by memo, never reshuffles
   const columns = useMemo(() => {
     const result: MasonryItem[][] = Array.from({ length: cols }, () => []);
     items.forEach((item, i) => result[i % cols].push(item));
@@ -94,17 +92,22 @@ type Props = {
   hasMore?:          boolean;
   nativeEvery?:      number;
   chunkSize?:        number;
+  // debug
+  debugLog?:         string[];
+  debugStats?:       { page: number; total: number };
 };
 
 const CHUNK_SIZE = 10;
 
 /* ─── main ───────────────────────────────────────────────────────────── */
 export const WallpaperGrid = ({
-  wallpapers, isLoading, onWallpaperClick, onLoadMore, hasMore = true, nativeEvery = 7, chunkSize = CHUNK_SIZE,
+  wallpapers, isLoading, onWallpaperClick, onLoadMore,
+  hasMore = true, nativeEvery = 7, chunkSize = CHUNK_SIZE,
+  debugLog = [], debugStats,
 }: Props) => {
   const [loadingMore, setLoadingMore]     = useState(false);
   const [hasEverLoaded, setHasEverLoaded] = useState(false);
-  const [dims, setDims] = useState<Dims>(() => {
+  const [dims, setDims] = useState(() => {
     const w = typeof window !== 'undefined' ? window.innerWidth : 390;
     return { cols: getColCount(w), gap: getGap(w), pad: getPad(w) };
   });
@@ -125,7 +128,6 @@ export const WallpaperGrid = ({
   const { cols, gap, pad } = dims;
   const itemGap = getItemGap(cols);
 
-  // Build flat items list with native ads injected
   const nativeAds = useMemo<Ad[]>(() =>
     typeof window === 'undefined' ? [] : ((window as any).MY_ADS ?? []).filter((a: Ad) => a.adType === 'native'),
   []);
@@ -141,7 +143,6 @@ export const WallpaperGrid = ({
     return result;
   }, [wallpapers, nativeAds, nativeEvery]);
 
-  // Split into frozen chunks — each chunk is a stable slice that never changes
   const chunks = useMemo(() => {
     const result: MasonryItem[][] = [];
     for (let i = 0; i < allItems.length; i += chunkSize)
@@ -177,7 +178,6 @@ export const WallpaperGrid = ({
   return (
     <div style={{ paddingTop: 12, display: 'flex', flexDirection: 'column', gap: `${itemGap}px` }}>
 
-      {/* Each chunk is frozen by memo — already-loaded cards never re-render or shift */}
       {chunks.map((chunk, i) => (
         <MasonryChunk
           key={i}
@@ -191,9 +191,31 @@ export const WallpaperGrid = ({
         />
       ))}
 
-      {/* Load More button */}
+      {/* ── debug overlay ── */}
+      {debugStats && (
+        <div style={{ margin: '8px 12px 0', borderRadius: 12, overflow: 'hidden', border: '1px solid #e5e7eb' }}>
+          <div style={{ background: '#1f2937', padding: '8px 12px', display: 'flex', gap: 16 }}>
+            <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#34d399' }}>page: {debugStats.page}</span>
+            <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#60a5fa' }}>total: {debugStats.total}</span>
+            <span style={{ fontSize: 11, fontFamily: 'monospace', color: hasMore ? '#fbbf24' : '#f87171' }}>hasMore: {String(hasMore)}</span>
+            <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#a78bfa' }}>loading: {String(loadingMore)}</span>
+          </div>
+          <div style={{ background: '#111827', padding: '8px 12px', maxHeight: 160, overflowY: 'auto' }}>
+            {debugLog.length === 0
+              ? <span style={{ fontSize: 10, fontFamily: 'monospace', color: '#6b7280' }}>Tap Load More to see logs…</span>
+              : debugLog.map((line, i) => (
+                <div key={i} style={{ fontSize: 10, fontFamily: 'monospace', color: '#d1d5db', lineHeight: 1.7,
+                  color: line.includes('ERROR') ? '#f87171' : line.includes('GOT') ? '#34d399' : line.includes('FETCH') ? '#60a5fa' : '#d1d5db'
+                }}>{line}</div>
+              ))
+            }
+          </div>
+        </div>
+      )}
+
+      {/* ── load more button ── */}
       {hasMore && onLoadMore && (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '32px 0 16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '24px 0 16px' }}>
           <button
             onClick={handleLoadMore}
             disabled={loadingMore}
