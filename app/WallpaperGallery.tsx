@@ -8,6 +8,7 @@ import { WallpaperGrid } from './components/WallpaperGrid';
 import { GlobalStyles } from './components/GlobalStyles';
 import { HotCarousel } from '@/app/components/HotCarousel';
 import { MonetizationInfoModal } from '@/app/components/MonetizationInfoModal';
+import { BottomSheetProvider } from './components/WallpaperCard';
 import { useRouter } from 'next/navigation';
 import type { Wallpaper, Filter } from './types';
 
@@ -26,6 +27,21 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
 
   const loadingMoreRef   = useRef(false);
   const filterChangedRef = useRef(false);
+  const isScrollingRef   = useRef(false);
+  const scrollTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Ref-based wallpaper IDs for dedup — avoids wallpapers in handleLoadMore deps
+  const seenIdsRef       = useRef<Set<string>>(new Set(initialWallpapers.map(w => w.id)));
+
+  // ── Track scrolling state ─────────────────────────────────────
+  useEffect(() => {
+    const onScroll = () => {
+      isScrollingRef.current = true;
+      if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
+      scrollTimerRef.current = setTimeout(() => { isScrollingRef.current = false; }, 150);
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   // ── Restore scroll / seed cache ──────────────────────────────
   useEffect(() => {
@@ -37,13 +53,7 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
       );
       return;
     }
-    Object.assign(feedCache, {
-      wallpapers: initialWallpapers,
-      page: 1,
-      hasMore: initialHasMore,
-      filter,
-      populated: true,
-    });
+    Object.assign(feedCache, { wallpapers: initialWallpapers, page: 1, hasMore: initialHasMore, filter, populated: true });
   }, []); // eslint-disable-line
 
   // ── Filter change ─────────────────────────────────────────────
@@ -54,11 +64,13 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
     setPage(0);
     setHasMore(true);
     setIsInitialLoad(true);
+    seenIdsRef.current = new Set();
     Object.assign(feedCache, { populated: false, wallpapers: [], scrollY: 0 });
 
     fetchWallpapers(0, ITEMS_PER_PAGE, filter)
       .then(data => {
         if (cancelled) return;
+        seenIdsRef.current = new Set(data.wallpapers.map((w: Wallpaper) => w.id));
         setWallpapers(data.wallpapers);
         setHasMore(data.hasMore);
         setPage(1);
@@ -70,14 +82,15 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
     return () => { cancelled = true; };
   }, [filter]); // eslint-disable-line
 
-  // ── Real-time refetch on reconnect / poll ─────────────────────
+  // ── Real-time refetch on reconnect / poll (skips if scrolling) ─
   useEffect(() => {
     const refetch = async () => {
+      if (isScrollingRef.current) return; // don't update mid-scroll
       try {
         const data  = await fetchWallpapers(0, ITEMS_PER_PAGE, feedCache.filter);
-        const seen  = new Set(feedCache.wallpapers.map((w: Wallpaper) => w.id));
-        const fresh = data.wallpapers.filter((w: Wallpaper) => !seen.has(w.id));
+        const fresh = data.wallpapers.filter((w: Wallpaper) => !seenIdsRef.current.has(w.id));
         if (!fresh.length) return;
+        fresh.forEach((w: Wallpaper) => seenIdsRef.current.add(w.id));
         setWallpapers(prev => {
           const next = [...fresh, ...prev];
           Object.assign(feedCache, { wallpapers: next });
@@ -91,14 +104,14 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
     return () => { window.removeEventListener('online', refetch); clearInterval(poll); };
   }, []);
 
-  // ── Load more ─────────────────────────────────────────────────
+  // ── Load more — no wallpapers in deps, uses seenIdsRef ───────
   const handleLoadMore = useCallback(async () => {
     if (!hasMore || loadingMoreRef.current) return;
     loadingMoreRef.current = true;
     try {
       const data  = await fetchWallpapers(page, ITEMS_PER_PAGE, filter);
-      const seen  = new Set(wallpapers.map(w => w.id));
-      const fresh = data.wallpapers.filter((w: Wallpaper) => !seen.has(w.id));
+      const fresh = data.wallpapers.filter((w: Wallpaper) => !seenIdsRef.current.has(w.id));
+      fresh.forEach((w: Wallpaper) => seenIdsRef.current.add(w.id));
       setWallpapers(prev => {
         const next = [...prev, ...fresh];
         Object.assign(feedCache, { wallpapers: next, page: page + 1, hasMore: data.hasMore });
@@ -111,7 +124,7 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
     } finally {
       loadingMoreRef.current = false;
     }
-  }, [hasMore, page, filter, wallpapers]);
+  }, [hasMore, page, filter]); // wallpapers removed — dedup via seenIdsRef
 
   // ── Filter change handler ─────────────────────────────────────
   const handleFilterChange = useCallback((newFilter: Filter) => {
@@ -128,25 +141,27 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
   }, []);
 
   return (
-    <div style={{ minHeight: '100vh', background: '#fff', color: '#0a0a0a' }}>
-      <GlobalStyles />
-      <Header
-        filter={filter}
-        setFilter={handleFilterChange}
-        startLoader={() => router.prefetch}
-      />
-      <main style={{ maxWidth: 1400, margin: '0 auto', paddingBottom: 40 }}>
-        {filter === 'all' && <HotCarousel />}
-        <div style={{ padding: '8px 4px 0' }}>
-          <WallpaperGrid
-            wallpapers={wallpapers}
-            isLoading={isInitialLoad}
-            onLoadMore={handleLoadMore}
-            hasMore={hasMore}
-          />
-        </div>
-      </main>
-      <MonetizationInfoModal />
-    </div>
+    <BottomSheetProvider>
+      <div style={{ minHeight: '100vh', background: '#fff', color: '#0a0a0a' }}>
+        <GlobalStyles />
+        <Header
+          filter={filter}
+          setFilter={handleFilterChange}
+          startLoader={() => router.prefetch}
+        />
+        <main style={{ maxWidth: 1400, margin: '0 auto', paddingBottom: 40 }}>
+          {filter === 'all' && <HotCarousel />}
+          <div style={{ padding: '8px 4px 0' }}>
+            <WallpaperGrid
+              wallpapers={wallpapers}
+              isLoading={isInitialLoad}
+              onLoadMore={handleLoadMore}
+              hasMore={hasMore}
+            />
+          </div>
+        </main>
+        <MonetizationInfoModal />
+      </div>
+    </BottomSheetProvider>
   );
 }
