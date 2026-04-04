@@ -19,24 +19,19 @@ type Props = { initialWallpapers: Wallpaper[]; initialHasMore: boolean };
 export default function WallpaperGallery({ initialWallpapers, initialHasMore }: Props) {
   const router = useRouter();
 
-  // How many pages the server already fetched — pageRef starts here
   const INITIAL_PAGE = Math.ceil(initialWallpapers.length / ITEMS_PER_PAGE);
 
   const [wallpapers,    setWallpapers]    = useState<Wallpaper[]>(feedCache.populated ? feedCache.wallpapers : initialWallpapers);
   const [hasMore,       setHasMore]       = useState(feedCache.populated ? feedCache.hasMore : initialHasMore);
   const [filter,        setFilter]        = useState<Filter>(feedCache.filter);
   const [isInitialLoad, setIsInitialLoad] = useState(false);
-  const [debugLog,      setDebugLog]      = useState<string[]>([]);
 
   const loadingMoreRef   = useRef(false);
   const filterChangedRef = useRef(false);
   const isScrollingRef   = useRef(false);
   const scrollTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seenIdsRef       = useRef<Set<string>>(new Set(initialWallpapers.map(w => w.id)));
-  // Start after however many pages the server already loaded
   const pageRef          = useRef<number>(feedCache.populated ? (feedCache.page ?? INITIAL_PAGE) : INITIAL_PAGE);
-
-  const log = (msg: string) => setDebugLog(prev => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev].slice(0, 20));
 
   // ── Track scrolling state ─────────────────────────────────────
   useEffect(() => {
@@ -83,13 +78,13 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
         setHasMore(data.hasMore);
         Object.assign(feedCache, { wallpapers: data.wallpapers, page: 1, hasMore: data.hasMore, filter, populated: true });
       })
-      .catch(e => console.error('Filter change failed:', e))
+      .catch(() => {})
       .finally(() => { if (!cancelled) setIsInitialLoad(false); });
 
     return () => { cancelled = true; };
   }, [filter]); // eslint-disable-line
 
-  // ── Real-time refetch on reconnect / poll (skips if scrolling) ─
+  // ── Real-time refetch on reconnect / visibility / poll ────────
   useEffect(() => {
     const refetch = async () => {
       if (isScrollingRef.current) return;
@@ -106,21 +101,31 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
       } catch { /* silent */ }
     };
 
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        loadingMoreRef.current = false; // unstick any frozen load
+        if (navigator.onLine) refetch();
+      }
+    };
+
     window.addEventListener('online', refetch);
+    document.addEventListener('visibilitychange', handleVisibility);
     const poll = setInterval(() => { if (navigator.onLine) refetch(); }, 60_000);
-    return () => { window.removeEventListener('online', refetch); clearInterval(poll); };
+
+    return () => {
+      window.removeEventListener('online', refetch);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      clearInterval(poll);
+    };
   }, []);
 
   // ── Load more ─────────────────────────────────────────────────
   const handleLoadMore = useCallback(async () => {
-    log(`TAP — page:${pageRef.current} hasMore:${hasMore} loading:${loadingMoreRef.current}`);
     if (!hasMore || loadingMoreRef.current) return;
     loadingMoreRef.current = true;
     try {
-      log(`FETCH page ${pageRef.current}…`);
       const data  = await fetchWallpapers(pageRef.current, ITEMS_PER_PAGE, filter);
       const fresh = data.wallpapers.filter((w: Wallpaper) => !seenIdsRef.current.has(w.id));
-      log(`GOT ${data.wallpapers.length} total, ${fresh.length} fresh, hasMore:${data.hasMore}`);
       fresh.forEach((w: Wallpaper) => seenIdsRef.current.add(w.id));
       pageRef.current += 1;
       setWallpapers(prev => {
@@ -129,8 +134,7 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
         return next;
       });
       setHasMore(data.hasMore);
-    } catch (e: any) {
-      log(`ERROR: ${e?.message ?? e}`);
+    } catch (e) {
       console.error('Load more failed:', e);
     } finally {
       loadingMoreRef.current = false;
@@ -168,8 +172,6 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
               isLoading={isInitialLoad}
               onLoadMore={handleLoadMore}
               hasMore={hasMore}
-              debugLog={debugLog}
-              debugStats={{ page: pageRef.current, total: wallpapers.length }}
             />
           </div>
         </main>
