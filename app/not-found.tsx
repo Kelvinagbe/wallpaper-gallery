@@ -186,7 +186,7 @@ export default function NotFound() {
             <h1 className="title">Lost in the void</h1>
             <div className="divider" />
             <p className="sub">
-              This page doesn't exist or has been moved somewhere else.
+              This page doesn&apos;t exist or has been moved somewhere else.
             </p>
             <Link href="/" className="btn">
               Go home <span className="btn-arrow">→</span>
