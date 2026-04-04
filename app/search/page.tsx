@@ -250,7 +250,7 @@ export default function SearchPage() {
           )}
         </div>
 
-        <div style={{ maxWidth: 1200, margin: '0 auto', padding: `${headerH + 16}px 16px 56px` }}>
+        <div style={{ maxWidth: 1200, margin: '0 auto', padding: `${headerH + 16}px 4px 56px` }}>
           {resLoading ? <ResultsShimmer /> : results.length > 0 ? (
             <div className="fade-up results-grid">
               {results.map((wp, i) => (
