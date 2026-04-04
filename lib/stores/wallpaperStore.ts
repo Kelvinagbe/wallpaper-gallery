@@ -56,14 +56,10 @@ export const fetchWallpapers = async (page = 0, pageSize = 10, filter: Filter = 
   const start = page * pageSize;
   const end   = start + pageSize - 1;
 
-  // 'all' uses wallpapers_hot_cache — pre-computed, no live recalculation
-  const isHot = filter === 'all';
-
   let query = supabase
-    .from(isHot ? 'wallpapers_hot_cache' : 'wallpapers')
-    .select(SELECT_WALLPAPERS, { count: 'exact' });
-
-  if (!isHot) query = query.eq('is_public', true);
+    .from('wallpapers')
+    .select(SELECT_WALLPAPERS, { count: 'exact' })
+    .eq('is_public', true);
 
   if (filter === 'trending') {
     const sevenDaysAgo = new Date();
@@ -76,30 +72,14 @@ export const fetchWallpapers = async (page = 0, pageSize = 10, filter: Filter = 
   } else if (filter === 'recent') {
     query = query.order('created_at', { ascending: false });
   } else {
-    // 'all' — already sorted by hot_score in cache
-    query = query.order('hot_score', { ascending: false });
+    // 'all' — newest first
+    query = query.order('created_at', { ascending: false });
   }
 
   const { data, error, count } = await query.range(start, end);
 
   if (error) {
     console.error('❌ Error fetching wallpapers:', error);
-    // Fallback to wallpapers table if cache isn't ready yet
-    if (error.message.includes('hot_score') || error.message.includes('wallpapers_hot_cache')) {
-      console.warn('⚠️ wallpapers_hot_cache not ready — falling back to created_at');
-      const fallback = await supabase
-        .from('wallpapers')
-        .select(SELECT_WALLPAPERS, { count: 'exact' })
-        .eq('is_public', true)
-        .order('created_at', { ascending: false })
-        .range(start, end);
-      if (fallback.error) throw new Error(fallback.error.message);
-      return {
-        wallpapers: fallback.data ? fallback.data.map(transformWallpaper) : [],
-        hasMore:    end < (fallback.count || 0) - 1,
-        total:      fallback.count || 0,
-      };
-    }
     throw new Error(error.message);
   }
 
@@ -116,19 +96,29 @@ export const fetchWallpapers = async (page = 0, pageSize = 10, filter: Filter = 
   };
 };
 
-// ─── Fetch hot wallpapers (for HotCarousel) ───────────────────────────────────
+// ─── Fetch hot wallpapers (for HotCarousel only) ──────────────────────────────
 export const fetchHotWallpapers = async (limit = 10) => {
   const supabase = getSupabase();
   const { data, error } = await supabase
     .from('wallpapers_hot_cache')
-    .select('*')  // no profile join — cache table has no FK to profiles
+    .select('*')
     .order('hot_score', { ascending: false })
     .limit(limit);
+
   if (error) {
     console.error('❌ Error fetching hot wallpapers:', error);
-    throw new Error(error.message);
+    // Fallback to wallpapers table if cache isn't ready
+    const fallback = await supabase
+      .from('wallpapers')
+      .select(SELECT_WALLPAPERS)
+      .eq('is_public', true)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (fallback.error) throw new Error(fallback.error.message);
+    return fallback.data ? fallback.data.map(transformWallpaper) : [];
   }
-  console.log('🔥 Hot wallpapers:', data);
+
+  console.log('🔥 Hot wallpapers:', data?.length);
   return data ? data.map(transformWallpaper) : [];
 };
 
