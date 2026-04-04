@@ -92,25 +92,14 @@ type Props = {
   hasMore?:          boolean;
   nativeEvery?:      number;
   chunkSize?:        number;
-  debugLog?:         string[];
-  debugStats?:       { page: number; total: number };
 };
 
 const CHUNK_SIZE = 10;
-
-const logColor = (line: string) => {
-  if (line.includes('ERROR')) return '#f87171';
-  if (line.includes('GOT'))   return '#34d399';
-  if (line.includes('FETCH')) return '#60a5fa';
-  if (line.includes('TAP'))   return '#fbbf24';
-  return '#d1d5db';
-};
 
 /* ─── main ───────────────────────────────────────────────────────────── */
 export const WallpaperGrid = ({
   wallpapers, isLoading, onWallpaperClick, onLoadMore,
   hasMore = true, nativeEvery = 7, chunkSize = CHUNK_SIZE,
-  debugLog = [], debugStats,
 }: Props) => {
   const [loadingMore, setLoadingMore]     = useState(false);
   const [hasEverLoaded, setHasEverLoaded] = useState(false);
@@ -161,7 +150,7 @@ export const WallpaperGrid = ({
     if (!onLoadMore || loadingMore) return;
     setLoadingMore(true);
     try { await onLoadMore(); }
-    catch { console.error('Load more failed'); }
+    catch { /* silent */ }
     finally { setLoadingMore(false); }
   };
 
@@ -197,28 +186,6 @@ export const WallpaperGrid = ({
           onWallpaperClick={onWallpaperClick}
         />
       ))}
-
-      {/* ── debug overlay ── */}
-      {debugStats && (
-        <div style={{ margin: '8px 12px 0', borderRadius: 12, overflow: 'hidden', border: '1px solid #e5e7eb' }}>
-          <div style={{ background: '#1f2937', padding: '8px 12px', display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#34d399' }}>page: {debugStats.page}</span>
-            <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#60a5fa' }}>total: {debugStats.total}</span>
-            <span style={{ fontSize: 11, fontFamily: 'monospace', color: hasMore ? '#fbbf24' : '#f87171' }}>hasMore: {String(hasMore)}</span>
-            <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#a78bfa' }}>loading: {String(loadingMore)}</span>
-          </div>
-          <div style={{ background: '#111827', padding: '8px 12px', maxHeight: 160, overflowY: 'auto' }}>
-            {debugLog.length === 0
-              ? <span style={{ fontSize: 10, fontFamily: 'monospace', color: '#6b7280' }}>Tap Load More to see logs…</span>
-              : debugLog.map((line, i) => (
-                  <div key={i} style={{ fontSize: 10, fontFamily: 'monospace', lineHeight: 1.7, color: logColor(line) }}>
-                    {line}
-                  </div>
-                ))
-            }
-          </div>
-        </div>
-      )}
 
       {/* ── load more button ── */}
       {hasMore && onLoadMore && (
