@@ -9,7 +9,7 @@ import type { Wallpaper, Ad } from '../types';
 const getColCount = (w: number) => w >= 1024 ? 5 : w >= 768 ? 4 : w >= 480 ? 3 : 2;
 const getGap      = (w: number) => w >= 1024 ? 10 : w >= 768 ? 8 : w >= 480 ? 6 : 5;
 // Tight side padding: 4px on mobile, slightly more on larger screens
-const getPad      = (w: number) => w >= 1024 ? 8 : w >= 768 ? 6 : 2;
+const getPad      = (w: number) => w >= 1024 ? 8 : w >= 768 ? 6 : 1;
 const getItemGap  = (cols: number) => cols >= 4 ? 12 : cols >= 3 ? 10 : 8;
 
 /* ─── shimmer ─────────────────────────────────────────────────────────── */
