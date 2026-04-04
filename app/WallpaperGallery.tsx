@@ -23,14 +23,16 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
   const [hasMore,       setHasMore]       = useState(feedCache.populated ? feedCache.hasMore : initialHasMore);
   const [filter,        setFilter]        = useState<Filter>(feedCache.filter);
   const [isInitialLoad, setIsInitialLoad] = useState(false);
+  const [debugLog,      setDebugLog]      = useState<string[]>([]);
 
   const loadingMoreRef   = useRef(false);
   const filterChangedRef = useRef(false);
   const isScrollingRef   = useRef(false);
   const scrollTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seenIdsRef       = useRef<Set<string>>(new Set(initialWallpapers.map(w => w.id)));
-  // pageRef — always current, never stale inside callbacks
   const pageRef          = useRef<number>(feedCache.page ?? 1);
+
+  const log = (msg: string) => setDebugLog(prev => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev].slice(0, 20));
 
   // ── Track scrolling state ─────────────────────────────────────
   useEffect(() => {
@@ -105,27 +107,31 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
     return () => { window.removeEventListener('online', refetch); clearInterval(poll); };
   }, []);
 
-  // ── Load more — pageRef used so it's never stale ──────────────
+  // ── Load more ─────────────────────────────────────────────────
   const handleLoadMore = useCallback(async () => {
+    log(`TAP — page:${pageRef.current} hasMore:${hasMore} loading:${loadingMoreRef.current}`);
     if (!hasMore || loadingMoreRef.current) return;
     loadingMoreRef.current = true;
     try {
+      log(`FETCH page ${pageRef.current}…`);
       const data  = await fetchWallpapers(pageRef.current, ITEMS_PER_PAGE, filter);
       const fresh = data.wallpapers.filter((w: Wallpaper) => !seenIdsRef.current.has(w.id));
+      log(`GOT ${data.wallpapers.length} total, ${fresh.length} fresh, hasMore:${data.hasMore}`);
       fresh.forEach((w: Wallpaper) => seenIdsRef.current.add(w.id));
-      pageRef.current += 1; // increment immediately — never stale
+      pageRef.current += 1;
       setWallpapers(prev => {
         const next = [...prev, ...fresh];
         Object.assign(feedCache, { wallpapers: next, page: pageRef.current, hasMore: data.hasMore });
         return next;
       });
       setHasMore(data.hasMore);
-    } catch (e) {
+    } catch (e: any) {
+      log(`ERROR: ${e?.message ?? e}`);
       console.error('Load more failed:', e);
     } finally {
       loadingMoreRef.current = false;
     }
-  }, [hasMore, filter]); // page removed — pageRef handles it
+  }, [hasMore, filter]);
 
   // ── Filter change handler ─────────────────────────────────────
   const handleFilterChange = useCallback((newFilter: Filter) => {
@@ -158,6 +164,8 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
               isLoading={isInitialLoad}
               onLoadMore={handleLoadMore}
               hasMore={hasMore}
+              debugLog={debugLog}
+              debugStats={{ page: pageRef.current, total: wallpapers.length }}
             />
           </div>
         </main>
