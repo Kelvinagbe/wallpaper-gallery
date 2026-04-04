@@ -19,6 +19,9 @@ type Props = { initialWallpapers: Wallpaper[]; initialHasMore: boolean };
 export default function WallpaperGallery({ initialWallpapers, initialHasMore }: Props) {
   const router = useRouter();
 
+  // How many pages the server already fetched — pageRef starts here
+  const INITIAL_PAGE = Math.ceil(initialWallpapers.length / ITEMS_PER_PAGE);
+
   const [wallpapers,    setWallpapers]    = useState<Wallpaper[]>(feedCache.populated ? feedCache.wallpapers : initialWallpapers);
   const [hasMore,       setHasMore]       = useState(feedCache.populated ? feedCache.hasMore : initialHasMore);
   const [filter,        setFilter]        = useState<Filter>(feedCache.filter);
@@ -30,7 +33,8 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
   const isScrollingRef   = useRef(false);
   const scrollTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seenIdsRef       = useRef<Set<string>>(new Set(initialWallpapers.map(w => w.id)));
-  const pageRef          = useRef<number>(feedCache.page ?? 1);
+  // Start after however many pages the server already loaded
+  const pageRef          = useRef<number>(feedCache.populated ? (feedCache.page ?? INITIAL_PAGE) : INITIAL_PAGE);
 
   const log = (msg: string) => setDebugLog(prev => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev].slice(0, 20));
 
@@ -55,8 +59,8 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
       );
       return;
     }
-    Object.assign(feedCache, { wallpapers: initialWallpapers, page: 1, hasMore: initialHasMore, filter, populated: true });
-    pageRef.current = 1;
+    Object.assign(feedCache, { wallpapers: initialWallpapers, page: INITIAL_PAGE, hasMore: initialHasMore, filter, populated: true });
+    pageRef.current = INITIAL_PAGE;
   }, []); // eslint-disable-line
 
   // ── Filter change ─────────────────────────────────────────────
