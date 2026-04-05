@@ -26,7 +26,7 @@ jobs:
       - name: Install Bubblewrap
         run: npm install -g @bubblewrap/cli
 
-      - name: Pre-configure Bubblewrap
+      - name: Pre-configure Bubblewrap (JDK/SDK paths)
         run: |
           mkdir -p ~/.bubblewrap
           cat > ~/.bubblewrap/config.json << EOF
@@ -35,8 +35,7 @@ jobs:
             "androidSdkPath": "$ANDROID_SDK_ROOT"
           }
           EOF
-          echo "Config:"
-          cat ~/.bubblewrap/config.json
+          echo "Bubblewrap global config created."
 
       - name: Generate keystore
         run: |
@@ -51,7 +50,7 @@ jobs:
             -keypass ${{ secrets.KEYSTORE_PASSWORD }} \
             -dname "CN=Walls, OU=App, O=Walls, L=Lagos, S=Lagos, C=NG"
 
-      - name: Create Bubblewrap config file
+      - name: Create Bubblewrap app config
         run: |
           mkdir -p walls-android
           cat > walls-android/bubblewrap-config.json << EOF
@@ -77,7 +76,7 @@ jobs:
             }
           }
           EOF
-          echo "Bubblewrap config created."
+          echo "Bubblewrap app config created."
 
       - name: Run Bubblewrap init (non-interactive)
         run: |
