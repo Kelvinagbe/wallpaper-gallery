@@ -23,6 +23,15 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Accept all Android SDK licenses
+        run: |
+          yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
+            "platforms;android-34" \
+            "build-tools;34.0.0" \
+            "platform-tools" || true
+          echo "Licenses accepted."
+
       - name: Install Bubblewrap
         run: npm install -g @bubblewrap/cli
 
@@ -94,8 +103,7 @@ jobs:
             "fingerprints": []
           }
           EOF
-          echo "twa-manifest.json created:"
-          cat ${{ github.workspace }}/walls-android/twa-manifest.json
+          echo "twa-manifest.json created."
 
       - name: Generate Android project with bubblewrap update (non-interactive)
         env:
@@ -104,6 +112,19 @@ jobs:
         run: |
           cd ${{ github.workspace }}/walls-android
           bubblewrap update --skipVersionUpgrade
+
+      - name: Accept Android SDK licenses for Gradle
+        run: |
+          mkdir -p $ANDROID_SDK_ROOT/licenses
+          echo -e "\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > $ANDROID_SDK_ROOT/licenses/android-sdk-license
+          echo -e "\nd56f5187479451eabf01fb78af6dfcb131a6481e\n84831b9409646a918e30573bab4c9c91346d8abd" >> $ANDROID_SDK_ROOT/licenses/android-sdk-license
+          echo -e "\n84831b9409646a918e30573bab4c9c91346d8abd" > $ANDROID_SDK_ROOT/licenses/android-sdk-preview-license
+          echo -e "\n33b6937b7c5e5d694e7f30d6c9aab2bd58b9a2c4" > $ANDROID_SDK_ROOT/licenses/google-gdk-license
+          echo -e "\ne9acab5b5fbb560a72cfaecce8946896ff6aab9d" > $ANDROID_SDK_ROOT/licenses/android-googletv-license
+          echo -e "\nd975f751698a77b662f1254ddbeed3901e976f5a" > $ANDROID_SDK_ROOT/licenses/intel-android-extra-license
+          echo -e "\n33b6937b7c5e5d694e7f30d6c9aab2bd58b9a2c4" > $ANDROID_SDK_ROOT/licenses/mips-android-sysimage-license
+          echo "All license files written."
+          ls -la $ANDROID_SDK_ROOT/licenses/
 
       - name: Verify Android project generated
         run: |
