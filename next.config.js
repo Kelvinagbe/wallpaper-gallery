@@ -23,8 +23,6 @@ const nextConfig = {
     optimizePackageImports: ['lucide-react'],
     staleTimes: { dynamic: 0 },
   },
-
-  output: 'export',
 }
 
 module.exports = nextConfig
