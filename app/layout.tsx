@@ -42,6 +42,19 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <Script src="/ads.js" strategy="beforeInteractive" />
       </head>
       <body className={inter.className}>
+<script
+  dangerouslySetInnerHTML={{
+    __html: `
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+          navigator.serviceWorker.register('/sw.js')
+            .then(function(reg) { console.log('SW registered:', reg.scope); })
+            .catch(function(err) { console.log('SW failed:', err); });
+        });
+      }
+    `,
+  }}
+/>
         <RouterRefresher />
         <Suspense fallback={null}><TopLoader /></Suspense>
         <AuthProvider initialSession={session}>
