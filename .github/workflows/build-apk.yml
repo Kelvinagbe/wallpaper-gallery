@@ -95,6 +95,22 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync android
 
+      - name: Fix Kotlin stdlib duplicate classes
+        run: |
+          cat >> android/build.gradle << 'EOF'
+
+          subprojects {
+            configurations.all {
+              resolutionStrategy {
+                force "org.jetbrains.kotlin:kotlin-stdlib:1.9.0"
+                force "org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.9.0"
+                force "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.0"
+              }
+            }
+          }
+          EOF
+          echo "Kotlin resolution strategy applied."
+
       - name: Generate keystore
         run: |
           keytool -genkeypair \
