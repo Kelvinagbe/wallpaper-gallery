@@ -54,27 +54,8 @@ jobs:
       - name: Run Bubblewrap init
         run: |
           mkdir -p walls-android
-          # Answers to ALL bubblewrap init questions in order:
-          # 1. Domain (accept default)
-          # 2. App name (accept default)  
-          # 3. Short/launcher name (accept default)
-          # 4. Application ID
-          # 5. Display mode (accept default standalone)
-          # 6. Orientation (accept default portrait)
-          # 7. Status bar color (accept default)
-          # 8. Splash screen color (accept default)
-          # 9. Nav bar color (accept default)
-          # 10. Icon URL (accept default)
-          # 11. Maskable icon URL (accept default)
-          # 12. Include shortcuts? n
-          # 13. Play Billing? n
-          # 14. Geolocation? n
-          # 15. Use existing keystore? yes
-          # 16. Keystore path
-          # 17. Keystore password
-          # 18. Key alias
-          # 19. Key password
-          printf "\n\n\ncom.walls.app\n\n\n\n\n\n\n\nn\nn\nn\ny\n${{ github.workspace }}/walls.keystore\n${{ secrets.KEYSTORE_PASSWORD }}\nwalls\n${{ secrets.KEYSTORE_PASSWORD }}\n" | \
+          # Provide answers to bubblewrap init prompts in order:
+          printf "walls.ovrica.name.ng\n\n\nng.name.ovrica.walls\n\n\n\n\n\n\n\nn\nn\nn\ny\n${{ github.workspace }}/walls.keystore\n${{ secrets.KEYSTORE_PASSWORD }}\nwalls\n${{ secrets.KEYSTORE_PASSWORD }}\n" | \
           bubblewrap init \
             --manifest https://walls.ovrica.name.ng/manifest.webmanifest \
             --directory ${{ github.workspace }}/walls-android
