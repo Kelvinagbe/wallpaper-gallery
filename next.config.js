@@ -6,6 +6,7 @@ const nextConfig = {
   httpAgentOptions: { keepAlive: true },
 
   images: {
+     unoptimized: true,
     remotePatterns: [
       { protocol: 'https', hostname: 'images.unsplash.com' },
       { protocol: 'https', hostname: 'ui-avatars.com' },
@@ -23,8 +24,7 @@ const nextConfig = {
     staleTimes: { dynamic: 0 },
   },
 
-output: 'export',
-},
+  output: 'export',
 }
 
 module.exports = nextConfig
