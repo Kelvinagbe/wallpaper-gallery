@@ -135,7 +135,20 @@ jobs:
       - name: Sign APK
         run: |
           BUILD_TOOLS=$ANDROID_SDK_ROOT/build-tools/34.0.0
-          UNSIGNED=$(find ${{ github.workspace }}/android -name "*release*.apk" | grep -v signed | head -1)
+
+          echo "=== Searching for APKs ==="
+          find ${{ github.workspace }}/android -name "*.apk"
+
+          UNSIGNED=$(find ${{ github.workspace }}/android -name "*.apk" \
+            | grep -i release \
+            | grep -iv signed \
+            | head -1)
+
+          if [ -z "$UNSIGNED" ]; then
+            echo "ERROR: No unsigned release APK found!"
+            exit 1
+          fi
+
           echo "Signing: $UNSIGNED"
           $BUILD_TOOLS/zipalign -v -p 4 "$UNSIGNED" ${{ github.workspace }}/app-aligned.apk
           $BUILD_TOOLS/apksigner sign \
