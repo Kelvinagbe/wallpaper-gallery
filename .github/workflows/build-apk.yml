@@ -35,12 +35,14 @@ jobs:
             "androidSdkPath": "$ANDROID_SDK_ROOT"
           }
           EOF
+          echo "Config written:"
+          cat ~/.bubblewrap/config.json
 
       - name: Generate keystore
         run: |
           keytool -genkeypair \
             -v \
-            -keystore walls.keystore \
+            -keystore ${{ github.workspace }}/walls.keystore \
             -alias walls \
             -keyalg RSA \
             -keysize 2048 \
@@ -49,81 +51,53 @@ jobs:
             -keypass ${{ secrets.KEYSTORE_PASSWORD }} \
             -dname "CN=Walls, OU=App, O=Walls, L=Lagos, S=Lagos, C=NG"
 
-      - name: Generate Android project with Bubblewrap init
+      - name: Run Bubblewrap init to generate Android project
         run: |
-          mkdir walls-android && cd walls-android
-          cat > twa-manifest.json << 'EOF'
-          {
-            "packageId": "com.walls.app",
-            "host": "walls.ovrica.name.ng",
-            "name": "Walls – Transform Your Spaces",
-            "launcherName": "Walls",
-            "display": "standalone",
-            "themeColor": "#0a0a0a",
-            "navigationColor": "#0a0a0a",
-            "navigationColorDark": "#0a0a0a",
-            "navigationDividerColor": "#0a0a0a",
-            "navigationDividerColorDark": "#0a0a0a",
-            "backgroundColor": "#ffffff",
-            "enableNotifications": false,
-            "startUrl": "/",
-            "iconUrl": "https://walls.ovrica.name.ng/icons/icon-512x512.png",
-            "maskableIconUrl": "https://walls.ovrica.name.ng/icons/icon-512x512.png",
-            "monochromeIconUrl": "https://walls.ovrica.name.ng/icons/icon-512x512.png",
-            "appVersion": "1.0.0",
-            "appVersionCode": 1,
-            "signingKey": {
-              "path": "../walls.keystore",
-              "alias": "walls"
-            },
-            "splashScreenFadeOutDuration": 300,
-            "enableSiteSettingsShortcut": true,
-            "isChromeOSOnly": false,
-            "isMetaQuest": false,
-            "fullScopeUrl": "https://walls.ovrica.name.ng/",
-            "minSdkVersion": 19,
-            "orientation": "portrait",
-            "fingerprints": [],
-            "serviceAccountJsonFile": "",
-            "features": {},
-            "alphaDependencies": { "enabled": false },
-            "generatorApp": "bubblewrap-cli",
-            "webManifestUrl": "https://walls.ovrica.name.ng/manifest.webmanifest",
-            "shortcuts": []
-          }
-          EOF
-          # Generate the Android project files using init
-          printf "\n" | bubblewrap init \
+          mkdir -p walls-android
+          # Pipe all expected answers:
+          # 1. App name
+          # 2. Short name  
+          # 3. Start URL
+          # 4. Theme color
+          # 5. Background color
+          # 6. Display mode
+          # 7. Orientation
+          # 8. Icon URL
+          # 9. Maskable icon
+          # 10. Keep existing keystore = no, create new = yes
+          # 11. Keystore path
+          # 12. Keystore password
+          # 13. Key alias
+          # 14. Key password
+          printf "\n\n\n\n\n\n\n\n\nn\n${{ github.workspace }}/walls.keystore\n${{ secrets.KEYSTORE_PASSWORD }}\nwalls\n${{ secrets.KEYSTORE_PASSWORD }}\n" | \
+          bubblewrap init \
             --manifest https://walls.ovrica.name.ng/manifest.webmanifest \
-            --directory . || true
+            --directory ${{ github.workspace }}/walls-android
 
-      - name: Build APK with Gradle directly
+      - name: List generated files
+        run: |
+          echo "Files in walls-android:"
+          ls -la walls-android/
+
+      - name: Build APK with Gradle
         run: |
           cd walls-android
-          # Create keystore.properties for Gradle
-          cat > keystore.properties << EOF
-          storeFile=../walls.keystore
-          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
-          keyAlias=walls
-          keyPassword=${{ secrets.KEYSTORE_PASSWORD }}
-          EOF
-          # Build with Gradle — fully non-interactive
           chmod +x gradlew
           ./gradlew assembleRelease \
-            -Pandroid.injected.signing.store.file=$(pwd)/../walls.keystore \
+            -Pandroid.injected.signing.store.file=${{ github.workspace }}/walls.keystore \
             -Pandroid.injected.signing.store.password=${{ secrets.KEYSTORE_PASSWORD }} \
             -Pandroid.injected.signing.key.alias=walls \
             -Pandroid.injected.signing.key.password=${{ secrets.KEYSTORE_PASSWORD }}
 
-      - name: Find and copy APK
+      - name: Find APK
         run: |
+          find walls-android -name "*.apk" | head -5
           find walls-android -name "*.apk" -exec cp {} app-release-signed.apk \;
-          find walls-android -name "*.aab" -exec cp {} app-release-bundle.aab \; || true
 
       - name: Get SHA256 fingerprint
         run: |
           keytool -list -v \
-            -keystore walls.keystore \
+            -keystore ${{ github.workspace }}/walls.keystore \
             -alias walls \
             -storepass ${{ secrets.KEYSTORE_PASSWORD }} \
             | grep "SHA256" > sha256.txt
@@ -135,6 +109,5 @@ jobs:
           name: walls-apk
           path: |
             app-release-signed.apk
-            app-release-bundle.aab
             sha256.txt
           retention-days: 30
