@@ -1,10 +1,10 @@
 name: Build Android APK
 
 on:
-  workflow_dispatch: # Run manually from GitHub UI
+  workflow_dispatch:
   push:
     branches:
-      - main # Also runs on every push to main
+      - main
 
 jobs:
   build:
@@ -24,6 +24,9 @@ jobs:
         with:
           java-version: '11'
           distribution: 'temurin'
+
+      - name: Set JAVA_HOME
+        run: echo "JAVA_HOME=$JAVA_HOME_11_X64" >> $GITHUB_ENV
 
       - name: Install Bubblewrap
         run: npm install -g @bubblewrap/cli
@@ -88,11 +91,13 @@ jobs:
       - name: Build APK with Bubblewrap
         run: |
           cd walls-android
-          bubblewrap build \
+          echo "n" | bubblewrap build \
             --signingKeyPath ../walls.keystore \
             --signingKeyAlias walls \
             --signingKeyPassword ${{ secrets.KEYSTORE_PASSWORD }} \
             --signingStorePassword ${{ secrets.KEYSTORE_PASSWORD }}
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME_11_X64 }}
 
       - name: Get SHA256 fingerprint
         run: |
