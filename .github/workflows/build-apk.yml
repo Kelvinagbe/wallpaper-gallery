@@ -9,6 +9,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}
 
     steps:
       - uses: actions/checkout@v4
@@ -50,7 +53,7 @@ jobs:
       - name: Generate icons and splash
         run: |
           sudo apt-get install -y imagemagick -q
-          LOGO="public/icons/icon-512x512.png" && RES="android/app/src/main/res"
+          LOGO="public/icons/icon-512x512.png" RES="android/app/src/main/res"
           for cfg in "mipmap-mdpi:48" "mipmap-hdpi:72" "mipmap-xhdpi:96" "mipmap-xxhdpi:144" "mipmap-xxxhdpi:192"; do
             folder="${cfg%%:*}" size="${cfg##*:}" && mkdir -p "$RES/$folder"
             convert "$LOGO" -resize "${size}x${size}" "$RES/$folder/ic_launcher.png"
@@ -93,7 +96,7 @@ jobs:
                   if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this,
                       Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
                       ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.POST_NOTIFICATIONS}, 1001);
-                  setupDownload(); registerReceiver(); scheduleReminder(); handleDeepLink(getIntent());
+                  setupDownload(); registerDlReceiver(); scheduleReminder(); handleDeepLink(getIntent());
               }
 
               @Override public void onNewIntent(Intent i) { super.onNewIntent(i); handleDeepLink(i); }
@@ -136,7 +139,7 @@ jobs:
                   });
               }
 
-              private void registerReceiver() {
+              private void registerDlReceiver() {
                   dlReceiver = new BroadcastReceiver() {
                       @Override public void onReceive(Context ctx, Intent intent) {
                           long id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1);
@@ -255,32 +258,37 @@ jobs:
 
       - name: Generate keystore
         run: |
-          keytool -genkeypair -v -keystore ${{ github.workspace }}/walls.keystore \
+          keytool -genkeypair -v -keystore walls.keystore \
             -alias walls -keyalg RSA -keysize 2048 -validity 10000 \
             -storepass ${{ secrets.KEYSTORE_PASSWORD }} -keypass ${{ secrets.KEYSTORE_PASSWORD }} \
             -dname "CN=Walls, OU=App, O=Walls, L=Lagos, S=Lagos, C=NG"
 
-      - name: Build, sign and package
+      - name: Build
+        working-directory: android
+        run: chmod +x gradlew && ./gradlew assembleRelease bundleRelease --stacktrace
+
+      - name: Sign and package
         run: |
-          cd android && chmod +x gradlew && ./gradlew assembleRelease bundleRelease --stacktrace
           BT=$ANDROID_SDK_ROOT/build-tools/34.0.0
-          UNSIGNED=$(find ${{ github.workspace }}/android -name "app-release-unsigned.apk" | head -1)
+          UNSIGNED=$(find android -name "app-release-unsigned.apk" | head -1)
           [ -z "$UNSIGNED" ] && echo "ERROR: No unsigned APK!" && exit 1
-          $BT/zipalign -v -p 4 "$UNSIGNED" ${{ github.workspace }}/app-aligned.apk
-          $BT/apksigner sign --ks ${{ github.workspace }}/walls.keystore --ks-key-alias walls \
+          $BT/zipalign -v -p 4 "$UNSIGNED" app-aligned.apk
+          $BT/apksigner sign --ks walls.keystore --ks-key-alias walls \
             --ks-pass pass:${{ secrets.KEYSTORE_PASSWORD }} --key-pass pass:${{ secrets.KEYSTORE_PASSWORD }} \
-            --out ${{ github.workspace }}/app-release-signed.apk ${{ github.workspace }}/app-aligned.apk
-          $BT/apksigner verify --verbose ${{ github.workspace }}/app-release-signed.apk
-          mkdir -p ${{ github.workspace }}/release
-          cp ${{ github.workspace }}/app-release-signed.apk ${{ github.workspace }}/release/
-          AAB=$(find ${{ github.workspace }}/android -name "*.aab" | head -1)
-          [ -n "$AAB" ] && cp "$AAB" ${{ github.workspace }}/release/app-release-bundle.aab
-          keytool -list -v -keystore ${{ github.workspace }}/walls.keystore \
-            -alias walls -storepass ${{ secrets.KEYSTORE_PASSWORD }} | grep "SHA256" > ${{ github.workspace }}/release/sha256.txt
-          SHA256=$(sed 's/.*SHA256: //' ${{ github.workspace }}/release/sha256.txt)
+            --out app-release-signed.apk app-aligned.apk
+          $BT/apksigner verify --verbose app-release-signed.apk
+          mkdir -p release
+          cp app-release-signed.apk release/
+          AAB=$(find android -name "*.aab" | head -1)
+          [ -n "$AAB" ] && cp "$AAB" release/app-release-bundle.aab
+          keytool -list -v -keystore walls.keystore \
+            -alias walls -storepass ${{ secrets.KEYSTORE_PASSWORD }} | grep "SHA256" > release/sha256.txt
+          SHA256=$(sed 's/.*SHA256: //' release/sha256.txt)
           echo '[{"relation":["delegate_permission/common.handle_all_urls"],"target":{"namespace":"android_app","package_name":"ng.name.ovrica.walls","sha256_cert_fingerprints":["'"$SHA256"'"]}}]' \
-            > ${{ github.workspace }}/release/assetlinks.json
-          zip -j release/walls-release.zip release/app-release-signed.apk release/app-release-bundle.aab release/sha256.txt release/assetlinks.json
+            > release/assetlinks.json
+          zip -j release/walls-release.zip \
+            release/app-release-signed.apk release/app-release-bundle.aab \
+            release/sha256.txt release/assetlinks.json
 
       - uses: actions/upload-artifact@v4
         with:
