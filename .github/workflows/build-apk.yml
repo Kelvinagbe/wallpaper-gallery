@@ -99,7 +99,7 @@ jobs:
       - name: Build APK
         run: |
           cd walls-android
-          echo "n" | bubblewrap build \
+          printf "n\n${{ secrets.KEYSTORE_PASSWORD }}\n${{ secrets.KEYSTORE_PASSWORD }}\n" | bubblewrap build \
             --signingKeyPath ../walls.keystore \
             --signingKeyAlias walls \
             --signingKeyPassword ${{ secrets.KEYSTORE_PASSWORD }} \
