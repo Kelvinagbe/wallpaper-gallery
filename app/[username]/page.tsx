@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { ChevronLeft, Grid, AlertTriangle, WifiOff, Share2, MoreHorizontal } from 'lucide-react';
+import { ChevronLeft, Grid, AlertTriangle, WifiOff, Share2 } from 'lucide-react';
 import Image from 'next/image';
 import { VerifiedBadge } from '@/app/components/VerifiedBadge';
 import { useAuth } from '@/app/components/AuthProvider';
@@ -33,14 +33,16 @@ const CSS = `
   @keyframes fadeIn{from{opacity:0}to{opacity:1}}
   @keyframes slideDown{from{opacity:0;transform:translateY(-100%)}to{opacity:1;transform:translateY(0)}}
   @keyframes slideUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
-  @keyframes stickyIn{from{opacity:0;transform:translateY(-68px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes stickyIn{from{opacity:0;transform:translateY(-64px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes stickyOut{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(-64px)}}
   @keyframes spin{to{transform:rotate(360deg)}}
   .up{animation:up .38s cubic-bezier(.16,1,.3,1) both}
   .d1{animation-delay:.05s}.d2{animation-delay:.10s}
   .tap:active{filter:brightness(.88)}.cell:active{opacity:.72}
   img{-webkit-user-select:none;user-select:none;pointer-events:none;-webkit-touch-callout:none}
   button img{pointer-events:none}
-  .sticky-bar{position:fixed;top:0;left:0;right:0;width:100%;z-index:150;animation:stickyIn .28s cubic-bezier(.16,1,.3,1) both}
+  .sticky-enter{animation:stickyIn .26s cubic-bezier(.16,1,.3,1) both}
+  .sticky-exit{animation:stickyOut .2s ease forwards}
 `;
 
 // ── Micro components ──────────────────────────────────────────────────────────
@@ -57,13 +59,10 @@ const Spinner = ({ size = 13, color = '#fff' }: { size?: number; color?: string 
 // ─────────────────────────────────────────────────────────────────────────────
 export default function UserProfilePage() {
   const router = useRouter();
-
-  // Folder must be app/[username]/page.tsx
   const { username } = useParams() as { username: string };
   const { session } = useAuth();
 
   const [profile,       setProfile]       = useState<any>(null);
-  // resolvedId = the UUID from the profile row — used for all DB calls after lookup
   const [resolvedId,    setResolvedId]    = useState<string | null>(null);
   const [stats,         setStats]         = useState({ followers: 0, following: 0, posts: 0 });
   const [isFollowing,   setIsFollowing]   = useState(false);
@@ -78,17 +77,20 @@ export default function UserProfilePage() {
   const [isOnline,      setIsOnline]      = useState(true);
   const [showOffline,   setShowOffline]   = useState(false);
   const [reconnecting,  setReconnecting]  = useState(false);
-  const [showSticky,    setShowSticky]    = useState(false);
-  const [stickyKey,     setStickyKey]     = useState(0);
 
-  const navRef       = useRef<HTMLDivElement>(null);
-  const prevSticky   = useRef(false);
-  const hasScrolled  = useRef(false); // skip the first IO callback fired on mount
+  // ── Sticky: show only when scrolling UP and nav is out of view ─────────────
+  const [showSticky,  setShowSticky]  = useState(false);
+  const [stickyClass, setStickyClass] = useState('sticky-enter');
+  const navRef        = useRef<HTMLDivElement>(null);
+  const navGone       = useRef(false);   // true when normal nav has scrolled off screen
+  const lastScrollY   = useRef(0);
+  const ticking       = useRef(false);
+
   const offlineTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tapCount     = useRef(0);
   const tapTimer     = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hideTimer    = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Cache keys: profile keyed by username; everything else by resolved UUID
   const profileKey               = `profile:${username}`;
   const statsKey   = (id: string) => `stats:${id}`;
   const followKey  = (id: string) => `following:${session?.user.id}:${id}`;
@@ -96,36 +98,56 @@ export default function UserProfilePage() {
 
   const isOwn = resolvedId ? session?.user.id === resolvedId : false;
 
-  // ── Sticky: skip the initial IntersectionObserver fire on mount ───────────
+  // ── IntersectionObserver: track when normal nav leaves / enters viewport ───
   useEffect(() => {
-    const el = navRef.current; if (!el) return;
-    const obs = new IntersectionObserver(([e]) => {
-      // First callback fires immediately on mount — skip it
-      if (!hasScrolled.current) {
-        hasScrolled.current = true;
-        prevSticky.current = !e.isIntersecting;
-        return;
-      }
-      const gone = !e.isIntersecting;
-      setShowSticky(gone);
-      if (gone && !prevSticky.current) setStickyKey(k => k + 1);
-      prevSticky.current = gone;
-    }, { threshold: 0 });
+    const el = navRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      ([e]) => { navGone.current = !e.isIntersecting; },
+      { threshold: 0 }
+    );
     obs.observe(el);
     return () => obs.disconnect();
   }, []);
 
+  // ── Scroll listener: show sticky on UP scroll, hide on DOWN scroll ─────────
+  useEffect(() => {
+    const onScroll = () => {
+      if (ticking.current) return;
+      ticking.current = true;
+      requestAnimationFrame(() => {
+        const y = window.scrollY;
+        const goingUp = y < lastScrollY.current;
+        lastScrollY.current = y;
+        ticking.current = false;
+
+        if (navGone.current && goingUp) {
+          // Scrolling up and normal nav is off-screen → show sticky
+          if (hideTimer.current) { clearTimeout(hideTimer.current); hideTimer.current = null; }
+          setStickyClass('sticky-enter');
+          setShowSticky(true);
+        } else if (!goingUp && showSticky) {
+          // Scrolling down → animate out then unmount
+          setStickyClass('sticky-exit');
+          hideTimer.current = setTimeout(() => setShowSticky(false), 200);
+        }
+      });
+    };
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      if (hideTimer.current) clearTimeout(hideTimer.current);
+    };
+  }, [showSticky]);
+
   // ── Data loading ──────────────────────────────────────────────────────────
   const loadProfile = useCallback(async (force = false) => {
     if (!username) return;
-
     const cp  = cache.get(profileKey)?.data as any;
     const cid = cp?.id as string | undefined;
-
-    // Serve stale cache immediately, revalidate in background
     if (cp && cid) {
-      setProfile(cp);
-      setResolvedId(cid);
+      setProfile(cp); setResolvedId(cid);
       const cs = cache.get(statsKey(cid))?.data as any;
       const cf = cache.get(followKey(cid))?.data as boolean | undefined;
       if (cs) setStats(cs);
@@ -133,61 +155,43 @@ export default function UserProfilePage() {
       setPageLoading(false);
       if (!cacheIsStale(profileKey, PROFILE_TTL) && !force) return;
     }
-
     try {
-      // Step 1: username → profile (contains UUID id)
       const p = await fetchProfileByUsername(username);
       if (!p) { router.replace('/'); return; }
-
       const id = p.id;
-      setProfile(p);
-      setResolvedId(id);
-      cacheSet(profileKey, p);
-
-      // Step 2: use UUID for all subsequent queries
+      setProfile(p); setResolvedId(id); cacheSet(profileKey, p);
       const s = await getUserCounts(id);
-      cacheSet(statsKey(id), s);
-      setStats(s);
-
+      cacheSet(statsKey(id), s); setStats(s);
       if (session && session.user.id !== id) {
         const cf = cache.get(followKey(id))?.data as boolean | undefined;
         if (cf === undefined || force) {
           const f = await checkIsFollowing(session.user.id, id);
-          cacheSet(followKey(id), f);
-          setIsFollowing(f);
+          cacheSet(followKey(id), f); setIsFollowing(f);
         }
       }
     } catch {
       if (!cache.get(profileKey)) router.replace('/');
-    } finally {
-      setPageLoading(false);
-    }
+    } finally { setPageLoading(false); }
   }, [username, session]); // eslint-disable-line
 
   const loadPosts = useCallback(async (force = false, id?: string) => {
     const uid = id || resolvedId;
     if (!uid) return;
-
     const key = postsKey(uid);
     const cp  = cache.get(key)?.data as { wallpapers: Wallpaper[]; hasMore: boolean } | undefined;
     if (cp) {
-      setPosts(cp.wallpapers);
-      setHasMore(cp.hasMore);
-      setPostsLoading(false);
+      setPosts(cp.wallpapers); setHasMore(cp.hasMore); setPostsLoading(false);
       if (!cacheIsStale(key, POSTS_TTL) && !force) return;
     }
     if (!cp) setPostsLoading(true);
     try {
       const { wallpapers, hasMore: more } = await fetchUserWallpapers(uid, 0, PAGE_SIZE);
       cacheSet(key, { wallpapers, hasMore: more });
-      setPosts(wallpapers);
-      setHasMore(more);
-      setPage(0);
+      setPosts(wallpapers); setHasMore(more); setPage(0);
     } catch (e) { console.error(e); }
     finally { setPostsLoading(false); }
   }, [resolvedId]); // eslint-disable-line
 
-  // Profile first; once resolvedId is set, posts load automatically
   useEffect(() => { loadProfile(); }, [loadProfile]);
   useEffect(() => { if (resolvedId) loadPosts(false, resolvedId); }, [resolvedId]); // eslint-disable-line
 
@@ -226,9 +230,7 @@ export default function UserProfilePage() {
     if (!resolvedId) return;
     const next = page + 1;
     const { wallpapers, hasMore: more } = await fetchUserWallpapers(resolvedId, next, PAGE_SIZE);
-    setPosts(p => [...p, ...wallpapers]);
-    setHasMore(more);
-    setPage(next);
+    setPosts(p => [...p, ...wallpapers]); setHasMore(more); setPage(next);
   };
 
   const handleFollow = async () => {
@@ -245,8 +247,7 @@ export default function UserProfilePage() {
     }
     setFollowLoading(true);
     try {
-      const fk = followKey(resolvedId);
-      const sk = statsKey(resolvedId);
+      const fk = followKey(resolvedId), sk = statsKey(resolvedId);
       if (isFollowing) {
         await unfollowUser(session.user.id, resolvedId);
         setIsFollowing(false); cacheSet(fk, false);
@@ -271,7 +272,7 @@ export default function UserProfilePage() {
   const followDisabled = followLoading || locked || !isOnline;
   const statItems      = [{ label: 'Posts', val: stats.posts }, { label: 'Followers', val: stats.followers }, { label: 'Following', val: stats.following }];
 
-  // ── Shared nav bar inner content ──────────────────────────────────────────
+  // ── Nav bar inner: back + avatar + name + share ───────────────────────────
   const NavInner = () => (
     <>
       <button className="tap" onClick={() => router.back()} aria-label="Go back"
@@ -280,37 +281,37 @@ export default function UserProfilePage() {
       </button>
 
       {profile ? (
-        <div style={{ width: 44, height: 44, borderRadius: '50%', overflow: 'hidden', flexShrink: 0, background: T.black, border: `2px solid ${T.border}` }}>
-          <Image src={profile.avatar} alt={profile.name} width={44} height={44} draggable={false}
+        <div style={{ width: 36, height: 36, borderRadius: '50%', overflow: 'hidden', flexShrink: 0, background: T.black, border: `2px solid ${T.border}` }}>
+          <Image src={profile.avatar} alt={profile.name} width={36} height={36} draggable={false}
             style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
         </div>
       ) : (
-        <Shimmer w={44} h={44} r={22} />
+        <Shimmer w={36} h={36} r={18} />
       )}
 
       {profile ? (
-        <span style={{ fontFamily: font, fontSize: 17, fontWeight: 700, color: T.ink, letterSpacing: '-.01em', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span style={{ fontFamily: font, fontSize: 16, fontWeight: 700, color: T.ink, letterSpacing: '-.01em', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {profile.name}
         </span>
       ) : (
-        <div style={{ flex: 1 }}><Shimmer w="45%" h={16} r={6} /></div>
+        <div style={{ flex: 1 }}><Shimmer w="45%" h={15} r={6} /></div>
       )}
 
       <button className="tap" onClick={handleShare} aria-label="Share profile"
         style={{ width: 38, height: 38, borderRadius: '50%', border: 'none', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
-        <Share2 size={20} color={T.ink} strokeWidth={2} />
-      </button>
-
-      <button className="tap" aria-label="More options"
-        style={{ width: 38, height: 38, borderRadius: '50%', border: 'none', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
-        <MoreHorizontal size={22} color={T.ink} strokeWidth={2} />
+        <Share2 size={19} color={T.ink} strokeWidth={2} />
       </button>
     </>
   );
 
   const navStyle: React.CSSProperties = {
-    background: T.surface, display: 'flex', alignItems: 'center', gap: 8,
-    padding: '0 4px', height: 64, borderBottom: `1px solid ${T.border}`,
+    background: T.surface,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: '0 8px',
+    height: 64,
+    borderBottom: `1px solid ${T.border}`,
   };
 
   return (
@@ -328,14 +329,22 @@ export default function UserProfilePage() {
         </div>
       )}
 
-      {/* ── Sticky nav (only after user scrolls) ── */}
+      {/* ── Sticky nav: only when scrolling UP with normal nav off-screen ── */}
       {showSticky && (
-        <div key={stickyKey} className="sticky-bar" style={{ ...navStyle, boxShadow: '0 2px 8px rgba(0,0,0,.08)' }}>
+        <div
+          className={stickyClass}
+          style={{
+            position: 'fixed', top: 0, left: '50%', transform: 'translateX(-50%)',
+            width: '100%', maxWidth: 680, zIndex: 150,
+            ...navStyle,
+            boxShadow: '0 1px 0 rgba(0,0,0,.08), 0 2px 12px rgba(0,0,0,.06)',
+          }}
+        >
           <NavInner />
         </div>
       )}
 
-      {/* ── Normal nav (observed by IntersectionObserver) ── */}
+      {/* ── Normal nav (tracked by IntersectionObserver) ── */}
       <div ref={navRef} style={navStyle}>
         <NavInner />
       </div>
@@ -360,7 +369,7 @@ export default function UserProfilePage() {
         </div>
       ) : profile ? (
         <>
-         {/* ── Hero card ── */}
+      {/* ── Hero card ── */}
           <div className="up" style={{ background: T.surface, borderBottom: `1px solid ${T.border}` }}>
             <div style={{ padding: '20px 16px 0', display: 'flex', alignItems: 'center', gap: 14 }}>
               <div style={{ position: 'relative', flexShrink: 0 }}>
