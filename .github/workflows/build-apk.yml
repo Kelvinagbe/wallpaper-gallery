@@ -28,12 +28,10 @@ jobs:
 
       - name: Setup Android SDK manually (no interactive prompts)
         run: |
-          # Use the pre-installed SDK on the runner
           export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
 
-          # Write ALL license files directly - no sdkmanager --licenses needed
           mkdir -p $ANDROID_SDK_ROOT/licenses
           printf "24333f8a63b6825ea9c5514f83c2829b004d1fee\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e" \
             > $ANDROID_SDK_ROOT/licenses/android-sdk-license
@@ -47,52 +45,38 @@ jobs:
             > $ANDROID_SDK_ROOT/licenses/intel-android-extra-license
           printf "33b6937b7c5e5d694e7f30d6c9aab2bd58b9a2c4" \
             > $ANDROID_SDK_ROOT/licenses/mips-android-sysimage-license
-          echo "License files written:"
-          ls -la $ANDROID_SDK_ROOT/licenses/
+          echo "License files written."
 
-          # Install required SDK packages non-interactively
           SDKMANAGER=$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager
-          echo "y" | $SDKMANAGER "platforms;android-34" "build-tools;34.0.0" "platform-tools" 2>&1 | grep -v "^$" | tail -5
+          echo "y" | $SDKMANAGER "platforms;android-34" "build-tools;34.0.0" "platform-tools" 2>&1 | tail -3
           echo "Android SDK ready."
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Build Next.js static export
-        run: npx next build
-        env:
-          NODE_ENV: production
-
-      - name: Verify Next.js out/ folder
-        run: |
-          if [ ! -d "out" ]; then
-            echo "ERROR: No out/ folder. Add output: 'export' to next.config.js"
-            exit 1
-          fi
-          echo "out/ folder found. Contents:"
-          ls out/
-
       - name: Install Capacitor
         run: npm install @capacitor/core @capacitor/cli @capacitor/android
 
-      - name: Create capacitor.config.json if not present
+      - name: Create capacitor.config.json
         run: |
-          if [ ! -f "capacitor.config.ts" ] && [ ! -f "capacitor.config.js" ] && [ ! -f "capacitor.config.json" ]; then
-            cat > capacitor.config.json << EOF
+          # Use server URL mode — app loads live website, no static export needed
+          # This means all API routes work normally, no force-static hacks
+          cat > capacitor.config.json << EOF
           {
             "appId": "ng.name.ovrica.walls",
             "appName": "Walls",
             "webDir": "out",
-            "bundledWebRuntime": false,
+            "server": {
+              "url": "https://walls.ovrica.name.ng",
+              "cleartext": false
+            },
             "android": {
-              "minSdkVersion": 21
+              "allowMixedContent": false
             }
           }
           EOF
-            echo "capacitor.config.json created."
-          else
-            echo "Capacitor config already exists."
-          fi
+          echo "capacitor.config.json created:"
+          cat capacitor.config.json
 
       - name: Add Android platform if not present
         run: |
