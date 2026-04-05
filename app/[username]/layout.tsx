@@ -21,7 +21,7 @@ function truncate(str: string, max: number) {
 export async function generateMetadata({ params }: LayoutProps): Promise<Metadata> {
   const { username } = await params; // Next.js 15: must await params
 
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: profile } = await supabase
     .from('profiles')
     .select('id, full_name, username, bio, avatar_url, verified')
