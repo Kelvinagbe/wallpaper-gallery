@@ -78,12 +78,23 @@ jobs:
           EOF
           echo "Bubblewrap app config created."
 
+      - name: Install expect
+        run: sudo apt-get install -y expect
+
       - name: Run Bubblewrap init (non-interactive)
         run: |
-          bubblewrap init \
-            --manifest https://walls.ovrica.name.ng/manifest.webmanifest \
-            --directory ${{ github.workspace }}/walls-android \
-            --config ${{ github.workspace }}/walls-android/bubblewrap-config.json
+          expect -c '
+            spawn bubblewrap init \
+              --manifest https://walls.ovrica.name.ng/manifest.webmanifest \
+              --directory ${{ github.workspace }}/walls-android \
+              --config ${{ github.workspace }}/walls-android/bubblewrap-config.json
+            expect -timeout 120 {
+              "install the JDK"    { send "n\r"; exp_continue }
+              "install the Android" { send "n\r"; exp_continue }
+              timeout              { puts "Timed out waiting for prompt"; exit 1 }
+              eof
+            }
+          '
 
       - name: List generated files
         run: ls -la walls-android/
