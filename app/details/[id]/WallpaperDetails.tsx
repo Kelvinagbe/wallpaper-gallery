@@ -361,14 +361,14 @@ export default function WallpaperDetail({ initialWallpaper: wp, ad }: { initialW
           </button>
           <button onClick={handleShare} className="act-btn" aria-label="Share" style={sheet()}><Share2 size={17} /></button>
           <button onClick={() => set({ copyOpen: true })} className="act-btn" aria-label="Copy link" style={sheet()}><LinkIcon size={17} /></button>
- <button onClick={handleSetPfp} disabled={st.pfpSetting || st.pfpSet} className="act-btn" style={sheet(st.pfpSet)}>
-              {st.pfpSetting ? <><Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} />Setting...</> : st.pfpSet ? <><Check size={15} />Picture Set</> : <><UserCircle size={15} /></>}
-            </button>
         </div>
 
         {session && (
           <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-           
+           <button onClick={handleSetPfp} disabled={st.pfpSetting || st.pfpSet} className="act-btn" style={sheet(st.pfpSet)}>
+              {st.pfpSetting ? <><Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} />Setting...</> : st.pfpSet ? <><Check size={15} />Picture Set</> : <><UserCircle size={15} />Set as profile picture</>}
+            </button>
+ 
           </div>
         )}
 
