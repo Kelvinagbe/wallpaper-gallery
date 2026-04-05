@@ -55,18 +55,17 @@ jobs:
             -dname "CN=Walls, OU=App, O=Walls, L=Lagos, S=Lagos, C=NG"
 
       - name: Run Bubblewrap init (non-interactive via pexpect)
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
         run: |
           mkdir -p ${{ github.workspace }}/walls-android
           python3 << 'PYEOF'
-          import pexpect, sys, re, os
-
-          def strip_ansi(text):
-              return re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', text)
+          import pexpect, sys, os
 
           workspace = os.environ.get('GITHUB_WORKSPACE', '')
           cmd = (
-              f'bubblewrap init '
-              f'--manifest https://walls.ovrica.name.ng/manifest.webmanifest '
+              'bubblewrap init '
+              '--manifest https://walls.ovrica.name.ng/manifest.webmanifest '
               f'--directory {workspace}/walls-android'
           )
 
@@ -76,36 +75,63 @@ jobs:
 
           while True:
               index = child.expect([
-                  pexpect.EOF,
-                  pexpect.TIMEOUT,
-                  r'(?i)install.*JDK',
-                  r'(?i)install.*Android',
-                  r'(?i)Do you want',
-                  r'(?i)existing directory',
-                  r'(?i)overwrite',
-                  r'\(Y/n\)',
-                  r'\(y/N\)',
-              ], timeout=300)
+                  pexpect.EOF,                         # 0 - done
+                  pexpect.TIMEOUT,                     # 1 - stuck
+                  r'(?i)install.*JDK',                 # 2 - JDK install? -> n
+                  r'(?i)install.*Android',              # 3 - Android SDK? -> n
+                  r'(?i)Domain:',                       # 4 - domain
+                  r'(?i)URL path:',                     # 5 - url path
+                  r'(?i)Application name',              # 6 - app name
+                  r'(?i)short name',                    # 7 - launcher name
+                  r'(?i)Application ID',                # 8 - package id
+                  r'(?i)version code',                  # 9 - version code (default)
+                  r'(?i)version name',                  # 10 - version name (default)
+                  r'(?i)display mode',                  # 11 - display (default)
+                  r'(?i)orientation',                   # 12 - orientation (default)
+                  r'(?i)theme color',                   # 13 - theme color (default)
+                  r'(?i)background color',              # 14 - bg color (default)
+                  r'(?i)enable notifications',          # 15 - notifications (default)
+                  r'(?i)existing directory',            # 16 - overwrite dir? -> y
+                  r'(?i)overwrite',                     # 17 - overwrite? -> y
+                  r'\(Y/n\)',                           # 18 - generic Y/n -> n
+                  r'\(y/N\)',                           # 19 - generic y/N -> enter
+              ], timeout=120)
 
               if index == 0:
-                  print("\n[pexpect] Done.")
+                  print("\n[pexpect] Process complete.")
                   break
               elif index == 1:
-                  print("\n[pexpect] TIMEOUT — stuck, no prompt received.")
+                  print("\n[pexpect] TIMEOUT — no prompt received, stuck.")
                   sys.exit(1)
-              elif index in (2, 3, 4, 7):
-                  # JDK install, Android install, generic yes/no -> No
-                  print("\n[pexpect] Sending: n")
+              elif index in (2, 3, 18):
+                  print("\n[pexpect] -> n")
                   child.sendline('n')
-              elif index in (5, 6, 8):
-                  # Existing directory / overwrite -> Yes
-                  print("\n[pexpect] Sending: y")
+              elif index in (16, 17):
+                  print("\n[pexpect] -> y")
                   child.sendline('y')
+              elif index == 4:
+                  print("\n[pexpect] -> walls.ovrica.name.ng")
+                  child.sendline('walls.ovrica.name.ng')
+              elif index == 5:
+                  print("\n[pexpect] -> /")
+                  child.sendline('/')
+              elif index == 6:
+                  print("\n[pexpect] -> Walls")
+                  child.sendline('Walls')
+              elif index == 7:
+                  print("\n[pexpect] -> Walls")
+                  child.sendline('Walls')
+              elif index == 8:
+                  print("\n[pexpect] -> ng.name.ovrica.walls")
+                  child.sendline('ng.name.ovrica.walls')
+              elif index in (9, 10, 11, 12, 13, 14, 15, 19):
+                  print("\n[pexpect] -> (accept default)")
+                  child.sendline('')
 
           child.close()
           exit_code = child.exitstatus
           if exit_code and exit_code != 0:
-              print(f"[pexpect] Exit code: {exit_code}")
+              print(f"[pexpect] Non-zero exit: {exit_code}")
               sys.exit(exit_code)
 
           print("[pexpect] Bubblewrap init completed successfully.")
@@ -123,6 +149,8 @@ jobs:
           echo "gradlew found. Proceeding to build."
 
       - name: Update signing config in twa-manifest.json
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
         run: |
           python3 << 'PYEOF'
           import json, os
