@@ -4,7 +4,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: 'Walls – Transform Your Spaces',
     short_name: 'Walls',
-    description: 'Download stunning 4K wallpapers for your phone and desktop',
+    description: 'Discover and download stunning wallpapers to transform your spaces.',
     start_url: '/',
     scope: '/',
     display: 'standalone',
@@ -27,18 +27,7 @@ export default function manifest(): MetadataRoute.Manifest {
         src: '/icons/icon-512x512.png',
         sizes: '512x512',
         type: 'image/png',
-        // @ts-ignore
-        purpose: 'maskable',
-      },
-    ],
-    screenshots: [
-      {
-        src: '/screenshots/mobile.png',
-        sizes: '390x844',
-        type: 'image/png',
-        // @ts-ignore
-        form_factor: 'narrow',
-        label: 'Walls wallpaper gallery',
+        purpose: 'maskable any',
       },
     ],
   }
