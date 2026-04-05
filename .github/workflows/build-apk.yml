@@ -13,12 +13,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
-
       - uses: actions/setup-java@v4
         with:
           java-version: '21'
@@ -33,13 +31,10 @@ jobs:
           printf "24333f8a63b6825ea9c5514f83c2829b004d1fee\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e" > $ANDROID_SDK_ROOT/licenses/android-sdk-license
           printf "84831b9409646a918e30573bab4c9c91346d8abd" > $ANDROID_SDK_ROOT/licenses/android-sdk-preview-license
           printf "33b6937b7c5e5d694e7f30d6c9aab2bd58b9a2c4" > $ANDROID_SDK_ROOT/licenses/google-gdk-license
-          printf "e9acab5b5fbb560a72cfaecce8946896ff6aab9d" > $ANDROID_SDK_ROOT/licenses/android-googletv-license
-          printf "d975f751698a77b662f1254ddbeed3901e976f5a" > $ANDROID_SDK_ROOT/licenses/intel-android-extra-license
-          printf "33b6937b7c5e5d694e7f30d6c9aab2bd58b9a2c4" > $ANDROID_SDK_ROOT/licenses/mips-android-sysimage-license
           echo "y" | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools" 2>&1 | tail -3
 
-      - name: Install dependencies and Capacitor
-        run: npm ci && npm install @capacitor/core @capacitor/cli @capacitor/android
+      - name: Install dependencies
+        run: npm ci && npm install @capacitor/core @capacitor/cli @capacitor/android @capacitor/splash-screen
 
       - name: Create capacitor.config.json
         run: |
@@ -49,13 +44,47 @@ jobs:
             "appName": "Walls",
             "webDir": "out",
             "server": { "url": "https://walls.ovrica.name.ng", "cleartext": false },
-            "android": { "allowMixedContent": false }
+            "android": { "allowMixedContent": false },
+            "plugins": {
+              "SplashScreen": {
+                "launchShowDuration": 2500,
+                "launchAutoHide": true,
+                "backgroundColor": "#0a0a0a",
+                "androidSplashResourceName": "splash",
+                "showSpinner": false
+              }
+            }
           }
           EOF
 
       - name: Add Android platform
+        run: '[ ! -d "android" ] && npx cap add android || echo "Android folder exists."'
+
+      - name: Generate icons and splash screen
         run: |
-          [ ! -d "android" ] && npx cap add android || echo "Android folder already exists."
+          LOGO="public/icons/icon-512x512.png"
+          RES="android/app/src/main/res"
+
+          # Launcher icons
+          for cfg in "mipmap-mdpi:48" "mipmap-hdpi:72" "mipmap-xhdpi:96" "mipmap-xxhdpi:144" "mipmap-xxxhdpi:192"; do
+            folder="${cfg%%:*}" size="${cfg##*:}"
+            mkdir -p "$RES/$folder"
+            convert "$LOGO" -resize "${size}x${size}" "$RES/$folder/ic_launcher.png"
+            cp "$RES/$folder/ic_launcher.png" "$RES/$folder/ic_launcher_round.png"
+          done
+
+          # Splash screen — dark bg + centered logo
+          mkdir -p "$RES/drawable" "$RES/drawable-land"
+          convert -size 2048x2048 xc:"#0a0a0a" \
+            \( "$LOGO" -resize 512x512 \) -gravity center -composite \
+            "$RES/drawable/splash.png"
+          cp "$RES/drawable/splash.png" "$RES/drawable-land/splash.png"
+
+          # Patch icon refs in manifest
+          M="android/app/src/main/AndroidManifest.xml"
+          sed -i 's/android:icon="[^"]*"/android:icon="@mipmap\/ic_launcher"/' $M
+          sed -i 's/android:roundIcon="[^"]*"/android:roundIcon="@mipmap\/ic_launcher_round"/' $M
+          echo "Icons and splash done."
 
       - name: Write MainActivity.java
         run: |
@@ -64,6 +93,7 @@ jobs:
           cat > $MAIN << 'EOF'
           package ng.name.ovrica.walls;
 
+          import android.app.AlarmManager;
           import android.app.DownloadManager;
           import android.app.NotificationChannel;
           import android.app.NotificationManager;
@@ -85,39 +115,45 @@ jobs:
           import androidx.core.app.NotificationCompat;
           import androidx.core.content.ContextCompat;
           import com.getcapacitor.BridgeActivity;
+          import java.util.concurrent.TimeUnit;
 
           public class MainActivity extends BridgeActivity {
 
-              private static final String CHANNEL_ID = "walls_downloads";
-              private static final int NOTIF_DOWNLOADING = 2001;
-              private static final int NOTIF_COMPLETE = 2002;
-              private static final int NOTIF_PERMISSION_CODE = 1001;
+              private static final String DL_CHANNEL    = "walls_downloads";
+              private static final String PROMO_CHANNEL = "walls_promo";
+              private static final int    NOTIF_DL_ING  = 2001;
+              private static final int    NOTIF_DL_DONE = 2002;
+              private static final int    NOTIF_PERM    = 1001;
 
-              private DownloadManager dm;
+              private DownloadManager     dm;
               private NotificationManager nm;
-              private long lastDownloadId = -1;
-              private boolean isImage = false;
-              private String lastFileName = "";
+              private BroadcastReceiver   downloadReceiver;
+              private long   lastDownloadId = -1;
+              private boolean isImage       = false;
+              private String  lastFileName  = "";
 
               @Override
               public void onStart() {
                   super.onStart();
                   dm = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
                   nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                      NotificationChannel ch = new NotificationChannel(
-                          CHANNEL_ID, "Walls Downloads", NotificationManager.IMPORTANCE_DEFAULT);
-                      ch.setDescription("Wallpaper download notifications");
-                      nm.createNotificationChannel(ch);
-                  }
+
+                  // Lock WebView font scale to system-independent size
+                  getBridge().getWebView().getSettings().setTextZoom(100);
+
+                  createChannel(DL_CHANNEL,    "Walls Downloads",   "Wallpaper download notifications");
+                  createChannel(PROMO_CHANNEL, "Wallpaper Reminders", "Reminders to check new wallpapers");
+
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                       ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
                           != PackageManager.PERMISSION_GRANTED) {
                       ActivityCompat.requestPermissions(this,
-                          new String[]{Manifest.permission.POST_NOTIFICATIONS}, NOTIF_PERMISSION_CODE);
+                          new String[]{Manifest.permission.POST_NOTIFICATIONS}, NOTIF_PERM);
                   }
+
                   setupDownloadListener();
                   registerDownloadReceiver();
+                  scheduleWallpaperReminder();
                   handleDeepLink(getIntent());
               }
 
@@ -125,6 +161,27 @@ jobs:
               public void onNewIntent(Intent intent) {
                   super.onNewIntent(intent);
                   handleDeepLink(intent);
+              }
+
+              @Override
+              protected void onDestroy() {
+                  super.onDestroy();
+                  if (downloadReceiver != null) {
+                      try { unregisterReceiver(downloadReceiver); } catch (Exception ignored) {}
+                  }
+              }
+
+              private void createChannel(String id, String name, String desc) {
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                      NotificationChannel ch = new NotificationChannel(id, name, NotificationManager.IMPORTANCE_DEFAULT);
+                      ch.setDescription(desc);
+                      nm.createNotificationChannel(ch);
+                  }
+              }
+
+              private NotificationCompat.Builder notif(String channel, int icon, String title, String text) {
+                  return new NotificationCompat.Builder(this, channel)
+                      .setSmallIcon(icon).setContentTitle(title).setContentText(text);
               }
 
               private void handleDeepLink(Intent intent) {
@@ -136,27 +193,18 @@ jobs:
                   }
               }
 
-              private void postNotif(int id, NotificationCompat.Builder b) {
-                  nm.notify(id, b.build());
-              }
-
-              private NotificationCompat.Builder baseNotif(int icon, String title, String text) {
-                  return new NotificationCompat.Builder(this, CHANNEL_ID)
-                      .setSmallIcon(icon)
-                      .setContentTitle(title)
-                      .setContentText(text);
-              }
-
               private void setupDownloadListener() {
                   getBridge().getWebView().setDownloadListener((url, userAgent, contentDisposition, mimetype, contentLength) -> {
                       lastFileName = URLUtil.guessFileName(url, contentDisposition, mimetype);
                       isImage = mimetype != null && mimetype.startsWith("image/");
+
                       runOnUiThread(() -> Toast.makeText(this, "Downloading: " + lastFileName, Toast.LENGTH_SHORT).show());
-                      postNotif(NOTIF_DOWNLOADING, baseNotif(
+
+                      nm.notify(NOTIF_DL_ING, notif(DL_CHANNEL,
                           android.R.drawable.stat_sys_download,
                           "Downloading Wallpaper", lastFileName)
-                          .setProgress(0, 0, true)
-                          .setOngoing(true));
+                          .setProgress(0, 0, true).setOngoing(true).build());
+
                       DownloadManager.Request req = new DownloadManager.Request(Uri.parse(url));
                       req.setTitle(lastFileName);
                       req.setDescription("Downloading wallpaper...");
@@ -169,17 +217,24 @@ jobs:
               }
 
               private void registerDownloadReceiver() {
-                  BroadcastReceiver receiver = new BroadcastReceiver() {
+                  downloadReceiver = new BroadcastReceiver() {
                       @Override
                       public void onReceive(Context context, Intent intent) {
                           long id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1);
                           if (id != lastDownloadId) return;
+
                           Cursor cursor = dm.query(new DownloadManager.Query().setFilterById(id));
                           if (!cursor.moveToFirst()) { cursor.close(); return; }
-                          int status = cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_STATUS));
-                          String localUri = cursor.getString(cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI));
+
+                          int statusCol = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS);
+                          int uriCol    = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI);
+                          if (statusCol == -1 || uriCol == -1) { cursor.close(); return; }
+
+                          int    status   = cursor.getInt(statusCol);
+                          String localUri = cursor.getString(uriCol);
                           cursor.close();
-                          nm.cancel(NOTIF_DOWNLOADING);
+                          nm.cancel(NOTIF_DL_ING);
+
                           runOnUiThread(() -> {
                               if (status == DownloadManager.STATUS_SUCCESSFUL) {
                                   Uri fileUri = Uri.parse(localUri);
@@ -189,53 +244,82 @@ jobs:
                                           .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                           .putExtra("mimeType", "image/*"),
                                       "Set as wallpaper");
-                                  PendingIntent pi = PendingIntent.getActivity(
-                                      MainActivity.this, 0, wallIntent,
-                                      PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-                                  nm.notify(NOTIF_COMPLETE, baseNotif(
+                                  PendingIntent pi = PendingIntent.getActivity(MainActivity.this, 0,
+                                      wallIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+                                  nm.notify(NOTIF_DL_DONE, notif(DL_CHANNEL,
                                       android.R.drawable.stat_sys_download_done,
                                       "Wallpaper Downloaded!",
                                       "Tap to set \"" + lastFileName + "\" as wallpaper")
                                       .setPriority(NotificationCompat.PRIORITY_HIGH)
-                                      .setContentIntent(pi)
-                                      .setAutoCancel(true)
-                                      .build());
+                                      .setContentIntent(pi).setAutoCancel(true).build());
                                   Toast.makeText(context, "Done! Tap notification to set wallpaper.", Toast.LENGTH_LONG).show();
-                                  if (isImage) openWallpaperPicker(fileUri);
+                                  if (isImage) startActivity(wallIntent);
                               } else {
-                                  nm.notify(NOTIF_COMPLETE, baseNotif(
+                                  nm.notify(NOTIF_DL_DONE, notif(DL_CHANNEL,
                                       android.R.drawable.stat_notify_error,
                                       "Download Failed",
-                                      "Could not download \"" + lastFileName + "\". Please try again.")
+                                      "Could not download \"" + lastFileName + "\". Try again.")
                                       .setPriority(NotificationCompat.PRIORITY_HIGH)
-                                      .setAutoCancel(true)
-                                      .build());
+                                      .setAutoCancel(true).build());
                                   Toast.makeText(context, "Download failed. Please try again.", Toast.LENGTH_SHORT).show();
                               }
                           });
                       }
                   };
-                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                      registerReceiver(receiver,
-                          new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE),
-                          Context.RECEIVER_NOT_EXPORTED);
-                  } else {
-                      registerReceiver(receiver,
-                          new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE));
-                  }
+
+                  IntentFilter filter = new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE);
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+                      registerReceiver(downloadReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+                  else
+                      registerReceiver(downloadReceiver, filter);
               }
 
-              private void openWallpaperPicker(Uri imageUri) {
-                  startActivity(Intent.createChooser(
-                      new Intent(Intent.ACTION_ATTACH_DATA)
-                          .setDataAndType(imageUri, "image/*")
-                          .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                          .putExtra("mimeType", "image/*"),
-                      "Set as wallpaper"));
+              private void scheduleWallpaperReminder() {
+                  AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+                  Intent i = new Intent(this, WallpaperReminderReceiver.class);
+                  PendingIntent pi = PendingIntent.getBroadcast(this, 0, i,
+                      PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+                  am.setRepeating(AlarmManager.RTC_WAKEUP,
+                      System.currentTimeMillis() + TimeUnit.HOURS.toMillis(6),
+                      TimeUnit.HOURS.toMillis(6), pi);
               }
           }
           EOF
           echo "MainActivity.java written."
+
+      - name: Write WallpaperReminderReceiver.java
+        run: |
+          FILE=android/app/src/main/java/ng/name/ovrica/walls/WallpaperReminderReceiver.java
+          mkdir -p $(dirname $FILE)
+          cat > $FILE << 'EOF'
+          package ng.name.ovrica.walls;
+
+          import android.app.NotificationManager;
+          import android.app.PendingIntent;
+          import android.content.BroadcastReceiver;
+          import android.content.Context;
+          import android.content.Intent;
+          import androidx.core.app.NotificationCompat;
+
+          public class WallpaperReminderReceiver extends BroadcastReceiver {
+              @Override
+              public void onReceive(Context context, Intent intent) {
+                  Intent open = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
+                  PendingIntent pi = PendingIntent.getActivity(context, 0, open,
+                      PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+                  NotificationCompat.Builder b = new NotificationCompat.Builder(context, "walls_promo")
+                      .setSmallIcon(android.R.drawable.ic_menu_gallery)
+                      .setContentTitle("New wallpapers are waiting 🖼️")
+                      .setContentText("Fresh picks are live on Walls. Come see what's new.")
+                      .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                      .setContentIntent(pi)
+                      .setAutoCancel(true);
+                  ((NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE))
+                      .notify(3001, b.build());
+              }
+          }
+          EOF
+          echo "WallpaperReminderReceiver.java written."
 
       - name: Patch AndroidManifest
         run: |
@@ -249,11 +333,15 @@ jobs:
                 <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />\
                 <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\
                 <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\
-                <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />\
                 <uses-permission android:name="android.permission.SET_WALLPAPER" />\
                 <uses-permission android:name="android.permission.SET_WALLPAPER_HINTS" />\
-                <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\
+                <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />\
+                <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />\
                 <uses-permission android:name="android.permission.WAKE_LOCK" />' $M
+          fi
+          if ! grep -q "WallpaperReminderReceiver" $M; then
+            sed -i '/<\/application>/i\
+                <receiver android:name=".WallpaperReminderReceiver" android:exported="false" />' $M
           fi
           if ! grep -q "walls.ovrica.name.ng" $M; then
             sed -i '/<\/activity>/i\
@@ -265,14 +353,12 @@ jobs:
                     </intent-filter>' $M
           fi
 
-      - name: Create assets directory
+      - name: Create assets and sync Capacitor
         run: |
           mkdir -p android/app/src/main/assets
           echo '[]' > android/app/src/main/assets/capacitor.plugins.json
           cp capacitor.config.json android/app/src/main/assets/capacitor.config.json
-
-      - name: Sync Capacitor
-        run: npx cap sync android
+          npx cap sync android
 
       - name: Fix Kotlin stdlib duplicates
         run: |
@@ -309,7 +395,6 @@ jobs:
           BT=$ANDROID_SDK_ROOT/build-tools/34.0.0
           UNSIGNED=$(find ${{ github.workspace }}/android -name "app-release-unsigned.apk" | head -1)
           [ -z "$UNSIGNED" ] && echo "ERROR: No unsigned APK found!" && exit 1
-          echo "Signing: $UNSIGNED"
           $BT/zipalign -v -p 4 "$UNSIGNED" ${{ github.workspace }}/app-aligned.apk
           $BT/apksigner sign \
             --ks ${{ github.workspace }}/walls.keystore \
@@ -334,14 +419,11 @@ jobs:
           cat > ${{ github.workspace }}/release/assetlinks.json << EOF
           [{"relation":["delegate_permission/common.handle_all_urls"],"target":{"namespace":"android_app","package_name":"ng.name.ovrica.walls","sha256_cert_fingerprints":["$SHA256"]}}]
           EOF
-          cat ${{ github.workspace }}/release/assetlinks.json
-          cd ${{ github.workspace }}
           zip -j release/walls-release.zip \
             release/app-release-signed.apk \
             release/app-release-bundle.aab \
             release/sha256.txt \
             release/assetlinks.json
-          unzip -l release/walls-release.zip
 
       - uses: actions/upload-artifact@v4
         with:
