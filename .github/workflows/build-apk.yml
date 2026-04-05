@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Android APK (Capacitor)
 
 on:
   workflow_dispatch:
@@ -14,6 +14,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
       - name: Setup Java JDK 17
         uses: actions/setup-java@v4
         with:
@@ -23,28 +29,76 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Accept all Android SDK licenses
+      - name: Accept Android SDK licenses
         run: |
           yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses || true
           yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
             "platforms;android-34" \
             "build-tools;34.0.0" \
             "platform-tools" || true
+          mkdir -p $ANDROID_SDK_ROOT/licenses
+          echo -e "\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > $ANDROID_SDK_ROOT/licenses/android-sdk-license
+          echo -e "\nd56f5187479451eabf01fb78af6dfcb131a6481e\n84831b9409646a918e30573bab4c9c91346d8abd" >> $ANDROID_SDK_ROOT/licenses/android-sdk-license
+          echo -e "\n84831b9409646a918e30573bab4c9c91346d8abd" > $ANDROID_SDK_ROOT/licenses/android-sdk-preview-license
+          echo -e "\n33b6937b7c5e5d694e7f30d6c9aab2bd58b9a2c4" > $ANDROID_SDK_ROOT/licenses/google-gdk-license
+          echo -e "\ne9acab5b5fbb560a72cfaecce8946896ff6aab9d" > $ANDROID_SDK_ROOT/licenses/android-googletv-license
           echo "Licenses accepted."
 
-      - name: Install Bubblewrap
-        run: npm install -g @bubblewrap/cli
+      - name: Install dependencies
+        run: npm ci
 
-      - name: Pre-configure Bubblewrap (JDK/SDK paths)
+      - name: Build Next.js static export
+        run: npx next build
+        env:
+          NODE_ENV: production
+
+      - name: Verify Next.js output folder
         run: |
-          mkdir -p ~/.bubblewrap
-          cat > ~/.bubblewrap/config.json << EOF
+          if [ -d "out" ]; then
+            echo "Found: out/"
+            ls -la out/
+          elif [ -d ".next" ]; then
+            echo "Found: .next/ — make sure output: export is set in next.config.js"
+            exit 1
+          else
+            echo "ERROR: No output folder found"
+            exit 1
+          fi
+
+      - name: Install Capacitor
+        run: |
+          npm install @capacitor/core @capacitor/cli @capacitor/android
+
+      - name: Initialize Capacitor (if not already set up)
+        run: |
+          if [ ! -f "capacitor.config.ts" ] && [ ! -f "capacitor.config.js" ] && [ ! -f "capacitor.config.json" ]; then
+            echo "No capacitor config found — creating one"
+            cat > capacitor.config.json << EOF
           {
-            "jdkPath": "$JAVA_HOME",
-            "androidSdkPath": "$ANDROID_SDK_ROOT"
+            "appId": "ng.name.ovrica.walls",
+            "appName": "Walls",
+            "webDir": "out",
+            "bundledWebRuntime": false,
+            "android": {
+              "minSdkVersion": 21
+            }
           }
           EOF
-          cat ~/.bubblewrap/config.json
+          else
+            echo "Capacitor config already exists"
+            cat capacitor.config.json || cat capacitor.config.ts || cat capacitor.config.js
+          fi
+
+      - name: Add Android platform
+        run: |
+          if [ ! -d "android" ]; then
+            npx cap add android
+          else
+            echo "Android platform already exists"
+          fi
+
+      - name: Sync Capacitor (copy web assets to Android)
+        run: npx cap sync android
 
       - name: Generate keystore
         run: |
@@ -59,110 +113,43 @@ jobs:
             -keypass ${{ secrets.KEYSTORE_PASSWORD }} \
             -dname "CN=Walls, OU=App, O=Walls, L=Lagos, S=Lagos, C=NG"
 
-      - name: Create twa-manifest.json manually (skip bubblewrap init)
+      - name: Build unsigned release APK and AAB
         run: |
-          mkdir -p ${{ github.workspace }}/walls-android
-          cat > ${{ github.workspace }}/walls-android/twa-manifest.json << EOF
-          {
-            "packageId": "ng.name.ovrica.walls",
-            "host": "walls.ovrica.name.ng",
-            "name": "Walls",
-            "launcherName": "Walls",
-            "display": "standalone",
-            "orientation": "portrait",
-            "themeColor": "#FFFFFF",
-            "themeColorDark": "#000000",
-            "navigationColor": "#000000",
-            "navigationColorDark": "#000000",
-            "navigationDividerColor": "#000000",
-            "navigationDividerColorDark": "#000000",
-            "backgroundColor": "#FFFFFF",
-            "enableNotifications": false,
-            "startUrl": "/",
-            "iconUrl": "https://walls.ovrica.name.ng/icons/icon-512x512.png",
-            "maskableIconUrl": "",
-            "monochromeIconUrl": "",
-            "splashScreenFadeOutDuration": 300,
-            "signingKey": {
-              "path": "${{ github.workspace }}/walls.keystore",
-              "alias": "walls"
-            },
-            "appVersionCode": 1,
-            "appVersion": "1.0.0",
-            "shortcuts": [],
-            "generatorApp": "bubblewrap-cli",
-            "webManifestUrl": "https://walls.ovrica.name.ng/manifest.webmanifest",
-            "fallbackType": "customtabs",
-            "features": {},
-            "alphaDependencies": false,
-            "enableSiteSettingsShortcut": true,
-            "isChromeOSOnly": false,
-            "isMetaQuest": false,
-            "fullScopeUrl": "https://walls.ovrica.name.ng/",
-            "minSdkVersion": 21,
-            "fingerprints": []
-          }
-          EOF
-          echo "twa-manifest.json created."
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease bundleRelease --stacktrace
+          echo "=== APKs ==="
+          find . -name "*.apk"
+          echo "=== AABs ==="
+          find . -name "*.aab"
 
-      - name: Generate Android project with bubblewrap update (non-interactive)
-        env:
-          BUBBLEWRAP_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          BUBBLEWRAP_KEY_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+      - name: Sign APK with apksigner (V1 + V2 + V3)
         run: |
-          cd ${{ github.workspace }}/walls-android
-          bubblewrap update --skipVersionUpgrade
+          BUILD_TOOLS=$ANDROID_SDK_ROOT/build-tools/34.0.0
+          UNSIGNED=$(find ${{ github.workspace }}/android -name "*release*unsigned*.apk" -o -name "*release*.apk" | grep -v signed | head -1)
+          echo "Found unsigned APK: $UNSIGNED"
 
-      - name: Accept Android SDK licenses for Gradle
+          # Zipalign
+          $BUILD_TOOLS/zipalign -v -p 4 \
+            "$UNSIGNED" \
+            ${{ github.workspace }}/app-aligned.apk
+
+          # Sign with V1+V2+V3
+          $BUILD_TOOLS/apksigner sign \
+            --ks ${{ github.workspace }}/walls.keystore \
+            --ks-key-alias walls \
+            --ks-pass pass:${{ secrets.KEYSTORE_PASSWORD }} \
+            --key-pass pass:${{ secrets.KEYSTORE_PASSWORD }} \
+            --out ${{ github.workspace }}/app-release-signed.apk \
+            ${{ github.workspace }}/app-aligned.apk
+
+          # Verify
+          $BUILD_TOOLS/apksigner verify --verbose ${{ github.workspace }}/app-release-signed.apk
+          echo "APK signed and verified successfully."
+
+      - name: Copy AAB
         run: |
-          mkdir -p $ANDROID_SDK_ROOT/licenses
-          echo -e "\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > $ANDROID_SDK_ROOT/licenses/android-sdk-license
-          echo -e "\nd56f5187479451eabf01fb78af6dfcb131a6481e\n84831b9409646a918e30573bab4c9c91346d8abd" >> $ANDROID_SDK_ROOT/licenses/android-sdk-license
-          echo -e "\n84831b9409646a918e30573bab4c9c91346d8abd" > $ANDROID_SDK_ROOT/licenses/android-sdk-preview-license
-          echo -e "\n33b6937b7c5e5d694e7f30d6c9aab2bd58b9a2c4" > $ANDROID_SDK_ROOT/licenses/google-gdk-license
-          echo -e "\ne9acab5b5fbb560a72cfaecce8946896ff6aab9d" > $ANDROID_SDK_ROOT/licenses/android-googletv-license
-          echo -e "\nd975f751698a77b662f1254ddbeed3901e976f5a" > $ANDROID_SDK_ROOT/licenses/intel-android-extra-license
-          echo -e "\n33b6937b7c5e5d694e7f30d6c9aab2bd58b9a2c4" > $ANDROID_SDK_ROOT/licenses/mips-android-sysimage-license
-          echo "All license files written."
-          ls -la $ANDROID_SDK_ROOT/licenses/
-
-      - name: Verify Android project generated
-        run: |
-          echo "=== walls-android contents ==="
-          ls -la ${{ github.workspace }}/walls-android/
-          if [ ! -f "${{ github.workspace }}/walls-android/gradlew" ]; then
-            echo "ERROR: gradlew not found"
-            exit 1
-          fi
-          echo "gradlew found."
-
-      - name: Build APK with Bubblewrap
-        env:
-          BUBBLEWRAP_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          BUBBLEWRAP_KEY_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-        run: |
-          cd ${{ github.workspace }}/walls-android
-          bubblewrap build \
-            --skipPwaValidation \
-            --signingKeyPath ${{ github.workspace }}/walls.keystore \
-            --signingKeyAlias walls
-
-      - name: Copy APK and AAB
-        run: |
-          echo "=== APKs found ==="
-          find ${{ github.workspace }}/walls-android -name "*.apk"
-          echo "=== AABs found ==="
-          find ${{ github.workspace }}/walls-android -name "*.aab"
-
-          APK=$(find ${{ github.workspace }}/walls-android -name "*.apk" | head -1)
-          if [ -z "$APK" ]; then
-            echo "ERROR: No APK found"
-            exit 1
-          fi
-          cp "$APK" ${{ github.workspace }}/app-release-signed.apk
-          echo "APK copied: $APK"
-
-          AAB=$(find ${{ github.workspace }}/walls-android -name "*.aab" | head -1)
+          AAB=$(find ${{ github.workspace }}/android -name "*.aab" | head -1)
           if [ -n "$AAB" ]; then
             cp "$AAB" ${{ github.workspace }}/app-release-bundle.aab
             echo "AAB copied: $AAB"
@@ -182,7 +169,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: walls-apk
+          name: walls-capacitor-apk
           path: |
             app-release-signed.apk
             app-release-bundle.aab
