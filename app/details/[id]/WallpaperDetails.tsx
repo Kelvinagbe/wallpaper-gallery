@@ -243,7 +243,7 @@ export default function WallpaperDetail({ initialWallpaper: wp, ad }: { initialW
     set({ downloading: true }); navigator.vibrate?.(50);
     try {
       await incrementDownloads(wp.id);
-      const res = await fetch(`/api/download?url=${encodeURIComponent(wp.url)}&name=${encodeURIComponent(wp.title || 'wallpaper')}`);
+      const res = await fetch(`https://walls.ovrica.name.ng/api/download?url=${encodeURIComponent(wp.url)}&name=${encodeURIComponent(wp.title || 'wallpaper')}`);
       if (!res.ok) throw new Error('Download failed');
       const objectUrl = URL.createObjectURL(await res.blob());
       const a = Object.assign(document.createElement('a'), { href: objectUrl, download: `${wp.title || 'wallpaper'}.jpg`, style: 'display:none' });
