@@ -26,23 +26,38 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      - name: Pre-write Android SDK license files
+        run: |
+          mkdir -p /usr/local/lib/android/sdk/licenses
+          printf "\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > /usr/local/lib/android/sdk/licenses/android-sdk-license
+          printf "\nd56f5187479451eabf01fb78af6dfcb131a6481e\n84831b9409646a918e30573bab4c9c91346d8abd" >> /usr/local/lib/android/sdk/licenses/android-sdk-license
+          printf "\n84831b9409646a918e30573bab4c9c91346d8abd" > /usr/local/lib/android/sdk/licenses/android-sdk-preview-license
+          printf "\n33b6937b7c5e5d694e7f30d6c9aab2bd58b9a2c4" > /usr/local/lib/android/sdk/licenses/google-gdk-license
+          printf "\ne9acab5b5fbb560a72cfaecce8946896ff6aab9d" > /usr/local/lib/android/sdk/licenses/android-googletv-license
+          printf "\nd975f751698a77b662f1254ddbeed3901e976f5a" > /usr/local/lib/android/sdk/licenses/intel-android-extra-license
+          printf "\n33b6937b7c5e5d694e7f30d6c9aab2bd58b9a2c4" > /usr/local/lib/android/sdk/licenses/mips-android-sysimage-license
+          echo "License files pre-written."
+
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Accept Android SDK licenses
+      - name: Re-write license files and install SDK packages
         run: |
-          yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          # Re-write after setup-android in case it overwrote them
+          mkdir -p $ANDROID_SDK_ROOT/licenses
+          printf "\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > $ANDROID_SDK_ROOT/licenses/android-sdk-license
+          printf "\nd56f5187479451eabf01fb78af6dfcb131a6481e\n84831b9409646a918e30573bab4c9c91346d8abd" >> $ANDROID_SDK_ROOT/licenses/android-sdk-license
+          printf "\n84831b9409646a918e30573bab4c9c91346d8abd" > $ANDROID_SDK_ROOT/licenses/android-sdk-preview-license
+          printf "\n33b6937b7c5e5d694e7f30d6c9aab2bd58b9a2c4" > $ANDROID_SDK_ROOT/licenses/google-gdk-license
+          printf "\ne9acab5b5fbb560a72cfaecce8946896ff6aab9d" > $ANDROID_SDK_ROOT/licenses/android-googletv-license
+          printf "\nd975f751698a77b662f1254ddbeed3901e976f5a" > $ANDROID_SDK_ROOT/licenses/intel-android-extra-license
+          printf "\n33b6937b7c5e5d694e7f30d6c9aab2bd58b9a2c4" > $ANDROID_SDK_ROOT/licenses/mips-android-sysimage-license
+          echo "Licenses ready. Installing SDK packages..."
           yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
             "platforms;android-34" \
             "build-tools;34.0.0" \
-            "platform-tools" || true
-          mkdir -p $ANDROID_SDK_ROOT/licenses
-          echo -e "\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > $ANDROID_SDK_ROOT/licenses/android-sdk-license
-          echo -e "\nd56f5187479451eabf01fb78af6dfcb131a6481e\n84831b9409646a918e30573bab4c9c91346d8abd" >> $ANDROID_SDK_ROOT/licenses/android-sdk-license
-          echo -e "\n84831b9409646a918e30573bab4c9c91346d8abd" > $ANDROID_SDK_ROOT/licenses/android-sdk-preview-license
-          echo -e "\n33b6937b7c5e5d694e7f30d6c9aab2bd58b9a2c4" > $ANDROID_SDK_ROOT/licenses/google-gdk-license
-          echo -e "\ne9acab5b5fbb560a72cfaecce8946896ff6aab9d" > $ANDROID_SDK_ROOT/licenses/android-googletv-license
-          echo "Licenses accepted."
+            "platform-tools" 2>/dev/null || true
+          echo "Done."
 
       - name: Install dependencies
         run: npm ci
@@ -57,22 +72,17 @@ jobs:
           if [ -d "out" ]; then
             echo "Found: out/"
             ls -la out/
-          elif [ -d ".next" ]; then
-            echo "Found: .next/ — make sure output: export is set in next.config.js"
-            exit 1
           else
-            echo "ERROR: No output folder found"
+            echo "ERROR: No out/ folder. Make sure next.config.js has output: 'export'"
             exit 1
           fi
 
       - name: Install Capacitor
-        run: |
-          npm install @capacitor/core @capacitor/cli @capacitor/android
+        run: npm install @capacitor/core @capacitor/cli @capacitor/android
 
-      - name: Initialize Capacitor (if not already set up)
+      - name: Create capacitor.config.json if not present
         run: |
           if [ ! -f "capacitor.config.ts" ] && [ ! -f "capacitor.config.js" ] && [ ! -f "capacitor.config.json" ]; then
-            echo "No capacitor config found — creating one"
             cat > capacitor.config.json << EOF
           {
             "appId": "ng.name.ovrica.walls",
@@ -84,20 +94,20 @@ jobs:
             }
           }
           EOF
+            echo "capacitor.config.json created."
           else
-            echo "Capacitor config already exists"
-            cat capacitor.config.json || cat capacitor.config.ts || cat capacitor.config.js
+            echo "Capacitor config already exists."
           fi
 
-      - name: Add Android platform
+      - name: Add Android platform if not present
         run: |
           if [ ! -d "android" ]; then
             npx cap add android
           else
-            echo "Android platform already exists"
+            echo "Android folder already exists."
           fi
 
-      - name: Sync Capacitor (copy web assets to Android)
+      - name: Sync Capacitor
         run: npx cap sync android
 
       - name: Generate keystore
@@ -113,7 +123,7 @@ jobs:
             -keypass ${{ secrets.KEYSTORE_PASSWORD }} \
             -dname "CN=Walls, OU=App, O=Walls, L=Lagos, S=Lagos, C=NG"
 
-      - name: Build unsigned release APK and AAB
+      - name: Build release APK and AAB with Gradle
         run: |
           cd android
           chmod +x gradlew
@@ -123,18 +133,12 @@ jobs:
           echo "=== AABs ==="
           find . -name "*.aab"
 
-      - name: Sign APK with apksigner (V1 + V2 + V3)
+      - name: Sign APK with apksigner
         run: |
           BUILD_TOOLS=$ANDROID_SDK_ROOT/build-tools/34.0.0
-          UNSIGNED=$(find ${{ github.workspace }}/android -name "*release*unsigned*.apk" -o -name "*release*.apk" | grep -v signed | head -1)
-          echo "Found unsigned APK: $UNSIGNED"
-
-          # Zipalign
-          $BUILD_TOOLS/zipalign -v -p 4 \
-            "$UNSIGNED" \
-            ${{ github.workspace }}/app-aligned.apk
-
-          # Sign with V1+V2+V3
+          UNSIGNED=$(find ${{ github.workspace }}/android -name "*release*.apk" | grep -v signed | head -1)
+          echo "Signing: $UNSIGNED"
+          $BUILD_TOOLS/zipalign -v -p 4 "$UNSIGNED" ${{ github.workspace }}/app-aligned.apk
           $BUILD_TOOLS/apksigner sign \
             --ks ${{ github.workspace }}/walls.keystore \
             --ks-key-alias walls \
@@ -142,10 +146,8 @@ jobs:
             --key-pass pass:${{ secrets.KEYSTORE_PASSWORD }} \
             --out ${{ github.workspace }}/app-release-signed.apk \
             ${{ github.workspace }}/app-aligned.apk
-
-          # Verify
           $BUILD_TOOLS/apksigner verify --verbose ${{ github.workspace }}/app-release-signed.apk
-          echo "APK signed and verified successfully."
+          echo "APK signed successfully."
 
       - name: Copy AAB
         run: |
@@ -153,8 +155,6 @@ jobs:
           if [ -n "$AAB" ]; then
             cp "$AAB" ${{ github.workspace }}/app-release-bundle.aab
             echo "AAB copied: $AAB"
-          else
-            echo "WARNING: No AAB found"
           fi
 
       - name: Get SHA256 fingerprint
