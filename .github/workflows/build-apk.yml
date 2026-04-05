@@ -105,13 +105,16 @@ jobs:
                   dm = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
                   nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                      NotificationChannel ch = new NotificationChannel(CHANNEL_ID, "Walls Downloads", NotificationManager.IMPORTANCE_DEFAULT);
+                      NotificationChannel ch = new NotificationChannel(
+                          CHANNEL_ID, "Walls Downloads", NotificationManager.IMPORTANCE_DEFAULT);
                       ch.setDescription("Wallpaper download notifications");
                       nm.createNotificationChannel(ch);
                   }
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                      ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                      ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.POST_NOTIFICATIONS}, NOTIF_PERMISSION_CODE);
+                      ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                          != PackageManager.PERMISSION_GRANTED) {
+                      ActivityCompat.requestPermissions(this,
+                          new String[]{Manifest.permission.POST_NOTIFICATIONS}, NOTIF_PERMISSION_CODE);
                   }
                   setupDownloadListener();
                   registerDownloadReceiver();
@@ -133,17 +136,25 @@ jobs:
                   }
               }
 
-              private void notify(int id, NotificationCompat.Builder b) { nm.notify(id, b.build()); }
+              private void postNotif(int id, NotificationCompat.Builder b) {
+                  nm.notify(id, b.build());
+              }
+
+              private NotificationCompat.Builder baseNotif(int icon, String title, String text) {
+                  return new NotificationCompat.Builder(this, CHANNEL_ID)
+                      .setSmallIcon(icon)
+                      .setContentTitle(title)
+                      .setContentText(text);
+              }
 
               private void setupDownloadListener() {
                   getBridge().getWebView().setDownloadListener((url, userAgent, contentDisposition, mimetype, contentLength) -> {
                       lastFileName = URLUtil.guessFileName(url, contentDisposition, mimetype);
                       isImage = mimetype != null && mimetype.startsWith("image/");
                       runOnUiThread(() -> Toast.makeText(this, "Downloading: " + lastFileName, Toast.LENGTH_SHORT).show());
-                      notify(NOTIF_DOWNLOADING, new NotificationCompat.Builder(this, CHANNEL_ID)
-                          .setSmallIcon(android.R.drawable.stat_sys_download)
-                          .setContentTitle("Downloading Wallpaper")
-                          .setContentText(lastFileName)
+                      postNotif(NOTIF_DOWNLOADING, baseNotif(
+                          android.R.drawable.stat_sys_download,
+                          "Downloading Wallpaper", lastFileName)
                           .setProgress(0, 0, true)
                           .setOngoing(true));
                       DownloadManager.Request req = new DownloadManager.Request(Uri.parse(url));
@@ -178,33 +189,39 @@ jobs:
                                           .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                           .putExtra("mimeType", "image/*"),
                                       "Set as wallpaper");
-                                  PendingIntent pi = PendingIntent.getActivity(MainActivity.this, 0, wallIntent,
+                                  PendingIntent pi = PendingIntent.getActivity(
+                                      MainActivity.this, 0, wallIntent,
                                       PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-                                  notify(NOTIF_COMPLETE, new NotificationCompat.Builder(MainActivity.this, CHANNEL_ID)
-                                      .setSmallIcon(android.R.drawable.stat_sys_download_done)
-                                      .setContentTitle("Wallpaper Downloaded!")
-                                      .setContentText("Tap to set \"" + lastFileName + "\" as wallpaper")
+                                  nm.notify(NOTIF_COMPLETE, baseNotif(
+                                      android.R.drawable.stat_sys_download_done,
+                                      "Wallpaper Downloaded!",
+                                      "Tap to set \"" + lastFileName + "\" as wallpaper")
                                       .setPriority(NotificationCompat.PRIORITY_HIGH)
                                       .setContentIntent(pi)
-                                      .setAutoCancel(true));
+                                      .setAutoCancel(true)
+                                      .build());
                                   Toast.makeText(context, "Done! Tap notification to set wallpaper.", Toast.LENGTH_LONG).show();
                                   if (isImage) openWallpaperPicker(fileUri);
                               } else {
-                                  notify(NOTIF_COMPLETE, new NotificationCompat.Builder(MainActivity.this, CHANNEL_ID)
-                                      .setSmallIcon(android.R.drawable.stat_notify_error)
-                                      .setContentTitle("Download Failed")
-                                      .setContentText("Could not download \"" + lastFileName + "\". Please try again.")
+                                  nm.notify(NOTIF_COMPLETE, baseNotif(
+                                      android.R.drawable.stat_notify_error,
+                                      "Download Failed",
+                                      "Could not download \"" + lastFileName + "\". Please try again.")
                                       .setPriority(NotificationCompat.PRIORITY_HIGH)
-                                      .setAutoCancel(true));
+                                      .setAutoCancel(true)
+                                      .build());
                                   Toast.makeText(context, "Download failed. Please try again.", Toast.LENGTH_SHORT).show();
                               }
                           });
                       }
                   };
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                      registerReceiver(receiver, new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE), Context.RECEIVER_NOT_EXPORTED);
+                      registerReceiver(receiver,
+                          new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE),
+                          Context.RECEIVER_NOT_EXPORTED);
                   } else {
-                      registerReceiver(receiver, new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE));
+                      registerReceiver(receiver,
+                          new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE));
                   }
               }
 
@@ -218,6 +235,7 @@ jobs:
               }
           }
           EOF
+          echo "MainActivity.java written."
 
       - name: Patch AndroidManifest
         run: |
@@ -316,8 +334,13 @@ jobs:
           cat > ${{ github.workspace }}/release/assetlinks.json << EOF
           [{"relation":["delegate_permission/common.handle_all_urls"],"target":{"namespace":"android_app","package_name":"ng.name.ovrica.walls","sha256_cert_fingerprints":["$SHA256"]}}]
           EOF
+          cat ${{ github.workspace }}/release/assetlinks.json
           cd ${{ github.workspace }}
-          zip -j release/walls-release.zip release/app-release-signed.apk release/app-release-bundle.aab release/sha256.txt release/assetlinks.json
+          zip -j release/walls-release.zip \
+            release/app-release-signed.apk \
+            release/app-release-bundle.aab \
+            release/sha256.txt \
+            release/assetlinks.json
           unzip -l release/walls-release.zip
 
       - uses: actions/upload-artifact@v4
