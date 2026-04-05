@@ -292,13 +292,13 @@ export default function WallpaperDetail({ initialWallpaper: wp, ad }: { initialW
 
       {/* Back */}
       <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 60, padding: '12px 16px', pointerEvents: 'none' }}>
-        <button onClick={() => { startLoader(); router.back(); }} className="act-btn" style={{ pointerEvents: 'all', width: 44, height: 44, borderRadius: 12, background: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+        <button onClick={() => { startLoader(); router.back(); }} className="act-btn" style={{ pointerEvents: 'all', width: 55, height: 55, borderRadius: 9, background: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(3px)', WebkitBackdropFilter: 'blur(10px)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
           <ChevronLeft size={22} color="#fff" strokeWidth={2.5} />
         </button>
       </div>
 
       {/* Image */}
-      <div style={{ padding: '40px 25px 0' }}>
+      <div style={{ padding: '16px 25px 0' }}>
         <div style={{ position: 'relative', width: '100%', aspectRatio: isPC ? '4/3' : '9/16', borderRadius: 20, overflow: 'hidden', background: '#e0e0de' }} onContextMenu={e => e.preventDefault()}>
           {!imgLoaded && <div className="shimmer" style={{ position: 'absolute', inset: 0 }} />}
           <Image src={wp.url} alt={wp.title} fill priority draggable={false} className="wp-img" style={{ objectFit: 'cover', opacity: imgLoaded ? 1 : 0, transition: 'opacity .4s ease' }} sizes="(max-width:768px) 100vw, 600px" onLoad={() => { imgCache.add(wp.url); setImgLoaded(true); }} />
