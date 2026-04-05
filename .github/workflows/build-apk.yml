@@ -26,9 +26,6 @@ jobs:
       - name: Install Bubblewrap
         run: npm install -g @bubblewrap/cli
 
-      - name: Install pexpect
-        run: pip install pexpect --break-system-packages
-
       - name: Pre-configure Bubblewrap (JDK/SDK paths)
         run: |
           mkdir -p ~/.bubblewrap
@@ -53,121 +50,81 @@ jobs:
             -keypass ${{ secrets.KEYSTORE_PASSWORD }} \
             -dname "CN=Walls, OU=App, O=Walls, L=Lagos, S=Lagos, C=NG"
 
-      - name: Run Bubblewrap init (non-interactive via pexpect)
-        env:
-          GITHUB_WORKSPACE: ${{ github.workspace }}
+      - name: Create twa-manifest.json manually (skip bubblewrap init)
         run: |
           mkdir -p ${{ github.workspace }}/walls-android
-          python3 << 'PYEOF'
-          import pexpect, sys, os, time
+          cat > ${{ github.workspace }}/walls-android/twa-manifest.json << EOF
+          {
+            "packageId": "ng.name.ovrica.walls",
+            "host": "walls.ovrica.name.ng",
+            "name": "Walls",
+            "launcherName": "Walls",
+            "display": "standalone",
+            "orientation": "portrait",
+            "themeColor": "#FFFFFF",
+            "themeColorDark": "#000000",
+            "navigationColor": "#000000",
+            "navigationColorDark": "#000000",
+            "navigationDividerColor": "#000000",
+            "navigationDividerColorDark": "#000000",
+            "backgroundColor": "#FFFFFF",
+            "enableNotifications": false,
+            "startUrl": "/",
+            "iconUrl": "https://walls.ovrica.name.ng/icons/icon-512x512.png",
+            "maskableIconUrl": "",
+            "monochromeIconUrl": "",
+            "splashScreenFadeOutDuration": 300,
+            "signingKey": {
+              "path": "${{ github.workspace }}/walls.keystore",
+              "alias": "walls"
+            },
+            "appVersionCode": 1,
+            "appVersion": "1.0.0",
+            "shortcuts": [],
+            "generatorApp": "bubblewrap-cli",
+            "webManifestUrl": "https://walls.ovrica.name.ng/manifest.webmanifest",
+            "fallbackType": "customtabs",
+            "features": {},
+            "alphaDependencies": false,
+            "enableSiteSettingsShortcut": true,
+            "isChromeOSOnly": false,
+            "isMetaQuest": false,
+            "fullScopeUrl": "https://walls.ovrica.name.ng/",
+            "minSdkVersion": 19,
+            "fingerprints": []
+          }
+          EOF
+          echo "twa-manifest.json created:"
+          cat ${{ github.workspace }}/walls-android/twa-manifest.json
 
-          workspace = os.environ.get('GITHUB_WORKSPACE', '')
-          cmd = (
-              'bubblewrap init '
-              '--manifest https://walls.ovrica.name.ng/manifest.webmanifest '
-              f'--directory {workspace}/walls-android'
-          )
+      - name: Generate Android project with bubblewrap update (non-interactive)
+        env:
+          BUBBLEWRAP_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          BUBBLEWRAP_KEY_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          cd ${{ github.workspace }}/walls-android
+          bubblewrap update --skipVersionUpgrade
 
-          print(f"[pexpect] Spawning: {cmd}", flush=True)
-          child = pexpect.spawn(cmd, timeout=300, encoding='utf-8')
-          child.logfile_read = sys.stdout
-
-          # Each tuple: (pattern_to_match, response, description)
-          # Order matters — more specific patterns first
-          prompts = [
-              (r'\? Do you want Bubblewrap to install the JDK',  'n',                      'JDK install'),
-              (r'\? Do you want Bubblewrap to install the Android SDK', 'n',               'Android SDK install'),
-              (r'\? Domain:',                                     'walls.ovrica.name.ng',   'Domain'),
-              (r'\? URL path:',                                   '/',                      'URL path'),
-              (r'\? Application name:',                           'Walls',                  'App name'),
-              (r'\? Short name:',                                 'Walls',                  'Short name'),
-              (r'\? Application ID:',                             'ng.name.ovrica.walls',   'App ID'),
-              (r'\? Version code:',                               '',                       'Version code'),
-              (r'\? Version name:',                               '',                       'Version name'),
-              (r'\? Display mode:',                               '',                       'Display mode'),
-              (r'\? Orientation:',                                '',                       'Orientation'),
-              (r'\? Theme color:',                                '',                       'Theme color'),
-              (r'\? Background color:',                           '',                       'Background color'),
-              (r'\? Enable Notifications:',                       '',                       'Notifications'),
-              (r'\? Enable Location Delegation:',                 '',                       'Location'),
-              (r'\? Enable Play Billing:',                        '',                       'Billing'),
-              (r'(?i)existing directory',                         'y',                      'Existing dir'),
-          ]
-
-          patterns = [p[0] for p in prompts] + [pexpect.EOF, pexpect.TIMEOUT]
-          n_prompts = len(prompts)
-
-          answered = set()
-
-          while True:
-              index = child.expect(patterns, timeout=120)
-
-              if index == n_prompts:
-                  print("\n[pexpect] Done (EOF).", flush=True)
-                  break
-              elif index == n_prompts + 1:
-                  print("\n[pexpect] TIMEOUT — stuck on a prompt.", flush=True)
-                  print(f"[pexpect] Buffer: {child.before}", flush=True)
-                  sys.exit(1)
-              else:
-                  pattern, response, desc = prompts[index]
-                  if index in answered:
-                      # Already answered this — skip to avoid re-triggering
-                      time.sleep(0.2)
-                      continue
-                  print(f"\n[pexpect] Answering '{desc}' -> '{response}'", flush=True)
-                  # Flush any pending echo by waiting briefly
-                  time.sleep(0.3)
-                  child.sendline(response)
-                  answered.add(index)
-
-          child.close()
-          exit_code = child.exitstatus
-          if exit_code and exit_code != 0:
-              print(f"[pexpect] Non-zero exit: {exit_code}", flush=True)
-              sys.exit(exit_code)
-
-          print("[pexpect] Bubblewrap init completed successfully.", flush=True)
-          PYEOF
-
-      - name: Verify Bubblewrap generated files
+      - name: Verify Android project generated
         run: |
           echo "=== walls-android contents ==="
           ls -la ${{ github.workspace }}/walls-android/
           if [ ! -f "${{ github.workspace }}/walls-android/gradlew" ]; then
-            echo "ERROR: gradlew not found — bubblewrap init did not complete"
+            echo "ERROR: gradlew not found"
             exit 1
           fi
           echo "gradlew found."
 
-      - name: Update signing config in twa-manifest.json
-        env:
-          GITHUB_WORKSPACE: ${{ github.workspace }}
-        run: |
-          python3 << 'PYEOF'
-          import json, os
-          workspace = os.environ.get('GITHUB_WORKSPACE', '')
-          path = f'{workspace}/walls-android/twa-manifest.json'
-          with open(path) as f:
-              m = json.load(f)
-          m['signingKey'] = {
-              'path': f'{workspace}/walls.keystore',
-              'alias': 'walls'
-          }
-          with open(path, 'w') as f:
-              json.dump(m, f, indent=2)
-          print('twa-manifest.json updated.')
-          PYEOF
-
       - name: Build APK with Bubblewrap
+        env:
+          BUBBLEWRAP_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          BUBBLEWRAP_KEY_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
           cd ${{ github.workspace }}/walls-android
           bubblewrap build \
             --skipPwaValidation \
             --signingKeyPath ${{ github.workspace }}/walls.keystore \
-            --signingKeyAlias walls \
-            --signingKeyPassword ${{ secrets.KEYSTORE_PASSWORD }} \
-            --signingStorePassword ${{ secrets.KEYSTORE_PASSWORD }}
+            --signingKeyAlias walls
 
       - name: Copy APK
         run: |
