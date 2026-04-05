@@ -35,7 +35,7 @@ jobs:
             "androidSdkPath": "$ANDROID_SDK_ROOT"
           }
           EOF
-          echo "Config written:"
+          echo "Config:"
           cat ~/.bubblewrap/config.json
 
       - name: Generate keystore
@@ -51,33 +51,36 @@ jobs:
             -keypass ${{ secrets.KEYSTORE_PASSWORD }} \
             -dname "CN=Walls, OU=App, O=Walls, L=Lagos, S=Lagos, C=NG"
 
-      - name: Run Bubblewrap init to generate Android project
+      - name: Run Bubblewrap init
         run: |
           mkdir -p walls-android
-          # Pipe all expected answers:
-          # 1. App name
-          # 2. Short name  
-          # 3. Start URL
-          # 4. Theme color
-          # 5. Background color
-          # 6. Display mode
-          # 7. Orientation
-          # 8. Icon URL
-          # 9. Maskable icon
-          # 10. Keep existing keystore = no, create new = yes
-          # 11. Keystore path
-          # 12. Keystore password
-          # 13. Key alias
-          # 14. Key password
-          printf "\n\n\n\n\n\n\n\n\nn\n${{ github.workspace }}/walls.keystore\n${{ secrets.KEYSTORE_PASSWORD }}\nwalls\n${{ secrets.KEYSTORE_PASSWORD }}\n" | \
+          # Answers to ALL bubblewrap init questions in order:
+          # 1. Domain (accept default)
+          # 2. App name (accept default)  
+          # 3. Short/launcher name (accept default)
+          # 4. Application ID
+          # 5. Display mode (accept default standalone)
+          # 6. Orientation (accept default portrait)
+          # 7. Status bar color (accept default)
+          # 8. Splash screen color (accept default)
+          # 9. Nav bar color (accept default)
+          # 10. Icon URL (accept default)
+          # 11. Maskable icon URL (accept default)
+          # 12. Include shortcuts? n
+          # 13. Play Billing? n
+          # 14. Geolocation? n
+          # 15. Use existing keystore? yes
+          # 16. Keystore path
+          # 17. Keystore password
+          # 18. Key alias
+          # 19. Key password
+          printf "\n\n\ncom.walls.app\n\n\n\n\n\n\n\nn\nn\nn\ny\n${{ github.workspace }}/walls.keystore\n${{ secrets.KEYSTORE_PASSWORD }}\nwalls\n${{ secrets.KEYSTORE_PASSWORD }}\n" | \
           bubblewrap init \
             --manifest https://walls.ovrica.name.ng/manifest.webmanifest \
             --directory ${{ github.workspace }}/walls-android
 
       - name: List generated files
-        run: |
-          echo "Files in walls-android:"
-          ls -la walls-android/
+        run: ls -la walls-android/
 
       - name: Build APK with Gradle
         run: |
@@ -89,10 +92,10 @@ jobs:
             -Pandroid.injected.signing.key.alias=walls \
             -Pandroid.injected.signing.key.password=${{ secrets.KEYSTORE_PASSWORD }}
 
-      - name: Find APK
+      - name: Copy APK
         run: |
-          find walls-android -name "*.apk" | head -5
           find walls-android -name "*.apk" -exec cp {} app-release-signed.apk \;
+          echo "APK copied successfully"
 
       - name: Get SHA256 fingerprint
         run: |
