@@ -136,13 +136,7 @@ jobs:
         run: |
           BUILD_TOOLS=$ANDROID_SDK_ROOT/build-tools/34.0.0
 
-          echo "=== Searching for APKs ==="
-          find ${{ github.workspace }}/android -name "*.apk"
-
-          UNSIGNED=$(find ${{ github.workspace }}/android -name "*.apk" \
-            | grep -i release \
-            | grep -iv signed \
-            | head -1)
+          UNSIGNED=$(find ${{ github.workspace }}/android -name "app-release-unsigned.apk" | head -1)
 
           if [ -z "$UNSIGNED" ]; then
             echo "ERROR: No unsigned release APK found!"
@@ -161,29 +155,39 @@ jobs:
           $BUILD_TOOLS/apksigner verify --verbose ${{ github.workspace }}/app-release-signed.apk
           echo "APK signed and verified."
 
-      - name: Copy AAB
+      - name: Package release artifacts
         run: |
+          mkdir -p ${{ github.workspace }}/release
+
+          cp ${{ github.workspace }}/app-release-signed.apk \
+            ${{ github.workspace }}/release/app-release-signed.apk
+
           AAB=$(find ${{ github.workspace }}/android -name "*.aab" | head -1)
           if [ -n "$AAB" ]; then
-            cp "$AAB" ${{ github.workspace }}/app-release-bundle.aab
+            cp "$AAB" ${{ github.workspace }}/release/app-release-bundle.aab
             echo "AAB copied: $AAB"
+          else
+            echo "WARNING: No AAB found."
           fi
 
-      - name: Get SHA256 fingerprint
-        run: |
           keytool -list -v \
             -keystore ${{ github.workspace }}/walls.keystore \
             -alias walls \
             -storepass ${{ secrets.KEYSTORE_PASSWORD }} \
-            | grep "SHA256" > sha256.txt
-          cat sha256.txt
+            | grep "SHA256" > ${{ github.workspace }}/release/sha256.txt
+          cat ${{ github.workspace }}/release/sha256.txt
+
+          cd ${{ github.workspace }}
+          zip -j release/walls-release.zip \
+            release/app-release-signed.apk \
+            release/app-release-bundle.aab \
+            release/sha256.txt
+          echo "=== Release package contents ==="
+          unzip -l release/walls-release.zip
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: walls-capacitor-apk
-          path: |
-            app-release-signed.apk
-            app-release-bundle.aab
-            sha256.txt
+          name: walls-release
+          path: ${{ github.workspace }}/release/walls-release.zip
           retention-days: 30
