@@ -26,38 +26,34 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Pre-write Android SDK license files
+      - name: Setup Android SDK manually (no interactive prompts)
         run: |
-          mkdir -p /usr/local/lib/android/sdk/licenses
-          printf "\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > /usr/local/lib/android/sdk/licenses/android-sdk-license
-          printf "\nd56f5187479451eabf01fb78af6dfcb131a6481e\n84831b9409646a918e30573bab4c9c91346d8abd" >> /usr/local/lib/android/sdk/licenses/android-sdk-license
-          printf "\n84831b9409646a918e30573bab4c9c91346d8abd" > /usr/local/lib/android/sdk/licenses/android-sdk-preview-license
-          printf "\n33b6937b7c5e5d694e7f30d6c9aab2bd58b9a2c4" > /usr/local/lib/android/sdk/licenses/google-gdk-license
-          printf "\ne9acab5b5fbb560a72cfaecce8946896ff6aab9d" > /usr/local/lib/android/sdk/licenses/android-googletv-license
-          printf "\nd975f751698a77b662f1254ddbeed3901e976f5a" > /usr/local/lib/android/sdk/licenses/intel-android-extra-license
-          printf "\n33b6937b7c5e5d694e7f30d6c9aab2bd58b9a2c4" > /usr/local/lib/android/sdk/licenses/mips-android-sysimage-license
-          echo "License files pre-written."
+          # Use the pre-installed SDK on the runner
+          export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Re-write license files and install SDK packages
-        run: |
-          # Re-write after setup-android in case it overwrote them
+          # Write ALL license files directly - no sdkmanager --licenses needed
           mkdir -p $ANDROID_SDK_ROOT/licenses
-          printf "\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > $ANDROID_SDK_ROOT/licenses/android-sdk-license
-          printf "\nd56f5187479451eabf01fb78af6dfcb131a6481e\n84831b9409646a918e30573bab4c9c91346d8abd" >> $ANDROID_SDK_ROOT/licenses/android-sdk-license
-          printf "\n84831b9409646a918e30573bab4c9c91346d8abd" > $ANDROID_SDK_ROOT/licenses/android-sdk-preview-license
-          printf "\n33b6937b7c5e5d694e7f30d6c9aab2bd58b9a2c4" > $ANDROID_SDK_ROOT/licenses/google-gdk-license
-          printf "\ne9acab5b5fbb560a72cfaecce8946896ff6aab9d" > $ANDROID_SDK_ROOT/licenses/android-googletv-license
-          printf "\nd975f751698a77b662f1254ddbeed3901e976f5a" > $ANDROID_SDK_ROOT/licenses/intel-android-extra-license
-          printf "\n33b6937b7c5e5d694e7f30d6c9aab2bd58b9a2c4" > $ANDROID_SDK_ROOT/licenses/mips-android-sysimage-license
-          echo "Licenses ready. Installing SDK packages..."
-          yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
-            "platforms;android-34" \
-            "build-tools;34.0.0" \
-            "platform-tools" 2>/dev/null || true
-          echo "Done."
+          printf "24333f8a63b6825ea9c5514f83c2829b004d1fee\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e" \
+            > $ANDROID_SDK_ROOT/licenses/android-sdk-license
+          printf "84831b9409646a918e30573bab4c9c91346d8abd" \
+            > $ANDROID_SDK_ROOT/licenses/android-sdk-preview-license
+          printf "33b6937b7c5e5d694e7f30d6c9aab2bd58b9a2c4" \
+            > $ANDROID_SDK_ROOT/licenses/google-gdk-license
+          printf "e9acab5b5fbb560a72cfaecce8946896ff6aab9d" \
+            > $ANDROID_SDK_ROOT/licenses/android-googletv-license
+          printf "d975f751698a77b662f1254ddbeed3901e976f5a" \
+            > $ANDROID_SDK_ROOT/licenses/intel-android-extra-license
+          printf "33b6937b7c5e5d694e7f30d6c9aab2bd58b9a2c4" \
+            > $ANDROID_SDK_ROOT/licenses/mips-android-sysimage-license
+          echo "License files written:"
+          ls -la $ANDROID_SDK_ROOT/licenses/
+
+          # Install required SDK packages non-interactively
+          SDKMANAGER=$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager
+          echo "y" | $SDKMANAGER "platforms;android-34" "build-tools;34.0.0" "platform-tools" 2>&1 | grep -v "^$" | tail -5
+          echo "Android SDK ready."
 
       - name: Install dependencies
         run: npm ci
@@ -67,15 +63,14 @@ jobs:
         env:
           NODE_ENV: production
 
-      - name: Verify Next.js output folder
+      - name: Verify Next.js out/ folder
         run: |
-          if [ -d "out" ]; then
-            echo "Found: out/"
-            ls -la out/
-          else
-            echo "ERROR: No out/ folder. Make sure next.config.js has output: 'export'"
+          if [ ! -d "out" ]; then
+            echo "ERROR: No out/ folder. Add output: 'export' to next.config.js"
             exit 1
           fi
+          echo "out/ folder found. Contents:"
+          ls out/
 
       - name: Install Capacitor
         run: npm install @capacitor/core @capacitor/cli @capacitor/android
@@ -133,7 +128,7 @@ jobs:
           echo "=== AABs ==="
           find . -name "*.aab"
 
-      - name: Sign APK with apksigner
+      - name: Sign APK with apksigner (V1+V2+V3)
         run: |
           BUILD_TOOLS=$ANDROID_SDK_ROOT/build-tools/34.0.0
           UNSIGNED=$(find ${{ github.workspace }}/android -name "*release*.apk" | grep -v signed | head -1)
@@ -147,7 +142,7 @@ jobs:
             --out ${{ github.workspace }}/app-release-signed.apk \
             ${{ github.workspace }}/app-aligned.apk
           $BUILD_TOOLS/apksigner verify --verbose ${{ github.workspace }}/app-release-signed.apk
-          echo "APK signed successfully."
+          echo "APK signed and verified."
 
       - name: Copy AAB
         run: |
