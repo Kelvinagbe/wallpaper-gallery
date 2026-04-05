@@ -10,12 +10,19 @@ import { RouterRefresher } from '@/app/components/RouterRefresher';
 import { createClient } from '@/lib/supabase/server';
 
 const inter = Inter({ subsets: ['latin'] });
-const BASE_URL = 'https://wallpaper-gallery-sooty.vercel.app';
+const BASE_URL = 'https://walls.ovrica.name.ng';  // ← update to your real domain
 
 export const metadata: Metadata = {
   title: 'Walls – Transform Your Spaces',
   description: 'Discover and download stunning wallpapers to transform your spaces.',
   metadataBase: new URL(BASE_URL),
+  manifest: '/manifest.webmanifest',  // ← add this
+  themeColor: '#0a0a0a',              // ← add this
+  appleWebApp: {                      // ← add this for iOS
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'Walls',
+  },
   openGraph: {
     title: 'Walls – Transform Your Spaces',
     description: 'Discover and download stunning wallpapers to transform your spaces.',
@@ -42,19 +49,19 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <Script src="/ads.js" strategy="beforeInteractive" />
       </head>
       <body className={inter.className}>
-<script
-  dangerouslySetInnerHTML={{
-    __html: `
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', function() {
-          navigator.serviceWorker.register('/sw.js')
-            .then(function(reg) { console.log('SW registered:', reg.scope); })
-            .catch(function(err) { console.log('SW failed:', err); });
-        });
-      }
-    `,
-  }}
-/>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              if ('serviceWorker' in navigator) {
+                window.addEventListener('load', function() {
+                  navigator.serviceWorker.register('/sw.js')
+                    .then(function(reg) { console.log('SW registered:', reg.scope); })
+                    .catch(function(err) { console.log('SW failed:', err); });
+                });
+              }
+            `,
+          }}
+        />
         <RouterRefresher />
         <Suspense fallback={null}><TopLoader /></Suspense>
         <AuthProvider initialSession={session}>
