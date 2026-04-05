@@ -12,17 +12,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
 
-      - name: Setup Java JDK 21
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           java-version: '21'
           distribution: 'temurin'
@@ -32,75 +29,51 @@ jobs:
           export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
-
           mkdir -p $ANDROID_SDK_ROOT/licenses
-          printf "24333f8a63b6825ea9c5514f83c2829b004d1fee\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e" \
-            > $ANDROID_SDK_ROOT/licenses/android-sdk-license
-          printf "84831b9409646a918e30573bab4c9c91346d8abd" \
-            > $ANDROID_SDK_ROOT/licenses/android-sdk-preview-license
-          printf "33b6937b7c5e5d694e7f30d6c9aab2bd58b9a2c4" \
-            > $ANDROID_SDK_ROOT/licenses/google-gdk-license
-          printf "e9acab5b5fbb560a72cfaecce8946896ff6aab9d" \
-            > $ANDROID_SDK_ROOT/licenses/android-googletv-license
-          printf "d975f751698a77b662f1254ddbeed3901e976f5a" \
-            > $ANDROID_SDK_ROOT/licenses/intel-android-extra-license
-          printf "33b6937b7c5e5d694e7f30d6c9aab2bd58b9a2c4" \
-            > $ANDROID_SDK_ROOT/licenses/mips-android-sysimage-license
+          printf "24333f8a63b6825ea9c5514f83c2829b004d1fee\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e" > $ANDROID_SDK_ROOT/licenses/android-sdk-license
+          printf "84831b9409646a918e30573bab4c9c91346d8abd" > $ANDROID_SDK_ROOT/licenses/android-sdk-preview-license
+          printf "33b6937b7c5e5d694e7f30d6c9aab2bd58b9a2c4" > $ANDROID_SDK_ROOT/licenses/google-gdk-license
+          printf "e9acab5b5fbb560a72cfaecce8946896ff6aab9d" > $ANDROID_SDK_ROOT/licenses/android-googletv-license
+          printf "d975f751698a77b662f1254ddbeed3901e976f5a" > $ANDROID_SDK_ROOT/licenses/intel-android-extra-license
+          printf "33b6937b7c5e5d694e7f30d6c9aab2bd58b9a2c4" > $ANDROID_SDK_ROOT/licenses/mips-android-sysimage-license
+          echo "y" | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools" 2>&1 | tail -3
 
-          SDKMANAGER=$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager
-          echo "y" | $SDKMANAGER "platforms;android-34" "build-tools;34.0.0" "platform-tools" 2>&1 | tail -3
-          echo "Android SDK ready."
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Install Capacitor
-        run: npm install @capacitor/core @capacitor/cli @capacitor/android
+      - name: Install dependencies and Capacitor
+        run: npm ci && npm install @capacitor/core @capacitor/cli @capacitor/android
 
       - name: Create capacitor.config.json
         run: |
-          cat > capacitor.config.json << EOF
+          cat > capacitor.config.json << 'EOF'
           {
             "appId": "ng.name.ovrica.walls",
             "appName": "Walls",
             "webDir": "out",
-            "server": {
-              "url": "https://walls.ovrica.name.ng",
-              "cleartext": false
-            },
-            "android": {
-              "allowMixedContent": false
-            }
+            "server": { "url": "https://walls.ovrica.name.ng", "cleartext": false },
+            "android": { "allowMixedContent": false }
           }
           EOF
-          echo "capacitor.config.json created:"
-          cat capacitor.config.json
 
-      - name: Add Android platform if not present
+      - name: Add Android platform
         run: |
-          if [ ! -d "android" ]; then
-            npx cap add android
-          else
-            echo "Android folder already exists."
-          fi
+          [ ! -d "android" ] && npx cap add android || echo "Android folder already exists."
 
-      - name: Write MainActivity with download, wallpaper and deep link support
+      - name: Write MainActivity.java
         run: |
-          MAIN_ACTIVITY=android/app/src/main/java/ng/name/ovrica/walls/MainActivity.java
-          mkdir -p $(dirname $MAIN_ACTIVITY)
-          cat > $MAIN_ACTIVITY << 'EOF'
+          MAIN=android/app/src/main/java/ng/name/ovrica/walls/MainActivity.java
+          mkdir -p $(dirname $MAIN)
+          cat > $MAIN << 'EOF'
           package ng.name.ovrica.walls;
 
           import android.app.DownloadManager;
-          import android.app.WallpaperManager;
+          import android.app.NotificationChannel;
+          import android.app.NotificationManager;
+          import android.app.PendingIntent;
           import android.content.BroadcastReceiver;
           import android.content.Context;
           import android.content.Intent;
           import android.content.IntentFilter;
           import android.content.pm.PackageManager;
           import android.database.Cursor;
-          import android.graphics.Bitmap;
-          import android.graphics.BitmapFactory;
           import android.Manifest;
           import android.net.Uri;
           import android.os.Build;
@@ -109,160 +82,147 @@ jobs:
           import android.webkit.WebView;
           import android.widget.Toast;
           import androidx.core.app.ActivityCompat;
+          import androidx.core.app.NotificationCompat;
           import androidx.core.content.ContextCompat;
           import com.getcapacitor.BridgeActivity;
-          import java.io.IOException;
-          import java.io.InputStream;
-          import java.net.HttpURLConnection;
-          import java.net.URL;
 
           public class MainActivity extends BridgeActivity {
 
-              private static final int NOTIFICATION_PERMISSION_CODE = 1001;
-              private DownloadManager downloadManager;
+              private static final String CHANNEL_ID = "walls_downloads";
+              private static final int NOTIF_DOWNLOADING = 2001;
+              private static final int NOTIF_COMPLETE = 2002;
+              private static final int NOTIF_PERMISSION_CODE = 1001;
+
+              private DownloadManager dm;
+              private NotificationManager nm;
               private long lastDownloadId = -1;
-              private boolean isWallpaperIntent = false;
+              private boolean isImage = false;
+              private String lastFileName = "";
 
               @Override
-              protected void onStart() {
+              public void onStart() {
                   super.onStart();
-                  downloadManager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
-                  requestNotificationPermission();
+                  dm = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
+                  nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                      NotificationChannel ch = new NotificationChannel(CHANNEL_ID, "Walls Downloads", NotificationManager.IMPORTANCE_DEFAULT);
+                      ch.setDescription("Wallpaper download notifications");
+                      nm.createNotificationChannel(ch);
+                  }
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                      ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                      ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.POST_NOTIFICATIONS}, NOTIF_PERMISSION_CODE);
+                  }
                   setupDownloadListener();
                   registerDownloadReceiver();
                   handleDeepLink(getIntent());
               }
 
               @Override
-              protected void onNewIntent(Intent intent) {
+              public void onNewIntent(Intent intent) {
                   super.onNewIntent(intent);
                   handleDeepLink(intent);
               }
 
-              // ─── Deep Link Handler ───────────────────────────────────────────
               private void handleDeepLink(Intent intent) {
                   if (intent == null) return;
                   Uri data = intent.getData();
                   if (data != null) {
-                      String url = data.toString();
-                      WebView webView = getBridge().getWebView();
-                      if (webView != null) {
-                          runOnUiThread(() -> webView.loadUrl(url));
-                      }
+                      WebView wv = getBridge().getWebView();
+                      if (wv != null) runOnUiThread(() -> wv.loadUrl(data.toString()));
                   }
               }
 
-              // ─── Notification Permission (Android 13+) ───────────────────────
-              private void requestNotificationPermission() {
-                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                      if (ContextCompat.checkSelfPermission(this,
-                              Manifest.permission.POST_NOTIFICATIONS)
-                              != PackageManager.PERMISSION_GRANTED) {
-                          ActivityCompat.requestPermissions(this,
-                                  new String[]{Manifest.permission.POST_NOTIFICATIONS},
-                                  NOTIFICATION_PERMISSION_CODE);
-                      }
-                  }
-              }
+              private void notify(int id, NotificationCompat.Builder b) { nm.notify(id, b.build()); }
 
-              // ─── WebView Download Listener ───────────────────────────────────
               private void setupDownloadListener() {
-                  WebView webView = getBridge().getWebView();
-                  webView.setDownloadListener((url, userAgent, contentDisposition, mimetype, contentLength) -> {
-
-                      String fileName = URLUtil.guessFileName(url, contentDisposition, mimetype);
-                      isWallpaperIntent = mimetype != null && mimetype.startsWith("image/");
-
-                      Toast.makeText(this,
-                          isWallpaperIntent
-                              ? "Downloading wallpaper: " + fileName
-                              : "Downloading: " + fileName,
-                          Toast.LENGTH_SHORT).show();
-
-                      DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
-                      request.setTitle(fileName);
-                      request.setDescription(isWallpaperIntent
-                          ? "Downloading wallpaper..."
-                          : "Downloading file...");
-                      request.setMimeType(mimetype);
-                      request.addRequestHeader("User-Agent", userAgent);
-                      request.setDestinationInExternalPublicDir(
-                          Environment.DIRECTORY_DOWNLOADS, fileName
-                      );
-                      request.setNotificationVisibility(
-                          DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
-                      );
-
-                      lastDownloadId = downloadManager.enqueue(request);
+                  getBridge().getWebView().setDownloadListener((url, userAgent, contentDisposition, mimetype, contentLength) -> {
+                      lastFileName = URLUtil.guessFileName(url, contentDisposition, mimetype);
+                      isImage = mimetype != null && mimetype.startsWith("image/");
+                      runOnUiThread(() -> Toast.makeText(this, "Downloading: " + lastFileName, Toast.LENGTH_SHORT).show());
+                      notify(NOTIF_DOWNLOADING, new NotificationCompat.Builder(this, CHANNEL_ID)
+                          .setSmallIcon(android.R.drawable.stat_sys_download)
+                          .setContentTitle("Downloading Wallpaper")
+                          .setContentText(lastFileName)
+                          .setProgress(0, 0, true)
+                          .setOngoing(true));
+                      DownloadManager.Request req = new DownloadManager.Request(Uri.parse(url));
+                      req.setTitle(lastFileName);
+                      req.setDescription("Downloading wallpaper...");
+                      req.setMimeType(mimetype);
+                      req.addRequestHeader("User-Agent", userAgent);
+                      req.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, lastFileName);
+                      req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_HIDDEN);
+                      lastDownloadId = dm.enqueue(req);
                   });
               }
 
-              // ─── Download Complete Receiver ──────────────────────────────────
               private void registerDownloadReceiver() {
                   BroadcastReceiver receiver = new BroadcastReceiver() {
                       @Override
                       public void onReceive(Context context, Intent intent) {
                           long id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1);
                           if (id != lastDownloadId) return;
-
-                          DownloadManager.Query query = new DownloadManager.Query();
-                          query.setFilterById(id);
-                          Cursor cursor = downloadManager.query(query);
-
-                          if (cursor.moveToFirst()) {
-                              int statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS);
-                              int status = cursor.getInt(statusIndex);
-
-                              if (status == DownloadManager.STATUS_SUCCESSFUL && isWallpaperIntent) {
-                                  int uriIndex = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI);
-                                  String localUri = cursor.getString(uriIndex);
-
-                                  runOnUiThread(() -> {
-                                      Toast.makeText(context,
-                                          "Download complete! Opening wallpaper picker...",
-                                          Toast.LENGTH_SHORT).show();
-                                      openWallpaperPicker(Uri.parse(localUri));
-                                  });
-                              } else if (status == DownloadManager.STATUS_FAILED) {
-                                  runOnUiThread(() ->
-                                      Toast.makeText(context,
-                                          "Download failed. Please try again.",
-                                          Toast.LENGTH_SHORT).show()
-                                  );
-                              }
-                          }
+                          Cursor cursor = dm.query(new DownloadManager.Query().setFilterById(id));
+                          if (!cursor.moveToFirst()) { cursor.close(); return; }
+                          int status = cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_STATUS));
+                          String localUri = cursor.getString(cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI));
                           cursor.close();
+                          nm.cancel(NOTIF_DOWNLOADING);
+                          runOnUiThread(() -> {
+                              if (status == DownloadManager.STATUS_SUCCESSFUL) {
+                                  Uri fileUri = Uri.parse(localUri);
+                                  Intent wallIntent = Intent.createChooser(
+                                      new Intent(Intent.ACTION_ATTACH_DATA)
+                                          .setDataAndType(fileUri, "image/*")
+                                          .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                          .putExtra("mimeType", "image/*"),
+                                      "Set as wallpaper");
+                                  PendingIntent pi = PendingIntent.getActivity(MainActivity.this, 0, wallIntent,
+                                      PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+                                  notify(NOTIF_COMPLETE, new NotificationCompat.Builder(MainActivity.this, CHANNEL_ID)
+                                      .setSmallIcon(android.R.drawable.stat_sys_download_done)
+                                      .setContentTitle("Wallpaper Downloaded!")
+                                      .setContentText("Tap to set \"" + lastFileName + "\" as wallpaper")
+                                      .setPriority(NotificationCompat.PRIORITY_HIGH)
+                                      .setContentIntent(pi)
+                                      .setAutoCancel(true));
+                                  Toast.makeText(context, "Done! Tap notification to set wallpaper.", Toast.LENGTH_LONG).show();
+                                  if (isImage) openWallpaperPicker(fileUri);
+                              } else {
+                                  notify(NOTIF_COMPLETE, new NotificationCompat.Builder(MainActivity.this, CHANNEL_ID)
+                                      .setSmallIcon(android.R.drawable.stat_notify_error)
+                                      .setContentTitle("Download Failed")
+                                      .setContentText("Could not download \"" + lastFileName + "\". Please try again.")
+                                      .setPriority(NotificationCompat.PRIORITY_HIGH)
+                                      .setAutoCancel(true));
+                                  Toast.makeText(context, "Download failed. Please try again.", Toast.LENGTH_SHORT).show();
+                              }
+                          });
                       }
                   };
-
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                      registerReceiver(receiver,
-                          new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE),
-                          Context.RECEIVER_NOT_EXPORTED);
+                      registerReceiver(receiver, new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE), Context.RECEIVER_NOT_EXPORTED);
                   } else {
-                      registerReceiver(receiver,
-                          new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE));
+                      registerReceiver(receiver, new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE));
                   }
               }
 
-              // ─── System Wallpaper Picker ─────────────────────────────────────
               private void openWallpaperPicker(Uri imageUri) {
-                  Intent intent = new Intent(Intent.ACTION_ATTACH_DATA);
-                  intent.setDataAndType(imageUri, "image/*");
-                  intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                  intent.putExtra("mimeType", "image/*");
-                  startActivity(Intent.createChooser(intent, "Set as wallpaper"));
+                  startActivity(Intent.createChooser(
+                      new Intent(Intent.ACTION_ATTACH_DATA)
+                          .setDataAndType(imageUri, "image/*")
+                          .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                          .putExtra("mimeType", "image/*"),
+                      "Set as wallpaper"));
               }
           }
           EOF
-          echo "MainActivity.java written."
 
-      - name: Add permissions and deep link intent filter to AndroidManifest
+      - name: Patch AndroidManifest
         run: |
-          MANIFEST=android/app/src/main/AndroidManifest.xml
-
-          # Add permissions if not present
-          if ! grep -q "INTERNET" $MANIFEST; then
+          M=android/app/src/main/AndroidManifest.xml
+          if ! grep -q "INTERNET" $M; then
             sed -i '/<manifest/a\
                 <uses-permission android:name="android.permission.INTERNET" />\
                 <uses-permission android:name="android.permission.DOWNLOAD_WITHOUT_NOTIFICATION" />\
@@ -275,42 +235,30 @@ jobs:
                 <uses-permission android:name="android.permission.SET_WALLPAPER" />\
                 <uses-permission android:name="android.permission.SET_WALLPAPER_HINTS" />\
                 <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\
-                <uses-permission android:name="android.permission.WAKE_LOCK" />' \
-              $MANIFEST
-            echo "Permissions added."
+                <uses-permission android:name="android.permission.WAKE_LOCK" />' $M
           fi
-
-          # Add deep link intent filter inside <activity> tag
-          if ! grep -q "walls.ovrica.name.ng" $MANIFEST; then
+          if ! grep -q "walls.ovrica.name.ng" $M; then
             sed -i '/<\/activity>/i\
                     <intent-filter android:autoVerify="true">\
                         <action android:name="android.intent.action.VIEW" />\
                         <category android:name="android.intent.category.DEFAULT" />\
                         <category android:name="android.intent.category.BROWSABLE" />\
                         <data android:scheme="https" android:host="walls.ovrica.name.ng" />\
-                    </intent-filter>' \
-              $MANIFEST
-            echo "Deep link intent filter added."
+                    </intent-filter>' $M
           fi
-
-          echo "=== AndroidManifest.xml ==="
-          cat $MANIFEST
 
       - name: Create assets directory
         run: |
           mkdir -p android/app/src/main/assets
           echo '[]' > android/app/src/main/assets/capacitor.plugins.json
           cp capacitor.config.json android/app/src/main/assets/capacitor.config.json
-          echo "Assets directory ready:"
-          ls -la android/app/src/main/assets/
 
       - name: Sync Capacitor
         run: npx cap sync android
 
-      - name: Fix Kotlin stdlib duplicate classes
+      - name: Fix Kotlin stdlib duplicates
         run: |
           cat >> android/build.gradle << 'EOF'
-
           subprojects {
             configurations.all {
               resolutionStrategy {
@@ -321,99 +269,58 @@ jobs:
             }
           }
           EOF
-          echo "Kotlin resolution strategy applied."
 
       - name: Generate keystore
         run: |
-          keytool -genkeypair \
-            -v \
+          keytool -genkeypair -v \
             -keystore ${{ github.workspace }}/walls.keystore \
-            -alias walls \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
+            -alias walls -keyalg RSA -keysize 2048 -validity 10000 \
             -storepass ${{ secrets.KEYSTORE_PASSWORD }} \
             -keypass ${{ secrets.KEYSTORE_PASSWORD }} \
             -dname "CN=Walls, OU=App, O=Walls, L=Lagos, S=Lagos, C=NG"
 
       - name: Build release APK and AAB
         run: |
-          cd android
-          chmod +x gradlew
+          cd android && chmod +x gradlew
           ./gradlew assembleRelease bundleRelease --stacktrace
           echo "=== APKs ===" && find . -name "*.apk"
           echo "=== AABs ===" && find . -name "*.aab"
 
       - name: Sign APK
         run: |
-          BUILD_TOOLS=$ANDROID_SDK_ROOT/build-tools/34.0.0
-
+          BT=$ANDROID_SDK_ROOT/build-tools/34.0.0
           UNSIGNED=$(find ${{ github.workspace }}/android -name "app-release-unsigned.apk" | head -1)
-
-          if [ -z "$UNSIGNED" ]; then
-            echo "ERROR: No unsigned release APK found!"
-            exit 1
-          fi
-
+          [ -z "$UNSIGNED" ] && echo "ERROR: No unsigned APK found!" && exit 1
           echo "Signing: $UNSIGNED"
-          $BUILD_TOOLS/zipalign -v -p 4 "$UNSIGNED" ${{ github.workspace }}/app-aligned.apk
-          $BUILD_TOOLS/apksigner sign \
+          $BT/zipalign -v -p 4 "$UNSIGNED" ${{ github.workspace }}/app-aligned.apk
+          $BT/apksigner sign \
             --ks ${{ github.workspace }}/walls.keystore \
             --ks-key-alias walls \
             --ks-pass pass:${{ secrets.KEYSTORE_PASSWORD }} \
             --key-pass pass:${{ secrets.KEYSTORE_PASSWORD }} \
             --out ${{ github.workspace }}/app-release-signed.apk \
             ${{ github.workspace }}/app-aligned.apk
-          $BUILD_TOOLS/apksigner verify --verbose ${{ github.workspace }}/app-release-signed.apk
-          echo "APK signed and verified."
+          $BT/apksigner verify --verbose ${{ github.workspace }}/app-release-signed.apk
 
-      - name: Package release artifacts
+      - name: Package artifacts
         run: |
           mkdir -p ${{ github.workspace }}/release
-
-          cp ${{ github.workspace }}/app-release-signed.apk \
-            ${{ github.workspace }}/release/app-release-signed.apk
-
+          cp ${{ github.workspace }}/app-release-signed.apk ${{ github.workspace }}/release/
           AAB=$(find ${{ github.workspace }}/android -name "*.aab" | head -1)
-          if [ -n "$AAB" ]; then
-            cp "$AAB" ${{ github.workspace }}/release/app-release-bundle.aab
-            echo "AAB copied."
-          else
-            echo "WARNING: No AAB found."
-          fi
-
+          [ -n "$AAB" ] && cp "$AAB" ${{ github.workspace }}/release/app-release-bundle.aab
           keytool -list -v \
             -keystore ${{ github.workspace }}/walls.keystore \
-            -alias walls \
-            -storepass ${{ secrets.KEYSTORE_PASSWORD }} \
+            -alias walls -storepass ${{ secrets.KEYSTORE_PASSWORD }} \
             | grep "SHA256" > ${{ github.workspace }}/release/sha256.txt
-          cat ${{ github.workspace }}/release/sha256.txt
-
-          SHA256=$(cat ${{ github.workspace }}/release/sha256.txt | sed 's/.*SHA256: //')
+          SHA256=$(sed 's/.*SHA256: //' ${{ github.workspace }}/release/sha256.txt)
           cat > ${{ github.workspace }}/release/assetlinks.json << EOF
-          [{
-            "relation": ["delegate_permission/common.handle_all_urls"],
-            "target": {
-              "namespace": "android_app",
-              "package_name": "ng.name.ovrica.walls",
-              "sha256_cert_fingerprints": ["$SHA256"]
-            }
-          }]
+          [{"relation":["delegate_permission/common.handle_all_urls"],"target":{"namespace":"android_app","package_name":"ng.name.ovrica.walls","sha256_cert_fingerprints":["$SHA256"]}}]
           EOF
-          echo "=== assetlinks.json ==="
-          cat ${{ github.workspace }}/release/assetlinks.json
-
           cd ${{ github.workspace }}
-          zip -j release/walls-release.zip \
-            release/app-release-signed.apk \
-            release/app-release-bundle.aab \
-            release/sha256.txt \
-            release/assetlinks.json
-          echo "=== Release package contents ==="
+          zip -j release/walls-release.zip release/app-release-signed.apk release/app-release-bundle.aab release/sha256.txt release/assetlinks.json
           unzip -l release/walls-release.zip
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: walls-release
           path: ${{ github.workspace }}/release/walls-release.zip
