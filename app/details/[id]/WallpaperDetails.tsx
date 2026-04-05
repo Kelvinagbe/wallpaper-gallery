@@ -292,7 +292,7 @@ export default function WallpaperDetail({ initialWallpaper: wp, ad }: { initialW
 
       {/* Back */}
       <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 60, padding: '12px 16px', pointerEvents: 'none' }}>
-        <button onClick={() => { startLoader(); router.back(); }} className="act-btn" style={{ pointerEvents: 'all', width: 45, height: 45, borderRadius: 9, background: 'rgba(255,255,255,0.35)', backdropFilter: 'blur(0px)', WebkitBackdropFilter: 'blur(0px)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+        <button onClick={() => { startLoader(); router.back(); }} className="act-btn" style={{ pointerEvents: 'all', width: 45, height: 45, borderRadius: 9, background: 'rgba(255,255,255,0.35)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
           <ChevronLeft size={22} color="#fff" strokeWidth={2.5} />
         </button>
       </div>
@@ -361,13 +361,14 @@ export default function WallpaperDetail({ initialWallpaper: wp, ad }: { initialW
           </button>
           <button onClick={handleShare} className="act-btn" aria-label="Share" style={sheet()}><Share2 size={17} /></button>
           <button onClick={() => set({ copyOpen: true })} className="act-btn" aria-label="Copy link" style={sheet()}><LinkIcon size={17} /></button>
+ <button onClick={handleSetPfp} disabled={st.pfpSetting || st.pfpSet} className="act-btn" style={sheet(st.pfpSet)}>
+              {st.pfpSetting ? <><Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} />Setting...</> : st.pfpSet ? <><Check size={15} />Picture Set</> : <><UserCircle size={15} />Set as Profile Picture</>}
+            </button>
         </div>
 
         {session && (
           <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-            <button onClick={handleSetPfp} disabled={st.pfpSetting || st.pfpSet} className="act-btn" style={sheet(st.pfpSet)}>
-              {st.pfpSetting ? <><Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} />Setting...</> : st.pfpSet ? <><Check size={15} />Picture Set</> : <><UserCircle size={15} />Set as Profile Picture</>}
-            </button>
+           
           </div>
         )}
 
