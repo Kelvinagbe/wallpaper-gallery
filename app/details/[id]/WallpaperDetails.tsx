@@ -298,7 +298,7 @@ export default function WallpaperDetail({ initialWallpaper: wp, ad }: { initialW
       </div>
 
       {/* Image */}
-      <div style={{ padding: '68px 25px 0' }}>
+      <div style={{ padding: '40px 25px 0' }}>
         <div style={{ position: 'relative', width: '100%', aspectRatio: isPC ? '4/3' : '9/16', borderRadius: 20, overflow: 'hidden', background: '#e0e0de' }} onContextMenu={e => e.preventDefault()}>
           {!imgLoaded && <div className="shimmer" style={{ position: 'absolute', inset: 0 }} />}
           <Image src={wp.url} alt={wp.title} fill priority draggable={false} className="wp-img" style={{ objectFit: 'cover', opacity: imgLoaded ? 1 : 0, transition: 'opacity .4s ease' }} sizes="(max-width:768px) 100vw, 600px" onLoad={() => { imgCache.add(wp.url); setImgLoaded(true); }} />
