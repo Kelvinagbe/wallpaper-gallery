@@ -147,16 +147,28 @@ jobs:
             --signingKeyPath ${{ github.workspace }}/walls.keystore \
             --signingKeyAlias walls
 
-      - name: Copy APK
+      - name: Copy APK and AAB
         run: |
+          echo "=== APKs found ==="
           find ${{ github.workspace }}/walls-android -name "*.apk"
+          echo "=== AABs found ==="
+          find ${{ github.workspace }}/walls-android -name "*.aab"
+
           APK=$(find ${{ github.workspace }}/walls-android -name "*.apk" | head -1)
           if [ -z "$APK" ]; then
             echo "ERROR: No APK found"
             exit 1
           fi
           cp "$APK" ${{ github.workspace }}/app-release-signed.apk
-          echo "Copied: $APK"
+          echo "APK copied: $APK"
+
+          AAB=$(find ${{ github.workspace }}/walls-android -name "*.aab" | head -1)
+          if [ -n "$AAB" ]; then
+            cp "$AAB" ${{ github.workspace }}/app-release-bundle.aab
+            echo "AAB copied: $AAB"
+          else
+            echo "WARNING: No AAB found"
+          fi
 
       - name: Get SHA256 fingerprint
         run: |
@@ -173,5 +185,6 @@ jobs:
           name: walls-apk
           path: |
             app-release-signed.apk
+            app-release-bundle.aab
             sha256.txt
           retention-days: 30
