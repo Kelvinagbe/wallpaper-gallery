@@ -72,7 +72,6 @@ export const fetchWallpapers = async (page = 0, pageSize = 10, filter: Filter = 
   } else if (filter === 'recent') {
     query = query.order('created_at', { ascending: false });
   } else {
-    // 'all' — newest first
     query = query.order('created_at', { ascending: false });
   }
 
@@ -107,7 +106,6 @@ export const fetchHotWallpapers = async (limit = 10) => {
 
   if (error) {
     console.error('❌ Error fetching hot wallpapers:', error);
-    // Fallback to wallpapers table if cache isn't ready
     const fallback = await supabase
       .from('wallpapers')
       .select(SELECT_WALLPAPERS)
@@ -185,7 +183,7 @@ export const fetchTrendingWallpapers = async (limit = DEFAULT_PAGE_SIZE) => {
   return data ? data.map(transformWallpaper) : [];
 };
 
-// ─── Fetch user wallpapers ────────────────────────────────────────────────────
+// ─── Fetch user wallpapers (by UUID) ─────────────────────────────────────────
 export const fetchUserWallpapers = async (userId: string, page = 0, pageSize = DEFAULT_PAGE_SIZE) => {
   const supabase = getSupabase();
   const start = page * pageSize, end = start + pageSize - 1;
@@ -243,7 +241,7 @@ export const fetchWallpaperById = async (wallpaperId: string) => {
   return data ? transformWallpaper(data) : null;
 };
 
-// ─── Increment views / downloads ──────────────────────────────────────────────
+// ─── Increment views / downloads ─────────────────────────────────────────────
 export const incrementViews = async (wallpaperId: string) => {
   const { error } = await getSupabase().rpc('increment_views', { wallpaper_id: wallpaperId });
   if (error) console.error('Error incrementing views:', error);
@@ -255,6 +253,8 @@ export const incrementDownloads = async (wallpaperId: string) => {
 };
 
 // ─── Profiles ─────────────────────────────────────────────────────────────────
+
+/** Fetch profile by UUID — used internally and for id-based routes */
 export const fetchProfile = async (userId: string) => {
   const { data, error } = await getSupabase()
     .from('profiles')
@@ -262,6 +262,22 @@ export const fetchProfile = async (userId: string) => {
     .eq('id', userId)
     .single();
   if (error) { console.error('❌ Error fetching profile:', error); return null; }
+  return data ? transformProfile(data) : null;
+};
+
+/**
+ * Fetch profile by username — use this for /[username] routes.
+ * Returns the full UserProfile including the UUID `id` field,
+ * which you must then pass to getUserCounts, fetchUserWallpapers,
+ * checkIsFollowing, followUser, and unfollowUser.
+ */
+export const fetchProfileByUsername = async (username: string) => {
+  const { data, error } = await getSupabase()
+    .from('profiles')
+    .select('*')
+    .eq('username', username)
+    .single();
+  if (error) { console.error('❌ Error fetching profile by username:', error); return null; }
   return data ? transformProfile(data) : null;
 };
 
