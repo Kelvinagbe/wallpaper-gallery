@@ -1,8 +1,0 @@
-[{
-  "relation": ["delegate_permission/common.handle_all_urls"],
-  "target": {
-    "namespace": "android_app",
-    "package_name": "ng.name.ovrica.walls",
-    "sha256_cert_fingerprints": ["SHA256: AC:0A:E9:5C:1A:59:0A:3F:A8:4B:25:62:71:A5:E7:6C:E8:CA:88:63:B0:F7:BF:83:5E:D2:CB:94:1A:BB:26:B9"]
-  }
-}]
