@@ -1,5 +1,5 @@
 name: Build Android APK
- 
+
 on:
   workflow_dispatch:
   push:
@@ -26,7 +26,7 @@ jobs:
       - name: Install Bubblewrap
         run: npm install -g @bubblewrap/cli
 
-      - name: Pre-configure Bubblewrap (skip all prompts)
+      - name: Pre-configure Bubblewrap
         run: |
           mkdir -p ~/.bubblewrap
           cat > ~/.bubblewrap/config.json << EOF
@@ -35,8 +35,6 @@ jobs:
             "androidSdkPath": "$ANDROID_SDK_ROOT"
           }
           EOF
-          echo "Bubblewrap config written:"
-          cat ~/.bubblewrap/config.json
 
       - name: Generate keystore
         run: |
@@ -51,7 +49,7 @@ jobs:
             -keypass ${{ secrets.KEYSTORE_PASSWORD }} \
             -dname "CN=Walls, OU=App, O=Walls, L=Lagos, S=Lagos, C=NG"
 
-      - name: Create TWA project
+      - name: Generate Android project with Bubblewrap init
         run: |
           mkdir walls-android && cd walls-android
           cat > twa-manifest.json << 'EOF'
@@ -94,16 +92,33 @@ jobs:
             "shortcuts": []
           }
           EOF
-          md5sum twa-manifest.json | awk '{print $1}' > .checksum
+          # Generate the Android project files using init
+          printf "\n" | bubblewrap init \
+            --manifest https://walls.ovrica.name.ng/manifest.webmanifest \
+            --directory . || true
 
-      - name: Build APK
+      - name: Build APK with Gradle directly
         run: |
           cd walls-android
-          printf "n\n${{ secrets.KEYSTORE_PASSWORD }}\n${{ secrets.KEYSTORE_PASSWORD }}\n" | bubblewrap build \
-            --signingKeyPath ../walls.keystore \
-            --signingKeyAlias walls \
-            --signingKeyPassword ${{ secrets.KEYSTORE_PASSWORD }} \
-            --signingStorePassword ${{ secrets.KEYSTORE_PASSWORD }}
+          # Create keystore.properties for Gradle
+          cat > keystore.properties << EOF
+          storeFile=../walls.keystore
+          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
+          keyAlias=walls
+          keyPassword=${{ secrets.KEYSTORE_PASSWORD }}
+          EOF
+          # Build with Gradle — fully non-interactive
+          chmod +x gradlew
+          ./gradlew assembleRelease \
+            -Pandroid.injected.signing.store.file=$(pwd)/../walls.keystore \
+            -Pandroid.injected.signing.store.password=${{ secrets.KEYSTORE_PASSWORD }} \
+            -Pandroid.injected.signing.key.alias=walls \
+            -Pandroid.injected.signing.key.password=${{ secrets.KEYSTORE_PASSWORD }}
+
+      - name: Find and copy APK
+        run: |
+          find walls-android -name "*.apk" -exec cp {} app-release-signed.apk \;
+          find walls-android -name "*.aab" -exec cp {} app-release-bundle.aab \; || true
 
       - name: Get SHA256 fingerprint
         run: |
@@ -119,7 +134,7 @@ jobs:
         with:
           name: walls-apk
           path: |
-            walls-android/app-release-signed.apk
-            walls-android/app-release-bundle.aab
+            app-release-signed.apk
+            app-release-bundle.aab
             sha256.txt
           retention-days: 30
