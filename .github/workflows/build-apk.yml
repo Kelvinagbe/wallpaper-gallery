@@ -98,7 +98,7 @@ jobs:
 
               @Override public void onNewIntent(Intent i) { super.onNewIntent(i); handleDeepLink(i); }
 
-              @Override protected void onDestroy() {
+              @Override public void onDestroy() {
                   super.onDestroy();
                   if (dlReceiver != null) try { unregisterReceiver(dlReceiver); } catch (Exception ignored) {}
               }
