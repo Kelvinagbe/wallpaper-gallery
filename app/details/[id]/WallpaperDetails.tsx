@@ -292,7 +292,7 @@ export default function WallpaperDetail({ initialWallpaper: wp, ad }: { initialW
 
       {/* Back */}
       <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 60, padding: '12px 16px', pointerEvents: 'none' }}>
-        <button onClick={() => { startLoader(); router.back(); }} className="act-btn" style={{ pointerEvents: 'all', width: 55, height: 55, borderRadius: 9, background: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(3px)', WebkitBackdropFilter: 'blur(10px)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+        <button onClick={() => { startLoader(); router.back(); }} className="act-btn" style={{ pointerEvents: 'all', width: 45, height: 45, borderRadius: 9, background: 'rgba(255,255,255,0.35)', backdropFilter: 'blur(1px)', WebkitBackdropFilter: 'blur(1px)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
           <ChevronLeft size={22} color="#fff" strokeWidth={2.5} />
         </button>
       </div>
@@ -304,7 +304,7 @@ export default function WallpaperDetail({ initialWallpaper: wp, ad }: { initialW
           <Image src={wp.url} alt={wp.title} fill priority draggable={false} className="wp-img" style={{ objectFit: 'cover', opacity: imgLoaded ? 1 : 0, transition: 'opacity .4s ease' }} sizes="(max-width:768px) 100vw, 600px" onLoad={() => { imgCache.add(wp.url); setImgLoaded(true); }} />
           <div className="no-save" style={{ position: 'absolute', inset: 0, zIndex: 2, pointerEvents: 'all' }} onContextMenu={e => e.preventDefault()} onTouchStart={e => e.preventDefault()} />
           {imgLoaded && (
-            <div style={{ position: 'absolute', bottom: 14, right: 14, zIndex: 3, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+            <div style={{ position: 'absolute', bottom: 25, right: 14, zIndex: 3, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
               <button ref={likeRef} onClick={handleLike} className="act-btn" style={{ width: 46, height: 46, borderRadius: '50%', background: st.liked ? '#f43f5e' : 'rgba(0,0,0,0.28)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'background .2s' }}>
                 <Heart size={19} color="#fff" fill={st.liked ? '#fff' : 'none'} strokeWidth={2} />
               </button>
