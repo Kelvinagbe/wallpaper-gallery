@@ -45,7 +45,6 @@ jobs:
             > $ANDROID_SDK_ROOT/licenses/intel-android-extra-license
           printf "33b6937b7c5e5d694e7f30d6c9aab2bd58b9a2c4" \
             > $ANDROID_SDK_ROOT/licenses/mips-android-sysimage-license
-          echo "License files written."
 
           SDKMANAGER=$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager
           echo "y" | $SDKMANAGER "platforms;android-34" "build-tools;34.0.0" "platform-tools" 2>&1 | tail -3
@@ -59,8 +58,6 @@ jobs:
 
       - name: Create capacitor.config.json
         run: |
-          # Use server URL mode — app loads live website, no static export needed
-          # This means all API routes work normally, no force-static hacks
           cat > capacitor.config.json << EOF
           {
             "appId": "ng.name.ovrica.walls",
@@ -75,8 +72,7 @@ jobs:
             }
           }
           EOF
-          echo "capacitor.config.json created:"
-          cat capacitor.config.json
+          echo "capacitor.config.json created."
 
       - name: Add Android platform if not present
         run: |
@@ -85,6 +81,24 @@ jobs:
           else
             echo "Android folder already exists."
           fi
+
+      - name: Create assets directory and required files
+        run: |
+          mkdir -p android/app/src/main/assets
+
+          # Write capacitor.config.json into assets
+          cp capacitor.config.json android/app/src/main/assets/capacitor.config.json
+
+          # Write empty capacitor.plugins.json if not present
+          if [ ! -f "android/app/src/main/assets/capacitor.plugins.json" ]; then
+            echo '[]' > android/app/src/main/assets/capacitor.plugins.json
+          fi
+
+          # Create empty public dir so sync doesn't fail
+          mkdir -p android/app/src/main/assets/public
+
+          echo "Assets directory ready:"
+          ls -la android/app/src/main/assets/
 
       - name: Sync Capacitor
         run: npx cap sync android
