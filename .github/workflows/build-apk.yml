@@ -26,6 +26,9 @@ jobs:
       - name: Install Bubblewrap
         run: npm install -g @bubblewrap/cli
 
+      - name: Install pexpect
+        run: pip install pexpect --break-system-packages
+
       - name: Pre-configure Bubblewrap (JDK/SDK paths)
         run: |
           mkdir -p ~/.bubblewrap
@@ -35,7 +38,8 @@ jobs:
             "androidSdkPath": "$ANDROID_SDK_ROOT"
           }
           EOF
-          echo "Bubblewrap global config created."
+          echo "Bubblewrap config:"
+          cat ~/.bubblewrap/config.json
 
       - name: Generate keystore
         run: |
@@ -50,69 +54,112 @@ jobs:
             -keypass ${{ secrets.KEYSTORE_PASSWORD }} \
             -dname "CN=Walls, OU=App, O=Walls, L=Lagos, S=Lagos, C=NG"
 
-      - name: Create Bubblewrap app config
+      - name: Run Bubblewrap init (non-interactive via pexpect)
         run: |
-          mkdir -p walls-android
-          cat > walls-android/bubblewrap-config.json << EOF
-          {
-            "manifestUrl": "https://walls.ovrica.name.ng/manifest.webmanifest",
-            "applicationId": "ng.name.ovrica.walls",
-            "host": "walls.ovrica.name.ng",
-            "name": "Walls",
-            "launcherName": "Walls",
-            "display": "standalone",
-            "orientation": "portrait",
-            "themeColor": "#FFFFFF",
-            "backgroundColor": "#FFFFFF",
-            "enableNotifications": false,
-            "enableLocationDelegation": false,
-            "enablePlayBilling": false,
-            "enableMaskableIcon": false,
-            "signingKey": {
-              "path": "${{ github.workspace }}/walls.keystore",
-              "alias": "walls",
-              "storePassword": "${{ secrets.KEYSTORE_PASSWORD }}",
-              "keyPassword": "${{ secrets.KEYSTORE_PASSWORD }}"
-            }
+          mkdir -p ${{ github.workspace }}/walls-android
+          python3 << 'PYEOF'
+          import pexpect, sys, re, os
+
+          def strip_ansi(text):
+              return re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', text)
+
+          workspace = os.environ.get('GITHUB_WORKSPACE', '')
+          cmd = (
+              f'bubblewrap init '
+              f'--manifest https://walls.ovrica.name.ng/manifest.webmanifest '
+              f'--directory {workspace}/walls-android'
+          )
+
+          print(f"[pexpect] Spawning: {cmd}")
+          child = pexpect.spawn(cmd, timeout=300, encoding='utf-8')
+          child.logfile_read = sys.stdout
+
+          while True:
+              index = child.expect([
+                  pexpect.EOF,
+                  pexpect.TIMEOUT,
+                  r'(?i)install.*JDK',
+                  r'(?i)install.*Android',
+                  r'(?i)Do you want',
+                  r'(?i)existing directory',
+                  r'(?i)overwrite',
+                  r'\(Y/n\)',
+                  r'\(y/N\)',
+              ], timeout=300)
+
+              if index == 0:
+                  print("\n[pexpect] Done.")
+                  break
+              elif index == 1:
+                  print("\n[pexpect] TIMEOUT — stuck, no prompt received.")
+                  sys.exit(1)
+              elif index in (2, 3, 4, 7):
+                  # JDK install, Android install, generic yes/no -> No
+                  print("\n[pexpect] Sending: n")
+                  child.sendline('n')
+              elif index in (5, 6, 8):
+                  # Existing directory / overwrite -> Yes
+                  print("\n[pexpect] Sending: y")
+                  child.sendline('y')
+
+          child.close()
+          exit_code = child.exitstatus
+          if exit_code and exit_code != 0:
+              print(f"[pexpect] Exit code: {exit_code}")
+              sys.exit(exit_code)
+
+          print("[pexpect] Bubblewrap init completed successfully.")
+          PYEOF
+
+      - name: Verify Bubblewrap generated files
+        run: |
+          echo "=== walls-android contents ==="
+          ls -la ${{ github.workspace }}/walls-android/
+          echo "=== Checking for gradlew ==="
+          if [ ! -f "${{ github.workspace }}/walls-android/gradlew" ]; then
+            echo "ERROR: gradlew not found — bubblewrap init did not complete"
+            exit 1
+          fi
+          echo "gradlew found. Proceeding to build."
+
+      - name: Update signing config in twa-manifest.json
+        run: |
+          python3 << 'PYEOF'
+          import json, os
+          workspace = os.environ.get('GITHUB_WORKSPACE', '')
+          manifest_path = f'{workspace}/walls-android/twa-manifest.json'
+          with open(manifest_path) as f:
+              m = json.load(f)
+          m['signingKey'] = {
+              'path': f'{workspace}/walls.keystore',
+              'alias': 'walls'
           }
-          EOF
-          echo "Bubblewrap app config created."
+          with open(manifest_path, 'w') as f:
+              json.dump(m, f, indent=2)
+          print('twa-manifest.json updated with signing key.')
+          PYEOF
 
-      - name: Install expect
-        run: sudo apt-get install -y expect
-
-      - name: Run Bubblewrap init (non-interactive)
+      - name: Build APK with Bubblewrap
         run: |
-          expect -c '
-            spawn bubblewrap init \
-              --manifest https://walls.ovrica.name.ng/manifest.webmanifest \
-              --directory ${{ github.workspace }}/walls-android \
-              --config ${{ github.workspace }}/walls-android/bubblewrap-config.json
-            expect -timeout 120 {
-              "install the JDK"    { send "n\r"; exp_continue }
-              "install the Android" { send "n\r"; exp_continue }
-              timeout              { puts "Timed out waiting for prompt"; exit 1 }
-              eof
-            }
-          '
-
-      - name: List generated files
-        run: ls -la walls-android/
-
-      - name: Build APK with Gradle
-        run: |
-          cd walls-android
-          chmod +x gradlew
-          ./gradlew assembleRelease \
-            -Pandroid.injected.signing.store.file=${{ github.workspace }}/walls.keystore \
-            -Pandroid.injected.signing.store.password=${{ secrets.KEYSTORE_PASSWORD }} \
-            -Pandroid.injected.signing.key.alias=walls \
-            -Pandroid.injected.signing.key.password=${{ secrets.KEYSTORE_PASSWORD }}
+          cd ${{ github.workspace }}/walls-android
+          bubblewrap build \
+            --skipPwaValidation \
+            --signingKeyPath ${{ github.workspace }}/walls.keystore \
+            --signingKeyAlias walls \
+            --signingKeyPassword ${{ secrets.KEYSTORE_PASSWORD }} \
+            --signingStorePassword ${{ secrets.KEYSTORE_PASSWORD }}
 
       - name: Copy APK
         run: |
-          find walls-android -name "*.apk" -exec cp {} app-release-signed.apk \;
-          echo "APK copied successfully"
+          echo "=== APKs found ==="
+          find ${{ github.workspace }}/walls-android -name "*.apk"
+          APK=$(find ${{ github.workspace }}/walls-android -name "*.apk" | head -1)
+          if [ -z "$APK" ]; then
+            echo "ERROR: No APK found after build"
+            exit 1
+          fi
+          cp "$APK" ${{ github.workspace }}/app-release-signed.apk
+          echo "APK copied from: $APK"
 
       - name: Get SHA256 fingerprint
         run: |
