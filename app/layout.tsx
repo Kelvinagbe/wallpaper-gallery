@@ -17,7 +17,7 @@ export const metadata: Metadata = {
   description: 'Discover and download stunning wallpapers to transform your spaces.',
   metadataBase: new URL(BASE_URL),
   manifest: '/manifest.webmanifest',  // ← add this
-  themeColor: '#0a0a0a',              // ← add this
+  
   appleWebApp: {                      // ← add this for iOS
     capable: true,
     statusBarStyle: 'black-translucent',
