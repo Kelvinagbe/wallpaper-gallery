@@ -1,0 +1,114 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch: # Run manually from GitHub UI
+  push:
+    branches:
+      - main # Also runs on every push to main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+
+      - name: Install Bubblewrap
+        run: npm install -g @bubblewrap/cli
+
+      - name: Create Bubblewrap config
+        run: |
+          mkdir walls-android && cd walls-android
+          cat > twa-manifest.json << 'EOF'
+          {
+            "packageId": "com.walls.app",
+            "host": "walls.ovrica.name.ng",
+            "name": "Walls – Transform Your Spaces",
+            "launcherName": "Walls",
+            "display": "standalone",
+            "themeColor": "#0a0a0a",
+            "navigationColor": "#0a0a0a",
+            "navigationColorDark": "#0a0a0a",
+            "navigationDividerColor": "#0a0a0a",
+            "navigationDividerColorDark": "#0a0a0a",
+            "backgroundColor": "#ffffff",
+            "enableNotifications": false,
+            "startUrl": "/",
+            "iconUrl": "https://walls.ovrica.name.ng/icons/icon-512x512.png",
+            "maskableIconUrl": "https://walls.ovrica.name.ng/icons/icon-512x512.png",
+            "monochromeIconUrl": "https://walls.ovrica.name.ng/icons/icon-512x512.png",
+            "appVersion": "1.0.0",
+            "appVersionCode": 1,
+            "signingKey": {
+              "path": "../walls.keystore",
+              "alias": "walls"
+            },
+            "splashScreenFadeOutDuration": 300,
+            "enableSiteSettingsShortcut": true,
+            "isChromeOSOnly": false,
+            "isMetaQuest": false,
+            "fullScopeUrl": "https://walls.ovrica.name.ng/",
+            "minSdkVersion": 19,
+            "orientation": "portrait",
+            "fingerprints": [],
+            "serviceAccountJsonFile": "",
+            "features": {},
+            "alphaDependencies": { "enabled": false },
+            "generatorApp": "bubblewrap-cli",
+            "webManifestUrl": "https://walls.ovrica.name.ng/manifest.webmanifest",
+            "shortcuts": []
+          }
+          EOF
+
+      - name: Generate keystore
+        run: |
+          keytool -genkeypair \
+            -v \
+            -keystore walls.keystore \
+            -alias walls \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -storepass ${{ secrets.KEYSTORE_PASSWORD }} \
+            -keypass ${{ secrets.KEYSTORE_PASSWORD }} \
+            -dname "CN=Walls, OU=App, O=Walls, L=Lagos, S=Lagos, C=NG"
+
+      - name: Build APK with Bubblewrap
+        run: |
+          cd walls-android
+          bubblewrap build \
+            --signingKeyPath ../walls.keystore \
+            --signingKeyAlias walls \
+            --signingKeyPassword ${{ secrets.KEYSTORE_PASSWORD }} \
+            --signingStorePassword ${{ secrets.KEYSTORE_PASSWORD }}
+
+      - name: Get SHA256 fingerprint
+        run: |
+          keytool -list -v \
+            -keystore walls.keystore \
+            -alias walls \
+            -storepass ${{ secrets.KEYSTORE_PASSWORD }} \
+            | grep "SHA256" > sha256.txt
+          cat sha256.txt
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: walls-apk
+          path: |
+            walls-android/app-release-signed.apk
+            walls-android/app-release-bundle.aab
+            sha256.txt
+          retention-days: 30
