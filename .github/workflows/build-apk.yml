@@ -94,11 +94,12 @@ jobs:
             "shortcuts": []
           }
           EOF
+          md5sum twa-manifest.json | awk '{print $1}' > .checksum
 
       - name: Build APK
         run: |
           cd walls-android
-          bubblewrap build \
+          echo "n" | bubblewrap build \
             --signingKeyPath ../walls.keystore \
             --signingKeyAlias walls \
             --signingKeyPassword ${{ secrets.KEYSTORE_PASSWORD }} \
