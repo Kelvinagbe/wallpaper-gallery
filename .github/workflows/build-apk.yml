@@ -99,7 +99,7 @@ jobs:
             "isChromeOSOnly": false,
             "isMetaQuest": false,
             "fullScopeUrl": "https://walls.ovrica.name.ng/",
-            "minSdkVersion": 19,
+            "minSdkVersion": 21,
             "fingerprints": []
           }
           EOF
