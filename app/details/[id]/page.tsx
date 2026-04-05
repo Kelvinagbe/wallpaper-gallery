@@ -5,8 +5,9 @@ import { BANNER_ADS } from '@/lib/adData';
 
 export const revalidate = 60;
 
-export default async function Page({ params }: { params: { id: string } }) {
-  const wallpaper = await fetchWallpaperById(params.id);
+export default async function Page({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const wallpaper = await fetchWallpaperById(id);
   if (!wallpaper) notFound();
 
   const ad = BANNER_ADS.length
