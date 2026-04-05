@@ -51,14 +51,40 @@ jobs:
             -keypass ${{ secrets.KEYSTORE_PASSWORD }} \
             -dname "CN=Walls, OU=App, O=Walls, L=Lagos, S=Lagos, C=NG"
 
-      - name: Run Bubblewrap init
+      - name: Create Bubblewrap config file
         run: |
           mkdir -p walls-android
-          # Provide answers to bubblewrap init prompts in order:
-          printf "walls.ovrica.name.ng\n\n\nng.name.ovrica.walls\n\n\n\n\n\n\n\nn\nn\nn\ny\n${{ github.workspace }}/walls.keystore\n${{ secrets.KEYSTORE_PASSWORD }}\nwalls\n${{ secrets.KEYSTORE_PASSWORD }}\n" | \
+          cat > walls-android/bubblewrap-config.json << EOF
+          {
+            "manifestUrl": "https://walls.ovrica.name.ng/manifest.webmanifest",
+            "applicationId": "ng.name.ovrica.walls",
+            "host": "walls.ovrica.name.ng",
+            "name": "Walls",
+            "launcherName": "Walls",
+            "display": "standalone",
+            "orientation": "portrait",
+            "themeColor": "#FFFFFF",
+            "backgroundColor": "#FFFFFF",
+            "enableNotifications": false,
+            "enableLocationDelegation": false,
+            "enablePlayBilling": false,
+            "enableMaskableIcon": false,
+            "signingKey": {
+              "path": "${{ github.workspace }}/walls.keystore",
+              "alias": "walls",
+              "storePassword": "${{ secrets.KEYSTORE_PASSWORD }}",
+              "keyPassword": "${{ secrets.KEYSTORE_PASSWORD }}"
+            }
+          }
+          EOF
+          echo "Bubblewrap config created."
+
+      - name: Run Bubblewrap init (non-interactive)
+        run: |
           bubblewrap init \
             --manifest https://walls.ovrica.name.ng/manifest.webmanifest \
-            --directory ${{ github.workspace }}/walls-android
+            --directory ${{ github.workspace }}/walls-android \
+            --config ${{ github.workspace }}/walls-android/bubblewrap-config.json
 
       - name: List generated files
         run: ls -la walls-android/
