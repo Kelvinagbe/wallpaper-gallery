@@ -38,7 +38,6 @@ jobs:
             "androidSdkPath": "$ANDROID_SDK_ROOT"
           }
           EOF
-          echo "Bubblewrap config:"
           cat ~/.bubblewrap/config.json
 
       - name: Generate keystore
@@ -60,7 +59,7 @@ jobs:
         run: |
           mkdir -p ${{ github.workspace }}/walls-android
           python3 << 'PYEOF'
-          import pexpect, sys, os
+          import pexpect, sys, os, time
 
           workspace = os.environ.get('GITHUB_WORKSPACE', '')
           cmd = (
@@ -69,84 +68,77 @@ jobs:
               f'--directory {workspace}/walls-android'
           )
 
-          print(f"[pexpect] Spawning: {cmd}")
+          print(f"[pexpect] Spawning: {cmd}", flush=True)
           child = pexpect.spawn(cmd, timeout=300, encoding='utf-8')
           child.logfile_read = sys.stdout
 
-          while True:
-              index = child.expect([
-                  pexpect.EOF,                         # 0 - done
-                  pexpect.TIMEOUT,                     # 1 - stuck
-                  r'(?i)install.*JDK',                 # 2 - JDK install? -> n
-                  r'(?i)install.*Android',              # 3 - Android SDK? -> n
-                  r'(?i)Domain:',                       # 4 - domain
-                  r'(?i)URL path:',                     # 5 - url path
-                  r'(?i)Application name',              # 6 - app name
-                  r'(?i)short name',                    # 7 - launcher name
-                  r'(?i)Application ID',                # 8 - package id
-                  r'(?i)version code',                  # 9 - version code (default)
-                  r'(?i)version name',                  # 10 - version name (default)
-                  r'(?i)display mode',                  # 11 - display (default)
-                  r'(?i)orientation',                   # 12 - orientation (default)
-                  r'(?i)theme color',                   # 13 - theme color (default)
-                  r'(?i)background color',              # 14 - bg color (default)
-                  r'(?i)enable notifications',          # 15 - notifications (default)
-                  r'(?i)existing directory',            # 16 - overwrite dir? -> y
-                  r'(?i)overwrite',                     # 17 - overwrite? -> y
-                  r'\(Y/n\)',                           # 18 - generic Y/n -> n
-                  r'\(y/N\)',                           # 19 - generic y/N -> enter
-              ], timeout=120)
+          # Each tuple: (pattern_to_match, response, description)
+          # Order matters — more specific patterns first
+          prompts = [
+              (r'\? Do you want Bubblewrap to install the JDK',  'n',                      'JDK install'),
+              (r'\? Do you want Bubblewrap to install the Android SDK', 'n',               'Android SDK install'),
+              (r'\? Domain:',                                     'walls.ovrica.name.ng',   'Domain'),
+              (r'\? URL path:',                                   '/',                      'URL path'),
+              (r'\? Application name:',                           'Walls',                  'App name'),
+              (r'\? Short name:',                                 'Walls',                  'Short name'),
+              (r'\? Application ID:',                             'ng.name.ovrica.walls',   'App ID'),
+              (r'\? Version code:',                               '',                       'Version code'),
+              (r'\? Version name:',                               '',                       'Version name'),
+              (r'\? Display mode:',                               '',                       'Display mode'),
+              (r'\? Orientation:',                                '',                       'Orientation'),
+              (r'\? Theme color:',                                '',                       'Theme color'),
+              (r'\? Background color:',                           '',                       'Background color'),
+              (r'\? Enable Notifications:',                       '',                       'Notifications'),
+              (r'\? Enable Location Delegation:',                 '',                       'Location'),
+              (r'\? Enable Play Billing:',                        '',                       'Billing'),
+              (r'(?i)existing directory',                         'y',                      'Existing dir'),
+          ]
 
-              if index == 0:
-                  print("\n[pexpect] Process complete.")
+          patterns = [p[0] for p in prompts] + [pexpect.EOF, pexpect.TIMEOUT]
+          n_prompts = len(prompts)
+
+          answered = set()
+
+          while True:
+              index = child.expect(patterns, timeout=120)
+
+              if index == n_prompts:
+                  print("\n[pexpect] Done (EOF).", flush=True)
                   break
-              elif index == 1:
-                  print("\n[pexpect] TIMEOUT — no prompt received, stuck.")
+              elif index == n_prompts + 1:
+                  print("\n[pexpect] TIMEOUT — stuck on a prompt.", flush=True)
+                  print(f"[pexpect] Buffer: {child.before}", flush=True)
                   sys.exit(1)
-              elif index in (2, 3, 18):
-                  print("\n[pexpect] -> n")
-                  child.sendline('n')
-              elif index in (16, 17):
-                  print("\n[pexpect] -> y")
-                  child.sendline('y')
-              elif index == 4:
-                  print("\n[pexpect] -> walls.ovrica.name.ng")
-                  child.sendline('walls.ovrica.name.ng')
-              elif index == 5:
-                  print("\n[pexpect] -> /")
-                  child.sendline('/')
-              elif index == 6:
-                  print("\n[pexpect] -> Walls")
-                  child.sendline('Walls')
-              elif index == 7:
-                  print("\n[pexpect] -> Walls")
-                  child.sendline('Walls')
-              elif index == 8:
-                  print("\n[pexpect] -> ng.name.ovrica.walls")
-                  child.sendline('ng.name.ovrica.walls')
-              elif index in (9, 10, 11, 12, 13, 14, 15, 19):
-                  print("\n[pexpect] -> (accept default)")
-                  child.sendline('')
+              else:
+                  pattern, response, desc = prompts[index]
+                  if index in answered:
+                      # Already answered this — skip to avoid re-triggering
+                      time.sleep(0.2)
+                      continue
+                  print(f"\n[pexpect] Answering '{desc}' -> '{response}'", flush=True)
+                  # Flush any pending echo by waiting briefly
+                  time.sleep(0.3)
+                  child.sendline(response)
+                  answered.add(index)
 
           child.close()
           exit_code = child.exitstatus
           if exit_code and exit_code != 0:
-              print(f"[pexpect] Non-zero exit: {exit_code}")
+              print(f"[pexpect] Non-zero exit: {exit_code}", flush=True)
               sys.exit(exit_code)
 
-          print("[pexpect] Bubblewrap init completed successfully.")
+          print("[pexpect] Bubblewrap init completed successfully.", flush=True)
           PYEOF
 
       - name: Verify Bubblewrap generated files
         run: |
           echo "=== walls-android contents ==="
           ls -la ${{ github.workspace }}/walls-android/
-          echo "=== Checking for gradlew ==="
           if [ ! -f "${{ github.workspace }}/walls-android/gradlew" ]; then
             echo "ERROR: gradlew not found — bubblewrap init did not complete"
             exit 1
           fi
-          echo "gradlew found. Proceeding to build."
+          echo "gradlew found."
 
       - name: Update signing config in twa-manifest.json
         env:
@@ -155,16 +147,16 @@ jobs:
           python3 << 'PYEOF'
           import json, os
           workspace = os.environ.get('GITHUB_WORKSPACE', '')
-          manifest_path = f'{workspace}/walls-android/twa-manifest.json'
-          with open(manifest_path) as f:
+          path = f'{workspace}/walls-android/twa-manifest.json'
+          with open(path) as f:
               m = json.load(f)
           m['signingKey'] = {
               'path': f'{workspace}/walls.keystore',
               'alias': 'walls'
           }
-          with open(manifest_path, 'w') as f:
+          with open(path, 'w') as f:
               json.dump(m, f, indent=2)
-          print('twa-manifest.json updated with signing key.')
+          print('twa-manifest.json updated.')
           PYEOF
 
       - name: Build APK with Bubblewrap
@@ -179,15 +171,14 @@ jobs:
 
       - name: Copy APK
         run: |
-          echo "=== APKs found ==="
           find ${{ github.workspace }}/walls-android -name "*.apk"
           APK=$(find ${{ github.workspace }}/walls-android -name "*.apk" | head -1)
           if [ -z "$APK" ]; then
-            echo "ERROR: No APK found after build"
+            echo "ERROR: No APK found"
             exit 1
           fi
           cp "$APK" ${{ github.workspace }}/app-release-signed.apk
-          echo "APK copied from: $APK"
+          echo "Copied: $APK"
 
       - name: Get SHA256 fingerprint
         run: |
