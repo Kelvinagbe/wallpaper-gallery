@@ -1,4 +1,3 @@
-
 name: Build Android APK (Capacitor)
 
 on:
@@ -227,8 +226,9 @@ jobs:
                           req.setDescription("Downloading wallpaper...");
                           req.setMimeType(mime);
                           req.addRequestHeader("User-Agent", ua);
+                          // FIX: first arg must be a standard directory constant; subfolder goes in second arg
                           req.setDestinationInExternalPublicDir(
-                              Environment.DIRECTORY_PICTURES + "/" + WALLS_FOLDER, lastFile);
+                              Environment.DIRECTORY_PICTURES, WALLS_FOLDER + "/" + lastFile);
                           req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_HIDDEN);
                           req.allowScanningByMediaScanner();
                           lastId = dm.enqueue(req);
@@ -316,10 +316,8 @@ jobs:
                           runOnUiThread(() -> {
                               if (status == DownloadManager.STATUS_SUCCESSFUL && localUri != null) {
                                   try {
-                                      // Convert file:// URI to a safe content:// URI via FileProvider
                                       File file = new File(Uri.parse(localUri).getPath());
 
-                                      // Also register with MediaStore so gallery sees it
                                       ContentValues cv = new ContentValues();
                                       cv.put(MediaStore.Images.Media.DISPLAY_NAME, lastFile);
                                       cv.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
@@ -328,7 +326,6 @@ jobs:
                                       cv.put(MediaStore.Images.Media.DATA, file.getAbsolutePath());
                                       getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, cv);
 
-                                      // Use FileProvider for safe sharing
                                       Uri safeUri = FileProvider.getUriForFile(ctx, AUTHORITY, file);
 
                                       Intent wall = new Intent(Intent.ACTION_ATTACH_DATA);
