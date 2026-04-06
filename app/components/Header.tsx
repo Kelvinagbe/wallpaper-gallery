@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Mail, UserPlus, ArrowRight, X, Check, Search, ListFilter, Home, Bell, User, Menu } from 'lucide-react';
+import { Mail, UserPlus, ArrowRight, X, Check, Search, ListFilter, Home, Bell, User, Plus } from 'lucide-react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/app/components/AuthProvider';
 import { useUploadModal } from '@/app/components/UploadModalProvider';
@@ -39,15 +39,12 @@ const CSS = `
   @keyframes mOut  { from{opacity:1;transform:none} to{opacity:0;transform:scale(.97)} }
   @keyframes shIn  { from{transform:translateY(100%)} to{transform:none} }
   @keyframes shOut { from{transform:none} to{transform:translateY(100%)} }
-  @keyframes sbIn  { from{transform:translateX(-100%)} to{transform:none} }
-  @keyframes sbOut { from{transform:none} to{transform:translateX(-100%)} }
   @keyframes msIn  { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:none} }
   @keyframes msOut { from{opacity:1;transform:none} to{opacity:0;transform:translateY(-8px)} }
 
   .bd-in{animation:bdIn .2s ease forwards}   .bd-out{animation:bdOut .2s ease forwards}
   .m-in{animation:mIn .28s cubic-bezier(.16,1,.3,1) forwards}  .m-out{animation:mOut .2s ease forwards}
   .sh-in{animation:shIn .3s cubic-bezier(.16,1,.3,1) forwards} .sh-out{animation:shOut .24s ease forwards}
-  .sb-in{animation:sbIn .28s cubic-bezier(.16,1,.3,1) forwards} .sb-out{animation:sbOut .22s ease forwards}
   .ms-in{animation:msIn .22s cubic-bezier(.16,1,.3,1) forwards} .ms-out{animation:msOut .18s ease forwards}
 
   .wl-input,.mob-input{
@@ -69,12 +66,13 @@ const CSS = `
   .sheet-row.active{font-weight:600;color:#000}
   .sheet-row:active{background:rgba(0,0,0,.03)}
 
-  .sb-nav-item{display:flex;align-items:center;gap:12px;width:100%;padding:11px 14px;border-radius:10px;border:none;background:transparent;font-family:'Outfit',sans-serif;font-size:14px;font-weight:500;color:rgba(0,0,0,0.45);cursor:pointer;text-align:left;transition:all .15s}
-  .sb-nav-item:hover{background:rgba(0,0,0,0.04);color:#000}
-  .sb-nav-item.active{background:#0a0a0a;color:#fff;font-weight:600}
-
   .hdr-icon-btn{width:34px;height:34px;display:flex;align-items:center;justify-content:center;background:transparent;border:none;border-radius:8px;cursor:pointer;transition:background .15s;flex-shrink:0}
   .hdr-icon-btn:hover{background:rgba(255,255,255,0.07)}
+
+  .bnav-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;flex:1;background:transparent;border:none;cursor:pointer;padding:8px 0;transition:opacity .15s}
+  .bnav-btn span{font-family:'Outfit',sans-serif;font-size:10px;font-weight:500;color:rgba(255,255,255,0.38);transition:color .15s}
+  .bnav-btn.active span{color:#fff;font-weight:600}
+  .bnav-btn:active{opacity:.7}
 
   @media(min-width:768px){.mob{display:none!important}}
   @media(max-width:767px){.desk{display:none!important}}
@@ -113,19 +111,13 @@ const CloseBtn = ({ onClick }: { onClick: () => void }) => (
 );
 
 function useAnimatedToggle(durationMs: number) {
-  const [visible,  setVisible]  = useState(false);
-  const [closing,  setClosing]  = useState(false);
-
+  const [visible, setVisible] = useState(false);
+  const [closing, setClosing] = useState(false);
   const open  = () => { setClosing(false); setVisible(true); };
   const close = (cb?: () => void) => {
     setClosing(true);
-    setTimeout(() => {
-      setVisible(false);
-      setClosing(false);
-      cb?.();
-    }, durationMs);
+    setTimeout(() => { setVisible(false); setClosing(false); cb?.(); }, durationMs);
   };
-
   return { visible, closing, open, close, shown: visible || closing };
 }
 
@@ -135,9 +127,8 @@ export const Header = ({ filter, setFilter, startLoader }: HeaderProps) => {
   const { user } = useAuth();
   const { open: openUpload } = useUploadModal();
 
-  const auth    = useAnimatedToggle(220);
-  const sheet   = useAnimatedToggle(260);
-  const sidebar = useAnimatedToggle(240);
+  const auth  = useAnimatedToggle(220);
+  const sheet = useAnimatedToggle(260);
 
   const [searchVal, setSearchVal] = useState('');
   const [mobOpen,   setMobOpen]   = useState(false);
@@ -145,13 +136,11 @@ export const Header = ({ filter, setFilter, startLoader }: HeaderProps) => {
   const [mobVal,    setMobVal]    = useState('');
   const mobRef = useRef<HTMLInputElement>(null);
 
-  // Lock body scroll when any overlay is open
   useEffect(() => {
-    document.body.style.overflow = (auth.visible || sheet.visible || sidebar.visible) ? 'hidden' : '';
+    document.body.style.overflow = (auth.visible || sheet.visible) ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
-  }, [auth.visible, sheet.visible, sidebar.visible]);
+  }, [auth.visible, sheet.visible]);
 
-  // Auto-focus mobile search input when opened
   useEffect(() => {
     if (mobOpen && !mobClosing) setTimeout(() => mobRef.current?.focus(), 80);
   }, [mobOpen, mobClosing]);
@@ -170,6 +159,11 @@ export const Header = ({ filter, setFilter, startLoader }: HeaderProps) => {
     setSearchVal('');
   };
 
+  const handleNav = (href: string) => {
+    startLoader?.();
+    router.push(href);
+  };
+
   return (
     <>
       <style>{CSS}</style>
@@ -179,11 +173,6 @@ export const Header = ({ filter, setFilter, startLoader }: HeaderProps) => {
 
         {/* Top row */}
         <div style={{ maxWidth: 1300, margin: '0 auto', padding: '0 16px', height: 54, display: 'flex', alignItems: 'center', gap: 10 }}>
-
-          {/* Menu — opens sidebar only, no hash manipulation */}
-          <button className="hdr-icon-btn" onClick={sidebar.open} aria-label="Menu">
-            <Menu size={19} color="rgba(255,255,255,0.65)" />
-          </button>
 
           <button onClick={() => router.push('/')} style={{ background: 'none', border: 'none', cursor: 'pointer', flexShrink: 0, padding: '0 2px' }}>
             <Logo />
@@ -219,9 +208,10 @@ export const Header = ({ filter, setFilter, startLoader }: HeaderProps) => {
             </button>
           </div>
 
-          {/* Auth / Upload */}
+          {/* Desktop auth/upload */}
           {user ? (
             <button
+              className="desk"
               onClick={openUpload}
               style={{ padding: '6px 14px', fontFamily: F, fontSize: 13, fontWeight: 600, border: '1px solid rgba(255,255,255,0.14)', borderRadius: 8, background: 'transparent', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', transition: 'all .18s', flexShrink: 0 }}
               onMouseEnter={e => Object.assign((e.currentTarget as HTMLElement).style, { background: 'rgba(255,255,255,.08)', borderColor: 'rgba(255,255,255,.3)', color: '#fff' })}
@@ -231,6 +221,7 @@ export const Header = ({ filter, setFilter, startLoader }: HeaderProps) => {
             </button>
           ) : (
             <button
+              className="desk"
               onClick={auth.open}
               style={{ padding: '6px 16px', fontFamily: F, fontSize: 13, fontWeight: 700, border: 'none', borderRadius: 8, background: '#fff', color: '#000', cursor: 'pointer', transition: 'all .18s', flexShrink: 0 }}
               onMouseEnter={e => Object.assign((e.currentTarget as HTMLElement).style, { background: 'rgba(255,255,255,.85)', transform: 'scale(0.97)' })}
@@ -257,10 +248,7 @@ export const Header = ({ filter, setFilter, startLoader }: HeaderProps) => {
                 value={mobVal}
                 onChange={e => setMobVal(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') handleSearch(mobVal); }}
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="off"
-                spellCheck={false}
+                autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
               />
               {mobVal.length > 0 && (
                 <button
@@ -287,42 +275,57 @@ export const Header = ({ filter, setFilter, startLoader }: HeaderProps) => {
         </div>
       </header>
 
-      {/* ── SIDEBAR ── */}
-      {sidebar.shown && (
-        <>
-          <Overlay closing={sidebar.closing} onClick={() => sidebar.close()} />
-          <aside
-            className={sidebar.closing ? 'sb-out' : 'sb-in'}
-            style={{ position: 'fixed', top: 0, left: 0, bottom: 0, width: 260, background: '#fff', zIndex: 100, display: 'flex', flexDirection: 'column', boxShadow: '4px 0 40px rgba(0,0,0,0.12)' }}
+      {/* ── BOTTOM NAV (mobile only) ── */}
+      <nav
+        className="mob"
+        style={{
+          position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 50,
+          background: 'rgba(10,10,10,0.96)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+          borderTop: HDR_BORDER, borderRadius: '16px 16px 0 0',
+          display: 'flex', alignItems: 'center',
+          padding: '6px 8px max(14px,env(safe-area-inset-bottom)) 8px',
+          boxShadow: '0 -8px 40px rgba(0,0,0,0.4)',
+        }}
+      >
+        {/* Left two nav items */}
+        {NAV.slice(0, 2).map(({ href, icon: Icon, label }) => {
+          const active = pathname === href;
+          return (
+            <button key={href} className={`bnav-btn${active ? ' active' : ''}`} onClick={() => handleNav(href)}>
+              <Icon size={20} strokeWidth={active ? 2.5 : 1.8} color={active ? '#fff' : 'rgba(255,255,255,0.38)'} />
+              <span>{label}</span>
+            </button>
+          );
+        })}
+
+        {/* Center upload / auth button */}
+        <div style={{ flex: 1, display: 'flex', justifyContent: 'center', padding: '0 6px' }}>
+          <button
+            onClick={user ? openUpload : auth.open}
+            style={{
+              width: 52, height: 52, borderRadius: 16, border: 'none',
+              background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', boxShadow: '0 4px 20px rgba(255,255,255,0.15)',
+              transition: 'transform .15s, box-shadow .15s',
+            }}
+            onTouchStart={e => Object.assign((e.currentTarget as HTMLElement).style, { transform: 'scale(0.93)', boxShadow: '0 2px 10px rgba(255,255,255,0.1)' })}
+            onTouchEnd={e => Object.assign((e.currentTarget as HTMLElement).style, { transform: 'scale(1)', boxShadow: '0 4px 20px rgba(255,255,255,0.15)' })}
           >
-            <div style={{ padding: '18px 16px', borderBottom: '1px solid rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Logo dark />
-              <CloseBtn onClick={() => sidebar.close()} />
-            </div>
-            <nav style={{ flex: 1, padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <p style={{ fontSize: 10, fontWeight: 700, color: 'rgba(0,0,0,0.25)', letterSpacing: '.09em', textTransform: 'uppercase', margin: '4px 4px 8px 14px' }}>Navigate</p>
-              {NAV.map(({ href, icon: Icon, label }) => {
-                const active = pathname === href;
-                return (
-                  <button key={href} className={`sb-nav-item${active ? ' active' : ''}`} onClick={() => sidebar.close(() => router.push(href))}>
-                    <Icon size={16} strokeWidth={active ? 2.5 : 2} />
-                    {label}
-                  </button>
-                );
-              })}
-            </nav>
-            <div style={{ padding: '14px 10px', borderTop: '1px solid rgba(0,0,0,0.06)' }}>
-              <button
-                onClick={() => user ? sidebar.close(openUpload) : sidebar.close(auth.open)}
-                style={{ width: '100%', padding: '12px 0', borderRadius: 10, border: 'none', background: '#0a0a0a', color: '#fff', fontFamily: F, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
-              >
-                {user ? 'Upload Wallpaper' : 'Sign in'}
-              </button>
-              <p style={{ textAlign: 'center', fontSize: 11, color: 'rgba(0,0,0,0.2)', marginTop: 14, fontFamily: F }}>WALLS v1.0.0</p>
-            </div>
-          </aside>
-        </>
-      )}
+            <Plus size={22} color="#000" strokeWidth={2.5} />
+          </button>
+        </div>
+
+        {/* Right two nav items */}
+        {NAV.slice(2).map(({ href, icon: Icon, label }) => {
+          const active = pathname === href;
+          return (
+            <button key={href} className={`bnav-btn${active ? ' active' : ''}`} onClick={() => handleNav(href)}>
+              <Icon size={20} strokeWidth={active ? 2.5 : 1.8} color={active ? '#fff' : 'rgba(255,255,255,0.38)'} />
+              <span>{label}</span>
+            </button>
+          );
+        })}
+      </nav>
 
       {/* ── FILTER SHEET ── */}
       {sheet.shown && (
@@ -356,7 +359,7 @@ export const Header = ({ filter, setFilter, startLoader }: HeaderProps) => {
         </div>
       )}
 
-           {/* ── AUTH MODAL ── */}
+      {/* ── AUTH MODAL ── */}
       {auth.shown && (
         <div
           className={auth.closing ? 'bd-out' : 'bd-in'}
