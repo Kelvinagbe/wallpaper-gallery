@@ -1,4 +1,3 @@
-
 name: Build Android APK (Capacitor)
 
 on:
@@ -8,18 +7,26 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest   
+    runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
-        with: { node-version: '20', cache: 'npm' }
+        with:
+          node-version: '20'
+          cache: 'npm'
+
       - uses: actions/setup-java@v4
-        with: { java-version: '21', distribution: 'temurin' }
+        with:
+          java-version: '21'
+          distribution: 'temurin'
 
       - name: Setup Android SDK
         run: |
           SDK=/usr/local/lib/android/sdk
-          echo "ANDROID_SDK_ROOT=$SDK" >> $GITHUB_ENV && echo "ANDROID_HOME=$SDK" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$SDK" >> $GITHUB_ENV
+          echo "ANDROID_HOME=$SDK" >> $GITHUB_ENV
           mkdir -p $SDK/licenses
           printf "24333f8a63b6825ea9c5514f83c2829b004d1fee\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e" > $SDK/licenses/android-sdk-license
           printf "84831b9409646a918e30573bab4c9c91346d8abd" > $SDK/licenses/android-sdk-preview-license
@@ -33,13 +40,18 @@ jobs:
         run: |
           cat > capacitor.config.json << 'EOF'
           {
-            "appId": "ng.name.ovrica.walls", "appName": "Walls", "webDir": "out",
+            "appId": "ng.name.ovrica.walls",
+            "appName": "Walls",
+            "webDir": "out",
             "server": { "url": "https://walls.ovrica.name.ng", "cleartext": false },
             "android": { "allowMixedContent": false },
             "plugins": {
               "SplashScreen": {
-                "launchShowDuration": 2500, "launchAutoHide": true,
-                "backgroundColor": "#0a0a0a", "androidSplashResourceName": "splash", "showSpinner": false
+                "launchShowDuration": 2500,
+                "launchAutoHide": true,
+                "backgroundColor": "#0a0a0a",
+                "androidSplashResourceName": "splash",
+                "showSpinner": false
               }
             }
           }
@@ -49,9 +61,12 @@ jobs:
       - name: Generate icons and splash
         run: |
           sudo apt-get install -y imagemagick -q
-          LOGO="public/icons/icon-512x512.png" RES="android/app/src/main/res"
+          LOGO="public/icons/icon-512x512.png"
+          RES="android/app/src/main/res"
           for cfg in "mipmap-mdpi:48" "mipmap-hdpi:72" "mipmap-xhdpi:96" "mipmap-xxhdpi:144" "mipmap-xxxhdpi:192"; do
-            folder="${cfg%%:*}" size="${cfg##*:}" && mkdir -p "$RES/$folder"
+            folder="${cfg%%:*}"
+            size="${cfg##*:}"
+            mkdir -p "$RES/$folder"
             convert "$LOGO" -resize "${size}x${size}" "$RES/$folder/ic_launcher.png"
             cp "$RES/$folder/ic_launcher.png" "$RES/$folder/ic_launcher_round.png"
           done
@@ -305,7 +320,7 @@ jobs:
                       <data android:scheme="https" android:host="walls.ovrica.name.ng" />\
                   </intent-filter>' $M
 
-    - name: Assets, sync and Kotlin fix
+      - name: Assets, sync and Kotlin fix
         run: |
           mkdir -p android/app/src/main/assets
           echo '[]' > android/app/src/main/assets/capacitor.plugins.json
