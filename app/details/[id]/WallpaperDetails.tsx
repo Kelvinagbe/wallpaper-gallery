@@ -1,4 +1,43 @@
+Here's the cleanest approach. The API route returns `Content-Disposition: attachment` so Android WebView's `DownloadManager` intercepts it correctly — no browser redirect, no blob issues.
 
+**`/api/download/route.ts`:**
+
+```typescript
+import { NextRequest, NextResponse } from 'next/server';
+
+export async function GET(req: NextRequest) {
+  const url = req.nextUrl.searchParams.get('url');
+  const name = req.nextUrl.searchParams.get('name') || 'wallpaper';
+
+  if (!url) return NextResponse.json({ error: 'No URL' }, { status: 400 });
+
+  try {
+    const res = await fetch(url, { headers: { 'User-Agent': 'Walls-App/1.0' } });
+    if (!res.ok) throw new Error('Fetch failed');
+
+    const buffer = await res.arrayBuffer();
+    const contentType = res.headers.get('content-type') || 'image/jpeg';
+    const filename = `${name.replace(/[^a-z0-9_\-\s]/gi, '_')}.jpg`;
+
+    return new NextResponse(buffer, {
+      headers: {
+        'Content-Type': contentType,
+        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Content-Length': String(buffer.byteLength),
+        'Cache-Control': 'no-store',
+      },
+    });
+  } catch (e) {
+    return NextResponse.json({ error: 'Download failed' }, { status: 500 });
+  }
+}
+```
+
+---
+
+**`WallpaperDetail.tsx`** — full rewrite:
+
+```tsx
 'use client';
 
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
@@ -21,14 +60,18 @@ const cache = new Map<string, { liked: boolean; following: boolean; likeCount: n
 const REPORT_REASONS = ['Inappropriate content', 'Copyright violation', 'Spam or misleading', 'Hate speech', 'Other'];
 
 // ── Helpers ──────────────────────────────────────────────────────
-const fmt = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+const fmt = (n: number) =>
+  n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 
 const imgCache = (() => {
   const mem = new Set<string>();
   try { (JSON.parse(sessionStorage.getItem('__wpcache__') || '[]') as string[]).forEach(u => mem.add(u)); } catch {}
   return {
     has: (u: string) => mem.has(u),
-    add: (u: string) => { mem.add(u); try { sessionStorage.setItem('__wpcache__', JSON.stringify([...mem].slice(-300))); } catch {} },
+    add: (u: string) => {
+      mem.add(u);
+      try { sessionStorage.setItem('__wpcache__', JSON.stringify([...mem].slice(-300))); } catch {}
+    },
   };
 })();
 
@@ -37,17 +80,39 @@ const timeAgoStr = (date: string) => {
   return d < 60 ? 'Just now' : d < 3600 ? `${Math.floor(d / 60)}m ago` : d < 86400 ? `${Math.floor(d / 3600)}h ago` : d < 604800 ? `${Math.floor(d / 86400)}d ago` : `${Math.floor(d / 604800)}w ago`;
 };
 
-// Detect Android WebView
-const isAndroidWebView = () =>
-  typeof navigator !== 'undefined' &&
-  /Android/.test(navigator.userAgent) &&
-  /wv|WebView/.test(navigator.userAgent);
+// ── Download helper ───────────────────────────────────────────────
+// Always use the API route — it returns Content-Disposition: attachment
+// which is what Android WebView's DownloadManager needs to intercept
+// the request as a download instead of opening the system browser.
+const triggerDownload = (imageUrl: string, title: string) => {
+  const filename = `${title || 'wallpaper'}.jpg`;
+  const apiUrl = `https://walls.ovrica.name.ng/api/download?url=${encodeURIComponent(imageUrl)}&name=${encodeURIComponent(title || 'wallpaper')}`;
+  const a = Object.assign(document.createElement('a'), {
+    href: apiUrl,
+    download: filename,
+    style: 'display:none',
+  });
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+};
 
 // ── Shared style helpers ─────────────────────────────────────────
-const sheet = (active?: boolean): React.CSSProperties => ({ flex: 1, padding: '12px 0', borderRadius: 12, background: active ? 'rgba(16,185,129,0.06)' : 'rgba(0,0,0,0.04)', border: `1px solid ${active ? 'rgba(16,185,129,0.3)' : 'rgba(0,0,0,0.07)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontFamily: F, fontSize: 13, fontWeight: 600, color: active ? '#10b981' : 'rgba(0,0,0,0.55)', cursor: 'pointer', transition: 'all .15s' });
-const pill = (style?: React.CSSProperties): React.CSSProperties => ({ display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', cursor: 'pointer', fontFamily: F, ...style });
+const sheet = (active?: boolean): React.CSSProperties => ({
+  flex: 1, padding: '12px 0', borderRadius: 12,
+  background: active ? 'rgba(16,185,129,0.06)' : 'rgba(0,0,0,0.04)',
+  border: `1px solid ${active ? 'rgba(16,185,129,0.3)' : 'rgba(0,0,0,0.07)'}`,
+  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+  fontFamily: F, fontSize: 13, fontWeight: 600,
+  color: active ? '#10b981' : 'rgba(0,0,0,0.55)',
+  cursor: 'pointer', transition: 'all .15s',
+});
+const pill = (style?: React.CSSProperties): React.CSSProperties => ({
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  border: 'none', cursor: 'pointer', fontFamily: F, ...style,
+});
 
-// ── Bottom Sheet wrapper ─────────────────────────────────────────
+// ── Bottom Sheet ─────────────────────────────────────────────────
 const BottomSheet = ({ isOpen, onClose, children }: { isOpen: boolean; onClose: () => void; children: React.ReactNode }) => {
   if (!isOpen) return null;
   return createPortal(
@@ -70,7 +135,10 @@ const CopyLinkModal = ({ isOpen, onClose, link }: { isOpen: boolean; onClose: ()
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     try { await navigator.clipboard.writeText(link); }
-    catch { const ta = Object.assign(document.createElement('textarea'), { value: link, style: 'position:fixed;opacity:0' }); document.body.appendChild(ta); ta.focus(); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); }
+    catch {
+      const ta = Object.assign(document.createElement('textarea'), { value: link, style: 'position:fixed;opacity:0' });
+      document.body.appendChild(ta); ta.focus(); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+    }
     setCopied(true);
     setTimeout(() => { setCopied(false); setTimeout(onClose, 400); }, 1500);
   };
@@ -110,14 +178,18 @@ const ReportModal = ({ isOpen, onClose, wallpaperId, userId }: { isOpen: boolean
     <BottomSheet isOpen={isOpen} onClose={onClose}>
       {submitted ? (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, padding: '12px 0' }}>
-          <div style={{ width: 48, height: 48, borderRadius: '50%', background: 'rgba(16,185,129,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Check size={22} color="#10b981" /></div>
+          <div style={{ width: 48, height: 48, borderRadius: '50%', background: 'rgba(16,185,129,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Check size={22} color="#10b981" />
+          </div>
           <p style={{ fontFamily: F, fontSize: 16, fontWeight: 700, color: '#0a0a0a', margin: 0 }}>Report submitted</p>
           <p style={{ fontFamily: F, fontSize: 13, color: 'rgba(0,0,0,0.4)', margin: 0, textAlign: 'center' }}>Thanks for helping keep the community safe.</p>
         </div>
       ) : (
         <>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(239,68,68,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><AlertTriangle size={17} color="#ef4444" /></div>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(239,68,68,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <AlertTriangle size={17} color="#ef4444" />
+            </div>
             <div>
               <p style={{ fontFamily: F, fontSize: 16, fontWeight: 700, color: '#0a0a0a', margin: 0 }}>Report Wallpaper</p>
               <p style={{ fontFamily: F, fontSize: 12, color: 'rgba(0,0,0,0.4)', margin: 0 }}>Select a reason below</p>
@@ -141,10 +213,16 @@ const ReportModal = ({ isOpen, onClose, wallpaperId, userId }: { isOpen: boolean
 // ── Floating Hearts ──────────────────────────────────────────────
 const FloatingHearts = ({ hearts }: { hearts: Array<{ id: number; x: number; y: number; angle: number; distance: number }> }) => {
   if (typeof window === 'undefined' || !hearts.length) return null;
-  return createPortal(<>
-    <style>{`@keyframes floatHeart{0%{transform:translate(0,0) scale(0);opacity:0}10%{opacity:1;transform:scale(1) rotate(var(--rotate))}50%{transform:translate(var(--tx),var(--ty)) scale(1.3) rotate(var(--rotate));opacity:.95}100%{transform:translate(calc(var(--tx)*1.5),calc(var(--ty)*1.8)) scale(.2) rotate(var(--rotate));opacity:0}}.heart-float{animation:floatHeart 1.2s cubic-bezier(.25,.46,.45,.94) forwards;pointer-events:none;position:fixed;z-index:9999;filter:drop-shadow(0 4px 12px rgba(244,63,94,.5))}`}</style>
-    {hearts.map((h, i) => { const rad = (h.angle * Math.PI) / 180; return <Heart key={h.id} className="heart-float" style={{ left: `${h.x}px`, top: `${h.y}px`, width: 28, height: 28, color: '#f43f5e', fill: '#f43f5e', '--tx': `${Math.cos(rad) * h.distance}px`, '--ty': `${Math.sin(rad) * h.distance - 50}px`, '--rotate': `${(Math.random() - .5) * 45}deg`, animationDelay: `${i * .08}s` } as React.CSSProperties} />; })}
-  </>, document.body);
+  return createPortal(
+    <>
+      <style>{`@keyframes floatHeart{0%{transform:translate(0,0) scale(0);opacity:0}10%{opacity:1;transform:scale(1) rotate(var(--rotate))}50%{transform:translate(var(--tx),var(--ty)) scale(1.3) rotate(var(--rotate));opacity:.95}100%{transform:translate(calc(var(--tx)*1.5),calc(var(--ty)*1.8)) scale(.2) rotate(var(--rotate));opacity:0}}.heart-float{animation:floatHeart 1.2s cubic-bezier(.25,.46,.45,.94) forwards;pointer-events:none;position:fixed;z-index:9999;filter:drop-shadow(0 4px 12px rgba(244,63,94,.5))}`}</style>
+      {hearts.map((h, i) => {
+        const rad = (h.angle * Math.PI) / 180;
+        return <Heart key={h.id} className="heart-float" style={{ left: `${h.x}px`, top: `${h.y}px`, width: 28, height: 28, color: '#f43f5e', fill: '#f43f5e', '--tx': `${Math.cos(rad) * h.distance}px`, '--ty': `${Math.sin(rad) * h.distance - 50}px`, '--rotate': `${(Math.random() - .5) * 45}deg`, animationDelay: `${i * .08}s` } as React.CSSProperties} />;
+      })}
+    </>,
+    document.body,
+  );
 };
 
 // ── Banner Ad ────────────────────────────────────────────────────
@@ -153,7 +231,9 @@ const BannerAdCard = ({ ad }: { ad: Ad }) => {
   const [imgError, setImgError] = useState(false);
   const bg = ad.backgroundColor ?? '#0f0f1a', accent = ad.accentColor ?? '#6366f1', hasImg = !!ad.imageUrl && !imgError;
   return (
-    <a href={ad.ctaUrl} target="_blank" rel="noopener noreferrer sponsored" onClick={() => fetch('/api/ads/click', { method: 'POST', body: JSON.stringify({ adId: ad.id }), headers: { 'Content-Type': 'application/json' } }).catch(() => {})} style={{ display: 'block', textDecoration: 'none', marginBottom: 14 }}>
+    <a href={ad.ctaUrl} target="_blank" rel="noopener noreferrer sponsored"
+      onClick={() => fetch('/api/ads/click', { method: 'POST', body: JSON.stringify({ adId: ad.id }), headers: { 'Content-Type': 'application/json' } }).catch(() => {})}
+      style={{ display: 'block', textDecoration: 'none', marginBottom: 14 }}>
       <div style={{ position: 'relative', borderRadius: 20, overflow: 'hidden', minHeight: 86, background: bg, boxShadow: '0 2px 20px rgba(0,0,0,.14),0 0 0 1px rgba(255,255,255,.04) inset' }}>
         {ad.imageUrl && <img src={ad.imageUrl} alt="" aria-hidden draggable={false} onLoad={() => setImgLoaded(true)} onError={() => setImgError(true)} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: imgLoaded ? 1 : 0, transition: 'opacity .5s ease', pointerEvents: 'none', zIndex: 0 }} />}
         <div style={{ position: 'absolute', inset: 0, zIndex: 1, background: hasImg ? 'linear-gradient(90deg,rgba(0,0,0,.78) 0%,rgba(0,0,0,.48) 55%,rgba(0,0,0,.2) 100%)' : `linear-gradient(135deg,${bg} 0%,${bg}dd 100%)` }} />
@@ -190,7 +270,11 @@ export default function WallpaperDetail({ initialWallpaper: wp, ad }: { initialW
   const likeRef = useRef<HTMLButtonElement>(null);
   const set = useCallback((p: Partial<typeof st>) => setSt(s => ({ ...s, ...p })), []);
 
-  useEffect(() => { if (!wp.createdAt) return; const t = setInterval(() => setTimeAgo(timeAgoStr(wp.createdAt!)), 60_000); return () => clearInterval(t); }, [wp.createdAt]);
+  useEffect(() => {
+    if (!wp.createdAt) return;
+    const t = setInterval(() => setTimeAgo(timeAgoStr(wp.createdAt!)), 60_000);
+    return () => clearInterval(t);
+  }, [wp.createdAt]);
 
   useEffect(() => {
     const key = `viewed_${wp.id}`;
@@ -202,7 +286,10 @@ export default function WallpaperDetail({ initialWallpaper: wp, ad }: { initialW
   useEffect(() => {
     if (!session) { set({ dataLoading: false }); return; }
     const uid = session.user.id, key = `${wp.id}-${uid}`, cached = cache.get(key);
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL) { set({ liked: cached.liked, following: cached.following, dataLoading: false }); setLikes(cached.likeCount); return; }
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+      set({ liked: cached.liked, following: cached.following, dataLoading: false });
+      setLikes(cached.likeCount); return;
+    }
     (async () => {
       const [likeR, followR, countR] = await Promise.all([
         supabase.from('likes').select('id').eq('user_id', uid).eq('wallpaper_id', wp.id).maybeSingle(),
@@ -210,15 +297,17 @@ export default function WallpaperDetail({ initialWallpaper: wp, ad }: { initialW
         supabase.from('likes').select('id', { count: 'exact' }).eq('wallpaper_id', wp.id),
       ]);
       const next = { liked: !!likeR.data, following: !!followR.data, likeCount: countR.count ?? 0, timestamp: Date.now() };
-      set({ liked: next.liked, following: next.following, dataLoading: false }); setLikes(next.likeCount); cache.set(key, next);
+      set({ liked: next.liked, following: next.following, dataLoading: false });
+      setLikes(next.likeCount); cache.set(key, next);
     })();
   }, [wp.id, session?.user?.id]);
 
   useEffect(() => {
-    const ch = supabase.channel(`wp-likes-${wp.id}`).on('postgres_changes', { event: '*', schema: 'public', table: 'likes', filter: `wallpaper_id=eq.${wp.id}` }, async () => {
-      const { count } = await supabase.from('likes').select('id', { count: 'exact' }).eq('wallpaper_id', wp.id);
-      setLikes(count ?? 0);
-    }).subscribe();
+    const ch = supabase.channel(`wp-likes-${wp.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'likes', filter: `wallpaper_id=eq.${wp.id}` }, async () => {
+        const { count } = await supabase.from('likes').select('id', { count: 'exact' }).eq('wallpaper_id', wp.id);
+        setLikes(count ?? 0);
+      }).subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [wp.id]);
 
@@ -234,7 +323,9 @@ export default function WallpaperDetail({ initialWallpaper: wp, ad }: { initialW
       setHearts(Array.from({ length: 8 }, (_, i) => ({ id: Date.now() + i, x: r.left + r.width / 2 - 14, y: r.top + r.height / 2 - 14, angle: -90 + (i * 270 / 7) + (Math.random() - .5) * 20, distance: 80 + Math.random() * 60 })));
       setTimeout(() => setHearts([]), 1400);
     }
-    v ? await supabase.from('likes').insert({ user_id: session!.user.id, wallpaper_id: wp.id }) : await supabase.from('likes').delete().eq('user_id', session!.user.id).eq('wallpaper_id', wp.id);
+    v
+      ? await supabase.from('likes').insert({ user_id: session!.user.id, wallpaper_id: wp.id })
+      : await supabase.from('likes').delete().eq('user_id', session!.user.id).eq('wallpaper_id', wp.id);
   });
 
   const handleFollow = () => auth('follow users', async () => {
@@ -242,7 +333,9 @@ export default function WallpaperDetail({ initialWallpaper: wp, ad }: { initialW
     const v = !st.following; set({ following: v }); navigator.vibrate?.(50);
     const key = `${wp.id}-${session!.user.id}`, cached = cache.get(key);
     if (cached) cache.set(key, { ...cached, following: v, timestamp: Date.now() });
-    v ? await supabase.from('follows').insert({ follower_id: session!.user.id, following_id: wp.userId }) : await supabase.from('follows').delete().eq('follower_id', session!.user.id).eq('following_id', wp.userId);
+    v
+      ? await supabase.from('follows').insert({ follower_id: session!.user.id, following_id: wp.userId })
+      : await supabase.from('follows').delete().eq('follower_id', session!.user.id).eq('following_id', wp.userId);
   });
 
   const handleDownload = async () => {
@@ -250,33 +343,11 @@ export default function WallpaperDetail({ initialWallpaper: wp, ad }: { initialW
     set({ downloading: true }); navigator.vibrate?.(50);
     try {
       await incrementDownloads(wp.id);
-
-      if (isAndroidWebView()) {
-        // Android WebView: pass direct HTTPS URL so DownloadManager can handle it
-        // Do NOT use blob URLs — DownloadManager cannot handle blob: scheme
-        const filename = `${wp.title || 'wallpaper'}.jpg`;
-        const a = Object.assign(document.createElement('a'), {
-          href: wp.url,           // direct CDN/Supabase HTTPS URL
-          download: filename,
-          style: 'display:none',
-        });
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-      } else {
-        // Regular browser: use blob approach for forced download
-        const res = await fetch(`/api/download?url=${encodeURIComponent(wp.url)}&name=${encodeURIComponent(wp.title || 'wallpaper')}`);
-        if (!res.ok) throw new Error('Download failed');
-        const objectUrl = URL.createObjectURL(await res.blob());
-        const a = Object.assign(document.createElement('a'), {
-          href: objectUrl,
-          download: `${wp.title || 'wallpaper'}.jpg`,
-          style: 'display:none',
-        });
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
-        setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-      }
-
+      // triggerDownload always uses the API route which returns
+      // Content-Disposition: attachment — this is what tells Android
+      // WebView's DownloadManager to save the file instead of
+      // opening the system browser. Works on regular browsers too.
+      triggerDownload(wp.url, wp.title);
       set({ downloading: false, downloaded: true }); navigator.vibrate?.(100);
     } catch (e) {
       console.error('Download error:', e);
@@ -352,8 +423,14 @@ export default function WallpaperDetail({ initialWallpaper: wp, ad }: { initialW
 
         {/* Stats */}
         <div style={{ display: 'flex', gap: 14, marginBottom: 14 }}>
-          {[{ icon: <Eye size={12} />, label: `${fmt(views)} views` }, { icon: <Download size={12} />, label: `${fmt(wp.downloads)} downloads` }, { icon: <Heart size={12} />, label: `${fmt(likes)} likes` }].map(({ icon, label }) => (
-            <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'rgba(0,0,0,0.4)', fontWeight: 500 }}><span style={{ opacity: 0.55 }}>{icon}</span>{label}</div>
+          {[
+            { icon: <Eye size={12} />, label: `${fmt(views)} views` },
+            { icon: <Download size={12} />, label: `${fmt(wp.downloads)} downloads` },
+            { icon: <Heart size={12} />, label: `${fmt(likes)} likes` },
+          ].map(({ icon, label }) => (
+            <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'rgba(0,0,0,0.4)', fontWeight: 500 }}>
+              <span style={{ opacity: 0.55 }}>{icon}</span>{label}
+            </div>
           ))}
         </div>
 
@@ -420,7 +497,9 @@ export default function WallpaperDetail({ initialWallpaper: wp, ad }: { initialW
         {/* Tags */}
         {wp.tags?.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginTop: 6, marginBottom: 14 }}>
-            {wp.tags.map(tag => <span key={tag} style={{ padding: '5px 12px', borderRadius: 100, border: '1px solid rgba(0,0,0,0.1)', fontSize: 12, fontWeight: 500, color: 'rgba(0,0,0,0.45)' }}>{tag}</span>)}
+            {wp.tags.map(tag => (
+              <span key={tag} style={{ padding: '5px 12px', borderRadius: 100, border: '1px solid rgba(0,0,0,0.1)', fontSize: 12, fontWeight: 500, color: 'rgba(0,0,0,0.45)' }}>{tag}</span>
+            ))}
           </div>
         )}
 
