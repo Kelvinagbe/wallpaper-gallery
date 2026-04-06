@@ -1,6 +1,4 @@
-Here's the full rewrite with the fixed `handleDownload`:
 
-```tsx
 'use client';
 
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
