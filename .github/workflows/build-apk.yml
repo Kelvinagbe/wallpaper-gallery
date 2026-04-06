@@ -323,7 +323,6 @@ jobs:
                                       cv.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
                                       cv.put(MediaStore.Images.Media.RELATIVE_PATH,
                                           Environment.DIRECTORY_PICTURES + "/" + WALLS_FOLDER);
-                                      cv.put(MediaStore.Images.Media.DATA, file.getAbsolutePath());
                                       getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, cv);
 
                                       Uri safeUri = FileProvider.getUriForFile(ctx, AUTHORITY, file);
@@ -364,7 +363,7 @@ jobs:
                   else registerReceiver(dlReceiver, f);
               }
 
-              private void scheduleReminder() {
+             private void scheduleReminder() {
                   AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
                   PendingIntent pi = PendingIntent.getBroadcast(this, 0,
                       new Intent(this, WallpaperReminderReceiver.class),
@@ -550,4 +549,3 @@ jobs:
           name: walls-release
           path: ${{ github.workspace }}/release/walls-release.zip
           retention-days: 30
-              
