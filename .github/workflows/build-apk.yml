@@ -64,12 +64,10 @@ jobs:
           LOGO="public/icons/icon-512x512.png"
           RES="android/app/src/main/res"
 
-          # Verify icon exists
           if [ ! -f "$LOGO" ]; then
             echo "ERROR: Icon not found at $LOGO"; find public -name "*.png" | head -10; exit 1
           fi
 
-          # Launcher icons from your actual icon file
           for cfg in "mipmap-mdpi:48" "mipmap-hdpi:72" "mipmap-xhdpi:96" "mipmap-xxhdpi:144" "mipmap-xxxhdpi:192"; do
             folder="${cfg%%:*}"; size="${cfg##*:}"
             mkdir -p "$RES/$folder"
@@ -77,7 +75,6 @@ jobs:
             cp "$RES/$folder/ic_launcher.png" "$RES/$folder/ic_launcher_round.png"
           done
 
-          # Notification icon: white monochrome (Android requirement)
           for cfg in "drawable-mdpi:24" "drawable-hdpi:36" "drawable-xhdpi:48" "drawable-xxhdpi:72" "drawable-xxxhdpi:96"; do
             folder="${cfg%%:*}"; size="${cfg##*:}"
             mkdir -p "$RES/$folder"
@@ -87,7 +84,6 @@ jobs:
               convert "$LOGO" -resize "${size}x${size}" "$RES/$folder/ic_notification.png"
           done
 
-          # Splash screen (dark background, centered logo)
           mkdir -p "$RES/drawable" "$RES/drawable-land"
           convert -size 1080x1920 xc:"#0a0a0a" \( "$LOGO" -resize 256x256 \) -gravity center -composite "$RES/drawable/splash.png"
           convert -size 1920x1080 xc:"#0a0a0a" \( "$LOGO" -resize 256x256 \) -gravity center -composite "$RES/drawable-land/splash.png"
@@ -143,15 +139,15 @@ jobs:
               private DownloadManager dm;
               private NotificationManager nm;
               private BroadcastReceiver dlReceiver;
-              private Handler progressHandler = new Handler(Looper.getMainLooper());
+              private final Handler progressHandler = new Handler(Looper.getMainLooper());
               private Runnable progressRunnable;
               private long lastId = -1, downloadStartTime = 0;
               private boolean isImage, webViewLoaded = false;
               private String lastFile = "", lastLocalPath = "";
 
               // UI
-              private FrameLayout rootFrame;
-              private View loadingOverlay, noNetworkView, downloadBar, navBar;
+              private FrameLayout rootFrame, loadingOverlay;  // FIX: loadingOverlay must be FrameLayout
+              private View noNetworkView, downloadBar, navBar;
               private TextView dlFileName, dlPercent;
               private ProgressBar dlProgressBar;
 
@@ -182,8 +178,7 @@ jobs:
                   checkForUpdate();
               }
 
-              @Override
-              public void onNewIntent(Intent i) { super.onNewIntent(i); handleDeepLink(i); }
+              @Override public void onNewIntent(Intent i) { super.onNewIntent(i); handleDeepLink(i); }
 
               @Override
               public void onDestroy() {
@@ -197,7 +192,6 @@ jobs:
               private void setupOverlays() {
                   rootFrame = (FrameLayout) getWindow().getDecorView().getRootView();
 
-                  // Dark loading overlay shown while WebView first loads
                   loadingOverlay = new FrameLayout(this);
                   loadingOverlay.setBackgroundColor(0xFF0a0a0a);
                   loadingOverlay.setLayoutParams(new FrameLayout.LayoutParams(
@@ -208,12 +202,10 @@ jobs:
                   loadingOverlay.addView(spinner, new FrameLayout.LayoutParams(120, 120, Gravity.CENTER));
                   rootFrame.addView(loadingOverlay);
 
-                  // No network screen
                   noNetworkView = makeNoNetworkView();
                   noNetworkView.setVisibility(View.GONE);
                   rootFrame.addView(noNetworkView);
 
-                  // In-app download progress bar
                   downloadBar = makeDownloadBar();
                   downloadBar.setVisibility(View.GONE);
                   rootFrame.addView(downloadBar);
@@ -224,23 +216,33 @@ jobs:
                   container.setBackgroundColor(0xFF0a0a0a);
                   container.setLayoutParams(new FrameLayout.LayoutParams(
                       FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
                   LinearLayout inner = new LinearLayout(this);
                   inner.setOrientation(LinearLayout.VERTICAL);
                   inner.setGravity(Gravity.CENTER);
                   inner.setLayoutParams(new FrameLayout.LayoutParams(
                       FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER));
-                  TextView ico = new TextView(this); ico.setText("\uD83D\uDEF8"); ico.setTextSize(56); ico.setGravity(Gravity.CENTER);
-                  TextView t1 = new TextView(this); t1.setText("No Internet Connection");
-                  t1.setTextColor(0xFFFFFFFF); t1.setTextSize(20); t1.setTypeface(Typeface.DEFAULT_BOLD);
+
+                  TextView ico = new TextView(this);
+                  ico.setText("\uD83D\uDEF8"); ico.setTextSize(56); ico.setGravity(Gravity.CENTER);
+
+                  TextView t1 = new TextView(this);
+                  t1.setText("No Internet Connection"); t1.setTextColor(0xFFFFFFFF);
+                  t1.setTextSize(20); t1.setTypeface(Typeface.DEFAULT_BOLD);
                   t1.setGravity(Gravity.CENTER); t1.setPadding(0, 24, 0, 12);
-                  TextView t2 = new TextView(this); t2.setText("Check your connection and try again.");
+
+                  TextView t2 = new TextView(this);
+                  t2.setText("Check your connection and try again.");
                   t2.setTextColor(0xFF9ca3af); t2.setTextSize(14); t2.setGravity(Gravity.CENTER);
-                  Button retry = new Button(this); retry.setText("Retry");
+
+                  Button retry = new Button(this);
+                  retry.setText("Retry");
                   retry.setBackground(makeRoundedBg(0xFF22c55e, 48));
                   retry.setTextColor(0xFFFFFFFF); retry.setTextSize(15); retry.setPadding(80, 0, 80, 0);
                   LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(
                       LinearLayout.LayoutParams.WRAP_CONTENT, 120);
-                  bp.setMargins(0, 40, 0, 0); bp.gravity = Gravity.CENTER; retry.setLayoutParams(bp);
+                  bp.setMargins(0, 40, 0, 0); bp.gravity = Gravity.CENTER;
+                  retry.setLayoutParams(bp);
                   retry.setOnClickListener(v -> {
                       if (isNetworkAvailable()) {
                           noNetworkView.setVisibility(View.GONE);
@@ -248,6 +250,7 @@ jobs:
                           getBridge().getWebView().reload();
                       } else Toast.makeText(this, "Still no connection...", Toast.LENGTH_SHORT).show();
                   });
+
                   inner.addView(ico); inner.addView(t1); inner.addView(t2); inner.addView(retry);
                   container.addView(inner);
                   return container;
@@ -260,21 +263,31 @@ jobs:
                   bar.setPadding(48, 32, 48, 32);
                   FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
                       FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM);
-                  lp.setMargins(32, 0, 32, 80); bar.setLayoutParams(lp);
+                  lp.setMargins(32, 0, 32, 80);
+                  bar.setLayoutParams(lp);
+
                   LinearLayout row = new LinearLayout(this);
                   row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.CENTER_VERTICAL);
-                  dlFileName = new TextView(this); dlFileName.setTextColor(0xFFFFFFFF); dlFileName.setTextSize(13);
+
+                  dlFileName = new TextView(this);
+                  dlFileName.setTextColor(0xFFFFFFFF); dlFileName.setTextSize(13);
                   dlFileName.setMaxLines(1); dlFileName.setEllipsize(android.text.TextUtils.TruncateAt.END);
                   dlFileName.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-                  dlPercent = new TextView(this); dlPercent.setTextColor(0xFF22c55e); dlPercent.setTextSize(13);
+
+                  dlPercent = new TextView(this);
+                  dlPercent.setTextColor(0xFF22c55e); dlPercent.setTextSize(13);
                   dlPercent.setTypeface(Typeface.DEFAULT_BOLD); dlPercent.setPadding(16, 0, 0, 0);
+
                   row.addView(dlFileName); row.addView(dlPercent);
+
                   dlProgressBar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
                   dlProgressBar.setMax(100);
                   dlProgressBar.getProgressDrawable().setColorFilter(0xFF22c55e, PorterDuff.Mode.SRC_IN);
                   LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(
                       LinearLayout.LayoutParams.MATCH_PARENT, 16);
-                  pp.setMargins(0, 16, 0, 0); dlProgressBar.setLayoutParams(pp);
+                  pp.setMargins(0, 16, 0, 0);
+                  dlProgressBar.setLayoutParams(pp);
+
                   bar.addView(row); bar.addView(dlProgressBar);
                   return bar;
               }
@@ -307,17 +320,10 @@ jobs:
                           handlePageUrl(url);
                       }
                       @Override public void onReceivedError(WebView v, WebResourceRequest req, WebResourceError err) {
-                          if (req.isForMainFrame()) {
-                              hideLoadingOverlay(); hideNavBar();
-                              noNetworkView.setVisibility(View.VISIBLE);
-                          }
+                          if (req.isForMainFrame()) { hideLoadingOverlay(); hideNavBar(); noNetworkView.setVisibility(View.VISIBLE); }
                       }
-                      @Override public void onReceivedHttpError(WebView v, WebResourceRequest req,
-                              android.webkit.WebResourceResponse res) {
-                          if (req.isForMainFrame() && res.getStatusCode() >= 500) {
-                              hideLoadingOverlay();
-                              noNetworkView.setVisibility(View.VISIBLE);
-                          }
+                      @Override public void onReceivedHttpError(WebView v, WebResourceRequest req, android.webkit.WebResourceResponse res) {
+                          if (req.isForMainFrame() && res.getStatusCode() >= 500) { hideLoadingOverlay(); noNetworkView.setVisibility(View.VISIBLE); }
                       }
                   });
               }
@@ -359,12 +365,12 @@ jobs:
 
               private void openInAppPage(String targetUrl) {
                   runOnUiThread(() -> {
+                      int sbh = getStatusBarHeight();
                       FrameLayout overlay = new FrameLayout(this);
                       overlay.setBackgroundColor(0xFF0a0a0a);
                       overlay.setLayoutParams(new FrameLayout.LayoutParams(
                           FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-                      int sbh = getStatusBarHeight();
                       LinearLayout header = new LinearLayout(this);
                       header.setOrientation(LinearLayout.HORIZONTAL);
                       header.setBackgroundColor(0xFF111827);
@@ -373,16 +379,16 @@ jobs:
                       header.setLayoutParams(new FrameLayout.LayoutParams(
                           FrameLayout.LayoutParams.MATCH_PARENT, 160 + sbh, Gravity.TOP));
 
-                      Button back = new Button(this); back.setText("← Back");
+                      Button back = new Button(this);
+                      back.setText("← Back");
                       back.setBackgroundColor(android.graphics.Color.TRANSPARENT);
                       back.setTextColor(0xFF22c55e); back.setTextSize(14);
                       back.setTypeface(Typeface.DEFAULT_BOLD);
 
-                      TextView title = new TextView(this); title.setText("Walls");
-                      title.setTextColor(0xFFFFFFFF); title.setTextSize(16);
+                      TextView title = new TextView(this);
+                      title.setText("Walls"); title.setTextColor(0xFFFFFFFF); title.setTextSize(16);
                       title.setTypeface(Typeface.DEFAULT_BOLD); title.setGravity(Gravity.CENTER);
-                      title.setLayoutParams(new LinearLayout.LayoutParams(0,
-                          LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+                      title.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
                       View spacer = new View(this); spacer.setLayoutParams(back.getLayoutParams());
                       header.addView(back); header.addView(title); header.addView(spacer);
@@ -392,12 +398,15 @@ jobs:
                       inner.getSettings().setDomStorageEnabled(true);
                       FrameLayout.LayoutParams wlp = new FrameLayout.LayoutParams(
                           FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT);
-                      wlp.topMargin = 160 + sbh; inner.setLayoutParams(wlp);
+                      wlp.topMargin = 160 + sbh;
+                      inner.setLayoutParams(wlp);
 
-                      ProgressBar pb = new ProgressBar(this); pb.setIndeterminate(true);
+                      ProgressBar pb = new ProgressBar(this);
+                      pb.setIndeterminate(true);
                       pb.getIndeterminateDrawable().setColorFilter(0xFF22c55e, PorterDuff.Mode.SRC_IN);
                       FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams(120, 120, Gravity.CENTER);
                       plp.topMargin = 160 + sbh;
+                      pb.setLayoutParams(plp);
 
                       inner.setWebViewClient(new WebViewClient() {
                           @Override public void onPageStarted(WebView v, String u, Bitmap f) { pb.setVisibility(View.VISIBLE); }
@@ -467,8 +476,7 @@ jobs:
               // ─── Download ─────────────────────────────────────────────────────────────
 
               private String fmtBytes(long b) {
-                  return b < 1048576 ? String.format("%.1f KB", b / 1024f)
-                                     : String.format("%.1f MB", b / 1048576f);
+                  return b < 1048576 ? String.format("%.1f KB", b / 1024f) : String.format("%.1f MB", b / 1048576f);
               }
 
               private void setupDownload() {
@@ -479,11 +487,9 @@ jobs:
                       downloadStartTime = System.currentTimeMillis(); lastLocalPath = "";
 
                       if (!isNetworkAvailable()) {
-                          runOnUiThread(() -> Toast.makeText(this,
-                              "No internet connection. Cannot download.", Toast.LENGTH_LONG).show());
+                          runOnUiThread(() -> Toast.makeText(this, "No internet connection. Cannot download.", Toast.LENGTH_LONG).show());
                           return;
                       }
-
                       runOnUiThread(() -> {
                           dlFileName.setText("Downloading: " + lastFile);
                           dlPercent.setText("0%"); dlProgressBar.setProgress(0);
@@ -492,7 +498,6 @@ jobs:
                       });
                       nm.notify(NOTIF_ING, notif(DL_CH, "Downloading Wallpaper", lastFile)
                           .setProgress(0, 0, true).setOngoing(true).build());
-
                       try {
                           new File(android.os.Environment.getExternalStoragePublicDirectory(
                               android.os.Environment.DIRECTORY_PICTURES), WALLS_FOLDER).mkdirs();
@@ -571,8 +576,7 @@ jobs:
               }
 
               private void stopProgressPolling() {
-                  if (progressRunnable != null) {
-                      progressHandler.removeCallbacks(progressRunnable); progressRunnable = null; }
+                  if (progressRunnable != null) { progressHandler.removeCallbacks(progressRunnable); progressRunnable = null; }
               }
 
               private void registerDlReceiver() {
@@ -625,7 +629,6 @@ jobs:
                           .setContentIntent(PendingIntent.getActivity(this, 0, chooser,
                               PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE))
                           .setAutoCancel(true);
-                      // Thumbnail preview in notification
                       try {
                           BitmapFactory.Options opts = new BitmapFactory.Options(); opts.inSampleSize = 4;
                           Bitmap thumb = BitmapFactory.decodeFile(file.getAbsolutePath(), opts);
@@ -665,8 +668,7 @@ jobs:
                           String json = sb.toString();
                           String latest = json.replaceAll(".*\"latest\"\\s*:\\s*\"([^\"]+)\".*", "$1");
                           String minVer = json.replaceAll(".*\"minVersion\"\\s*:\\s*\"([^\"]+)\".*", "$1");
-                          if (isNewer(latest, current))
-                              runOnUiThread(() -> showUpdateDialog(current, latest, minVer));
+                          if (isNewer(latest, current)) runOnUiThread(() -> showUpdateDialog(current, latest, minVer));
                       } catch (Exception ignored) {}
                   }).start();
               }
