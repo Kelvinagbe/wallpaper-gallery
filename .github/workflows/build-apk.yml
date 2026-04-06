@@ -80,6 +80,7 @@ jobs:
           import android.content.*;
           import android.content.pm.PackageManager;
           import android.database.Cursor;
+          import android.graphics.*;
           import android.Manifest;
           import android.net.Uri;
           import android.os.*;
@@ -91,14 +92,22 @@ jobs:
           import androidx.core.content.FileProvider;
           import com.getcapacitor.BridgeActivity;
           import java.io.*;
+          import java.net.*;
+          import java.util.*;
           import java.util.concurrent.TimeUnit;
 
           public class MainActivity extends BridgeActivity {
-              private static final String DL_CH = "walls_downloads", PROMO_CH = "walls_promo";
-              private static final int NOTIF_ING = 2001, NOTIF_DONE = 2002, NOTIF_WELCOME = 4001;
-              private static final long TIMEOUT_MS = 60_000;
+              private static final String DL_CH    = "walls_downloads";
+              private static final String PROMO_CH = "walls_promo";
+              private static final String TREND_CH = "walls_trending";
+              private static final int NOTIF_ING     = 2001;
+              private static final int NOTIF_DONE    = 2002;
+              private static final int NOTIF_WELCOME = 4001;
+              private static final int NOTIF_TREND   = 5001;
+              private static final long TIMEOUT_MS   = 60_000;
               private static final String WALLS_FOLDER = "Walls";
-              private static final String AUTHORITY = "ng.name.ovrica.walls.fileprovider";
+              private static final String AUTHORITY    = "ng.name.ovrica.walls.fileprovider";
+              private static final String BASE_URL     = "https://walls.ovrica.name.ng";
 
               private DownloadManager dm;
               private NotificationManager nm;
@@ -107,30 +116,38 @@ jobs:
               private Runnable progressRunnable;
               private long lastId = -1, downloadStartTime = 0;
               private boolean isImage;
-              private String lastFile = "";
-              private String lastLocalPath = "";
+              private String lastFile = "", lastLocalPath = "";
+
+              // ── Loader state ──────────────────────────────────────────────────────────
+              // We use the WebView's own visibility — no extra views added to Capacitor's
+              // hierarchy, so nothing can crash.
+              private boolean loaderShown = false;
 
               @Override
               public void onStart() {
                   super.onStart();
                   dm = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
                   nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-                  getBridge().getWebView().getSettings().setTextZoom(100);
-                  mkChannel(DL_CH, "Walls Downloads", "Download notifications");
-                  mkChannel(PROMO_CH, "Wallpaper Reminders", "Periodic reminders");
+                  if (getBridge() != null && getBridge().getWebView() != null) {
+                      getBridge().getWebView().getSettings().setTextZoom(100);
+                      setupWebViewLoader();
+                      setupDownload();
+                  }
+                  mkChannel(DL_CH,    "Walls Downloads",    "Wallpaper download notifications");
+                  mkChannel(PROMO_CH, "Wallpaper Reminders","Periodic reminders");
+                  mkChannel(TREND_CH, "Trending Wallpapers","Hot & trending wallpaper picks");
                   if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this,
                       Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
                       ActivityCompat.requestPermissions(this,
                           new String[]{Manifest.permission.POST_NOTIFICATIONS}, 1001);
-                  setupDownload();
                   registerDlReceiver();
                   scheduleReminder();
                   handleDeepLink(getIntent());
                   showWelcome();
+                  checkForUpdate();
               }
 
-              @Override
-              public void onNewIntent(Intent i) { super.onNewIntent(i); handleDeepLink(i); }
+              @Override public void onNewIntent(Intent i) { super.onNewIntent(i); handleDeepLink(i); }
 
               @Override
               public void onDestroy() {
@@ -139,40 +156,68 @@ jobs:
                   if (dlReceiver != null) try { unregisterReceiver(dlReceiver); } catch (Exception ignored) {}
               }
 
+              // ── Safe loader ───────────────────────────────────────────────────────────
+              // Sets a dark background on the WebView itself while it loads.
+              // No extra views, no FrameLayout manipulation — crash-proof.
+              private void setupWebViewLoader() {
+                  WebView wv = getBridge().getWebView();
+                  wv.setBackgroundColor(Color.parseColor("#0a0a0a"));
+                  wv.setAlpha(0f);
+                  loaderShown = true;
+                  wv.setWebViewClient(new WebViewClient() {
+                      @Override public void onPageFinished(WebView view, String url) {
+                          super.onPageFinished(view, url);
+                          if (loaderShown) {
+                              loaderShown = false;
+                              view.animate().alpha(1f).setDuration(400).start();
+                          }
+                      }
+                      @Override public void onReceivedError(WebView view, WebResourceRequest req, WebResourceError err) {
+                          if (req.isForMainFrame()) {
+                              loaderShown = false;
+                              view.animate().alpha(1f).setDuration(200).start();
+                          }
+                      }
+                  });
+              }
+
+              // ── Channels ──────────────────────────────────────────────────────────────
               private void mkChannel(String id, String name, String desc) {
                   if (Build.VERSION.SDK_INT >= 26) {
-                      NotificationChannel ch = new NotificationChannel(id, name, NotificationManager.IMPORTANCE_DEFAULT);
+                      NotificationChannel ch = new NotificationChannel(
+                          id, name, NotificationManager.IMPORTANCE_HIGH);
                       ch.setDescription(desc);
+                      ch.enableVibration(true);
+                      ch.setVibrationPattern(new long[]{0, 250, 100, 250});
+                      ch.setSound(android.provider.Settings.System.DEFAULT_NOTIFICATION_URI,
+                          new android.media.AudioAttributes.Builder()
+                              .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION)
+                              .build());
                       nm.createNotificationChannel(ch);
                   }
               }
 
               private NotificationCompat.Builder notif(String ch, int icon, String title, String text) {
                   return new NotificationCompat.Builder(this, ch)
-                      .setSmallIcon(icon).setContentTitle(title).setContentText(text);
+                      .setSmallIcon(icon).setContentTitle(title).setContentText(text)
+                      .setDefaults(NotificationCompat.DEFAULT_ALL);
               }
 
+              // ── Deep link ─────────────────────────────────────────────────────────────
               private void handleDeepLink(Intent intent) {
                   if (intent == null) return;
                   Uri data = intent.getData();
-                  if (data != null) {
-                      WebView wv = getBridge().getWebView();
-                      if (wv != null) runOnUiThread(() -> wv.loadUrl(data.toString()));
-                  }
+                  if (data != null && getBridge() != null && getBridge().getWebView() != null)
+                      runOnUiThread(() -> getBridge().getWebView().loadUrl(data.toString()));
               }
 
-              private String fmtBytes(long b) {
-                  return b < 1024 * 1024
-                      ? String.format("%.1f KB", b / 1024f)
-                      : String.format("%.1f MB", b / (1024f * 1024f));
-              }
-
+              // ── Welcome notification ──────────────────────────────────────────────────
               private void showWelcome() {
                   SharedPreferences prefs = getSharedPreferences("walls_prefs", MODE_PRIVATE);
                   boolean isFirst = prefs.getBoolean("first_launch", true);
                   String title = isFirst ? "Welcome to Walls \uD83D\uDDBC\uFE0F" : "Welcome back to Walls \u2728";
-                  String text = isFirst
-                      ? "Discover stunning wallpapers curated just for you. Tap any image to preview & download."
+                  String text  = isFirst
+                      ? "Discover stunning wallpapers curated just for you."
                       : "Fresh wallpapers are waiting. Find your next favorite today.";
                   if (isFirst) prefs.edit().putBoolean("first_launch", false).apply();
                   PendingIntent pi = PendingIntent.getActivity(this, 0,
@@ -183,6 +228,147 @@ jobs:
                       .setContentIntent(pi).setAutoCancel(true).build());
               }
 
+              // ── Version check (fixes version.json not working) ────────────────────────
+              // Reads version from the app's own PackageInfo — no hardcoded string needed.
+              private void checkForUpdate() {
+                  String current;
+                  try {
+                      current = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+                  } catch (Exception e) { current = "1.0.0"; }
+                  final String cv = current;
+                  new Thread(() -> {
+                      try {
+                          HttpURLConnection conn = (HttpURLConnection)
+                              new URL(BASE_URL + "/version.json").openConnection();
+                          conn.setConnectTimeout(5000);
+                          conn.setReadTimeout(5000);
+                          conn.setRequestProperty("Cache-Control", "no-cache");
+                          if (conn.getResponseCode() != 200) return;
+                          BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+                          StringBuilder sb = new StringBuilder(); String line;
+                          while ((line = br.readLine()) != null) sb.append(line);
+                          br.close();
+                          String json   = sb.toString();
+                          String latest = json.replaceAll(".*\"latest\"\\s*:\\s*\"([^\"]+)\".*", "$1");
+                          String minVer = json.replaceAll(".*\"minVersion\"\\s*:\\s*\"([^\"]+)\".*", "$1");
+                          if (!latest.equals(json) && isNewer(latest, cv)) {
+                              boolean forced = isNewer(minVer, cv);
+                              runOnUiThread(() -> showUpdateDialog(cv, latest, forced));
+                          }
+                      } catch (Exception ignored) {}
+                  }).start();
+              }
+
+              private boolean isNewer(String a, String b) {
+                  try {
+                      String[] av = a.split("\\."), bv = b.split("\\.");
+                      for (int i = 0; i < Math.max(av.length, bv.length); i++) {
+                          int ai = i < av.length ? Integer.parseInt(av[i].trim()) : 0;
+                          int bi = i < bv.length ? Integer.parseInt(bv[i].trim()) : 0;
+                          if (ai > bi) return true;
+                          if (ai < bi) return false;
+                      }
+                  } catch (Exception ignored) {}
+                  return false;
+              }
+
+              private void showUpdateDialog(String current, String latest, boolean forced) {
+                  AlertDialog.Builder b = new AlertDialog.Builder(this)
+                      .setTitle(forced ? "Update Required" : "Update Available")
+                      .setMessage("A new version of Walls is available.\n\nCurrent: v" + current
+                          + "\nLatest: v" + latest
+                          + (forced ? "\n\nThis update is required to continue." : ""))
+                      .setPositiveButton("Update Now", (d, w) -> {
+                          startActivity(new Intent(Intent.ACTION_VIEW,
+                              Uri.parse(BASE_URL + "/download")));
+                          if (forced) finish();
+                      });
+                  if (!forced) b.setNegativeButton("Later", (d, w) -> d.dismiss());
+                  AlertDialog dlg = b.create();
+                  dlg.setCancelable(!forced);
+                  dlg.show();
+              }
+
+              // ── Trending wallpapers notification ──────────────────────────────────────
+              // Fetches hot.json, downloads up to 5 thumbnails, shows them in a grid
+              // (InboxStyle lines) with sound + vibration. Safe — runs in background thread.
+              public void showTrendingNotification() {
+                  new Thread(() -> {
+                      try {
+                          HttpURLConnection conn = (HttpURLConnection)
+                              new URL(BASE_URL + "/hot.json").openConnection();
+                          conn.setConnectTimeout(6000);
+                          conn.setReadTimeout(6000);
+                          conn.setRequestProperty("Cache-Control", "no-cache");
+                          if (conn.getResponseCode() != 200) return;
+                          BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+                          StringBuilder sb = new StringBuilder(); String line;
+                          while ((line = br.readLine()) != null) sb.append(line);
+                          br.close();
+                          String json = sb.toString();
+
+                          // Parse title fields from JSON array: [{"title":"x","url":"y",...}, ...]
+                          List<String> titles = new ArrayList<>();
+                          List<String> urls   = new ArrayList<>();
+                          java.util.regex.Matcher m = java.util.regex.Pattern
+                              .compile("\"title\"\\s*:\\s*\"([^\"]+)\"")
+                              .matcher(json);
+                          while (m.find() && titles.size() < 5) titles.add(m.group(1));
+
+                          java.util.regex.Matcher mu = java.util.regex.Pattern
+                              .compile("\"(image_url|url|thumbnail)\"\\s*:\\s*\"([^\"]+)\"")
+                              .matcher(json);
+                          while (mu.find() && urls.size() < 5) urls.add(mu.group(2));
+
+                          if (titles.isEmpty()) return;
+
+                          // Download first image as large icon / big picture
+                          Bitmap bigPic = null;
+                          if (!urls.isEmpty()) {
+                              try {
+                                  HttpURLConnection ic = (HttpURLConnection) new URL(urls.get(0)).openConnection();
+                                  ic.setConnectTimeout(5000); ic.setReadTimeout(5000);
+                                  bigPic = BitmapFactory.decodeStream(ic.getInputStream());
+                              } catch (Exception ignored) {}
+                          }
+
+                          // Build InboxStyle with up to 5 wallpaper titles
+                          NotificationCompat.InboxStyle inbox = new NotificationCompat.InboxStyle()
+                              .setBigContentTitle("\uD83D\uDD25 Trending on Walls")
+                              .setSummaryText(titles.size() + " hot wallpapers right now");
+                          for (String t : titles) inbox.addLine("🖼 " + t);
+
+                          PendingIntent pi = PendingIntent.getActivity(this, 0,
+                              getPackageManager().getLaunchIntentForPackage(getPackageName()),
+                              PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+
+                          NotificationCompat.Builder nb = new NotificationCompat.Builder(this, TREND_CH)
+                              .setSmallIcon(android.R.drawable.ic_menu_gallery)
+                              .setContentTitle("\uD83D\uDD25 Trending on Walls")
+                              .setContentText(titles.get(0) + " and " + (titles.size() - 1) + " more")
+                              .setStyle(inbox)
+                              .setPriority(NotificationCompat.PRIORITY_HIGH)
+                              .setDefaults(NotificationCompat.DEFAULT_ALL)
+                              .setVibrate(new long[]{0, 250, 100, 250})
+                              .setSound(android.provider.Settings.System.DEFAULT_NOTIFICATION_URI)
+                              .setContentIntent(pi)
+                              .setAutoCancel(true);
+
+                          if (bigPic != null) nb.setLargeIcon(bigPic);
+
+                          nm.notify(NOTIF_TREND, nb.build());
+                      } catch (Exception ignored) {}
+                  }).start();
+              }
+
+             
+             // ── Download ──────────────────────────────────────────────────────────────
+              private String fmtBytes(long b) {
+                  return b < 1024 * 1024
+                      ? String.format("%.1f KB", b / 1024f)
+                      : String.format("%.1f MB", b / (1024f * 1024f));
+              }
+
               private void setupDownload() {
                   getBridge().getWebView().setDownloadListener((url, ua, cd, mime, len) -> {
                       lastFile = URLUtil.guessFileName(url, cd, mime);
@@ -190,28 +376,21 @@ jobs:
                       isImage = mime == null || mime.startsWith("image/");
                       downloadStartTime = System.currentTimeMillis();
                       lastLocalPath = "";
-
                       runOnUiThread(() -> Toast.makeText(this, "Starting download...", Toast.LENGTH_SHORT).show());
                       nm.notify(NOTIF_ING, notif(DL_CH, android.R.drawable.stat_sys_download,
                           "Downloading Wallpaper", lastFile)
                           .setProgress(0, 0, true).setOngoing(true).build());
-
                       try {
-                          File wallsDir = new File(
-                              Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
-                              WALLS_FOLDER);
-                          wallsDir.mkdirs();
-
+                          new File(android.os.Environment.getExternalStoragePublicDirectory(
+                              android.os.Environment.DIRECTORY_PICTURES), WALLS_FOLDER).mkdirs();
                           DownloadManager.Request req = new DownloadManager.Request(Uri.parse(url));
                           req.setTitle(lastFile);
                           req.setDescription("Downloading wallpaper...");
                           req.setMimeType(mime);
                           req.addRequestHeader("User-Agent", ua);
-                          // FIX: first arg must be a standard directory constant; subfolder goes in second arg
                           req.setDestinationInExternalPublicDir(
-                              Environment.DIRECTORY_PICTURES, WALLS_FOLDER + "/" + lastFile);
+                              android.os.Environment.DIRECTORY_PICTURES, WALLS_FOLDER + "/" + lastFile);
                           req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_HIDDEN);
-                          // allowScanningByMediaScanner() removed — public dir files auto-scanned on API 29+
                           lastId = dm.enqueue(req);
                           startProgressPolling();
                       } catch (Exception e) {
@@ -239,32 +418,28 @@ jobs:
                           Cursor c = dm.query(new DownloadManager.Query().setFilterById(lastId));
                           if (c == null || !c.moveToFirst()) {
                               if (c != null) c.close();
-                              progressHandler.postDelayed(this, 1000);
-                              return;
+                              progressHandler.postDelayed(this, 1000); return;
                           }
-                          int sCol = c.getColumnIndex(DownloadManager.COLUMN_STATUS);
+                          int sCol  = c.getColumnIndex(DownloadManager.COLUMN_STATUS);
                           int dlCol = c.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR);
-                          int totCol = c.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES);
-                          int uCol = c.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI);
+                          int totCol= c.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES);
+                          int uCol  = c.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI);
                           if (sCol == -1 || dlCol == -1 || totCol == -1) {
                               c.close(); progressHandler.postDelayed(this, 1000); return;
                           }
                           int status = c.getInt(sCol);
-                          long downloaded = c.getLong(dlCol);
-                          long total = c.getLong(totCol);
+                          long downloaded = c.getLong(dlCol), total = c.getLong(totCol);
                           if (uCol != -1 && c.getString(uCol) != null) lastLocalPath = c.getString(uCol);
                           c.close();
                           if (status == DownloadManager.STATUS_RUNNING || status == DownloadManager.STATUS_PAUSED) {
                               if (total > 0) {
-                                  int pct = (int) (downloaded * 100L / total);
+                                  int pct = (int)(downloaded * 100L / total);
                                   nm.notify(NOTIF_ING, notif(DL_CH, android.R.drawable.stat_sys_download,
                                       "Downloading Wallpaper", fmtBytes(downloaded) + " / " + fmtBytes(total))
                                       .setProgress(100, pct, false).setOngoing(true).build());
                               }
                               progressHandler.postDelayed(this, 1000);
-                          } else {
-                              stopProgressPolling();
-                          }
+                          } else { stopProgressPolling(); }
                       }
                   };
                   progressHandler.postDelayed(progressRunnable, 500);
@@ -283,7 +458,6 @@ jobs:
                           long id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1);
                           if (id != lastId) return;
                           stopProgressPolling();
-
                           Cursor c = dm.query(new DownloadManager.Query().setFilterById(id));
                           if (c == null || !c.moveToFirst()) { if (c != null) c.close(); return; }
                           int sCol = c.getColumnIndex(DownloadManager.COLUMN_STATUS);
@@ -293,27 +467,22 @@ jobs:
                           String localUri = (uCol != -1) ? c.getString(uCol) : null;
                           c.close();
                           nm.cancel(NOTIF_ING);
-
                           runOnUiThread(() -> {
                               if (status == DownloadManager.STATUS_SUCCESSFUL && localUri != null) {
                                   try {
                                       File file = new File(Uri.parse(localUri).getPath());
-
                                       ContentValues cv = new ContentValues();
                                       cv.put(MediaStore.Images.Media.DISPLAY_NAME, lastFile);
                                       cv.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
                                       cv.put(MediaStore.Images.Media.RELATIVE_PATH,
-                                          Environment.DIRECTORY_PICTURES + "/" + WALLS_FOLDER);
+                                          android.os.Environment.DIRECTORY_PICTURES + "/" + WALLS_FOLDER);
                                       getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, cv);
-
                                       Uri safeUri = FileProvider.getUriForFile(ctx, AUTHORITY, file);
-
                                       Intent wall = new Intent(Intent.ACTION_ATTACH_DATA);
                                       wall.setDataAndType(safeUri, "image/*");
                                       wall.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                                       wall.putExtra("mimeType", "image/*");
                                       Intent chooser = Intent.createChooser(wall, "Set as wallpaper");
-
                                       PendingIntent pi = PendingIntent.getActivity(ctx, 0, chooser,
                                           PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
                                       nm.notify(NOTIF_DONE, notif(DL_CH, android.R.drawable.stat_sys_download_done,
@@ -344,6 +513,7 @@ jobs:
                   else registerReceiver(dlReceiver, f);
               }
 
+              // ── Reminder scheduling ───────────────────────────────────────────────────
               private void scheduleReminder() {
                   AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
                   PendingIntent pi = PendingIntent.getBroadcast(this, 0,
@@ -356,7 +526,6 @@ jobs:
           }
           EOF
 
-     
       - name: Write WallpaperReminderReceiver.java
         run: |
           FILE=android/app/src/main/java/ng/name/ovrica/walls/WallpaperReminderReceiver.java
@@ -365,19 +534,107 @@ jobs:
           package ng.name.ovrica.walls;
           import android.app.*;
           import android.content.*;
+          import android.graphics.*;
+          import android.net.Uri;
+          import android.os.*;
           import androidx.core.app.NotificationCompat;
+          import java.io.*;
+          import java.net.*;
+          import java.util.*;
+          import java.util.regex.*;
 
           public class WallpaperReminderReceiver extends BroadcastReceiver {
+              private static final String BASE_URL  = "https://walls.ovrica.name.ng";
+              private static final String TREND_CH  = "walls_trending";
+              private static final int    NOTIF_TREND = 5001;
+
               @Override public void onReceive(Context ctx, Intent intent) {
+                  NotificationManager nm =
+                      (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
+
+                  // Run network fetch off the main thread using a plain Thread
+                  // (BroadcastReceiver goAsync() not needed for short work here)
+                  new Thread(() -> {
+                      try {
+                          HttpURLConnection conn = (HttpURLConnection)
+                              new URL(BASE_URL + "/hot.json").openConnection();
+                          conn.setConnectTimeout(6000);
+                          conn.setReadTimeout(6000);
+                          conn.setRequestProperty("Cache-Control", "no-cache");
+                          if (conn.getResponseCode() != 200) { fallback(ctx, nm); return; }
+
+                          BufferedReader br = new BufferedReader(
+                              new InputStreamReader(conn.getInputStream()));
+                          StringBuilder sb = new StringBuilder(); String line;
+                          while ((line = br.readLine()) != null) sb.append(line);
+                          br.close();
+                          String json = sb.toString();
+
+                          List<String> titles = new ArrayList<>();
+                          List<String> imgUrls = new ArrayList<>();
+
+                          Matcher mt = Pattern.compile("\"title\"\\s*:\\s*\"([^\"]+)\"").matcher(json);
+                          while (mt.find() && titles.size() < 5) titles.add(mt.group(1));
+
+                          Matcher mu = Pattern.compile(
+                              "\"(?:image_url|url|thumbnail)\"\\s*:\\s*\"([^\"]+)\"").matcher(json);
+                          while (mu.find() && imgUrls.size() < 5) imgUrls.add(mu.group(1));
+
+                          if (titles.isEmpty()) { fallback(ctx, nm); return; }
+
+                          // Download first image as large icon
+                          Bitmap bigPic = null;
+                          if (!imgUrls.isEmpty()) {
+                              try {
+                                  HttpURLConnection ic =
+                                      (HttpURLConnection) new URL(imgUrls.get(0)).openConnection();
+                                  ic.setConnectTimeout(5000); ic.setReadTimeout(5000);
+                                  bigPic = BitmapFactory.decodeStream(ic.getInputStream());
+                              } catch (Exception ignored) {}
+                          }
+
+                          // InboxStyle — shows each wallpaper title on its own line (grid-like)
+                          NotificationCompat.InboxStyle inbox = new NotificationCompat.InboxStyle()
+                              .setBigContentTitle("\uD83D\uDD25 Trending on Walls right now")
+                              .setSummaryText(titles.size() + " hot wallpapers");
+                          for (String t : titles) inbox.addLine("\uD83D\uDDBC\uFE0F  " + t);
+
+                          PendingIntent pi = PendingIntent.getActivity(ctx, 0,
+                              ctx.getPackageManager().getLaunchIntentForPackage(ctx.getPackageName()),
+                              PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+
+                          NotificationCompat.Builder nb = new NotificationCompat.Builder(ctx, TREND_CH)
+                              .setSmallIcon(android.R.drawable.ic_menu_gallery)
+                              .setContentTitle("\uD83D\uDD25 Trending on Walls")
+                              .setContentText(titles.get(0)
+                                  + (titles.size() > 1 ? " + " + (titles.size()-1) + " more" : ""))
+                              .setStyle(inbox)
+                              .setPriority(NotificationCompat.PRIORITY_HIGH)
+                              .setDefaults(NotificationCompat.DEFAULT_ALL)
+                              .setVibrate(new long[]{0, 250, 100, 250})
+                              .setSound(android.provider.Settings.System.DEFAULT_NOTIFICATION_URI)
+                              .setContentIntent(pi)
+                              .setAutoCancel(true);
+
+                          if (bigPic != null) nb.setLargeIcon(bigPic);
+                          nm.notify(NOTIF_TREND, nb.build());
+
+                      } catch (Exception e) { fallback(ctx, nm); }
+                  }).start();
+              }
+
+              // Fallback if hot.json fails — plain reminder
+              private void fallback(Context ctx, NotificationManager nm) {
                   PendingIntent pi = PendingIntent.getActivity(ctx, 0,
                       ctx.getPackageManager().getLaunchIntentForPackage(ctx.getPackageName()),
                       PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-                  ((NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE)).notify(3001,
-                      new NotificationCompat.Builder(ctx, "walls_promo")
+                  nm.notify(NOTIF_TREND,
+                      new NotificationCompat.Builder(ctx, TREND_CH)
                           .setSmallIcon(android.R.drawable.ic_menu_gallery)
                           .setContentTitle("New wallpapers are waiting \uD83D\uDDBC\uFE0F")
                           .setContentText("Fresh picks are live on Walls. Come see what's new.")
-                          .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                          .setPriority(NotificationCompat.PRIORITY_HIGH)
+                          .setDefaults(NotificationCompat.DEFAULT_ALL)
                           .setContentIntent(pi).setAutoCancel(true).build());
               }
           }
@@ -407,6 +664,7 @@ jobs:
           sed -i 's/android:icon="[^"]*"/android:icon="@mipmap\/ic_launcher"/' $M
           sed -i 's/android:roundIcon="[^"]*"/android:roundIcon="@mipmap\/ic_launcher_round"/' $M
 
+      
       - name: Patch AndroidManifest
         run: |
           python3 << 'PYEOF'
@@ -494,7 +752,6 @@ jobs:
           if 'WallpaperReminderReceiver' not in content:
               receiver = '        <receiver android:name=".WallpaperReminderReceiver" android:exported="false" />'
               content = content.replace('</application>', receiver + '\n    </application>', 1)
-
           with open(path, 'w') as f:
               f.write(content)
 
