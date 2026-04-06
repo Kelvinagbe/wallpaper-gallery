@@ -146,6 +146,7 @@ jobs:
                   scheduleReminder();
                   handleDeepLink(getIntent());
                   showWelcome();
+                  checkForUpdate();
               }
 
               @Override
@@ -323,7 +324,6 @@ jobs:
                                       cv.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
                                       cv.put(MediaStore.Images.Media.RELATIVE_PATH,
                                           Environment.DIRECTORY_PICTURES + "/" + WALLS_FOLDER);
-                                      cv.put(MediaStore.Images.Media.DATA, file.getAbsolutePath());
                                       getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, cv);
 
                                       Uri safeUri = FileProvider.getUriForFile(ctx, AUTHORITY, file);
@@ -362,6 +362,78 @@ jobs:
                   IntentFilter f = new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE);
                   if (Build.VERSION.SDK_INT >= 33) registerReceiver(dlReceiver, f, RECEIVER_NOT_EXPORTED);
                   else registerReceiver(dlReceiver, f);
+              }
+
+              private void checkForUpdate() {
+                  String currentVersion = "1.0.0";
+                  try { currentVersion = getPackageManager().getPackageInfo(getPackageName(), 0).versionName; } catch (Exception ignored) {}
+                  final String cv = currentVersion;
+                  new Thread(() -> {
+                      try {
+                          java.net.URL url = new java.net.URL("https://walls.ovrica.name.ng/version.json");
+                          java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+                          conn.setConnectTimeout(5000); conn.setReadTimeout(5000);
+                          java.io.BufferedReader br = new java.io.BufferedReader(
+                              new java.io.InputStreamReader(conn.getInputStream()));
+                          StringBuilder sb = new StringBuilder();
+                          String line; while ((line = br.readLine()) != null) sb.append(line);
+                          br.close();
+                          String json = sb.toString();
+                          // Parse "latest" and "minVersion" from JSON e.g. {"latest":"1.2.0","minVersion":"1.1.0"}
+                          String latest = json.replaceAll(".*\"latest\"\\s*:\\s*\"([^\"]+)\".*", "$1");
+                          String minVersion = json.replaceAll(".*\"minVersion\"\\s*:\\s*\"([^\"]+)\".*", "$1");
+                          if (isNewer(latest, cv)) {
+                              runOnUiThread(() -> showUpdateDialog(cv, latest, minVersion));
+                          }
+                      } catch (Exception ignored) {}
+                  }).start();
+              }
+
+              // Returns true if versionA > versionB
+              private boolean isNewer(String versionA, String versionB) {
+                  try {
+                      String[] a = versionA.split("\\."), b = versionB.split("\\.");
+                      int len = Math.max(a.length, b.length);
+                      for (int i = 0; i < len; i++) {
+                          int ai = i < a.length ? Integer.parseInt(a[i]) : 0;
+                          int bi = i < b.length ? Integer.parseInt(b[i]) : 0;
+                          if (ai > bi) return true;
+                          if (ai < bi) return false;
+                      }
+                  } catch (Exception ignored) {}
+                  return false;
+              }
+
+              private void showUpdateDialog(String current, String latest, String minVersion) {
+                  boolean isForced = isNewer(current, minVersion) || isForcePeriodExpired();
+                  android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(this)
+                      .setTitle(isForced ? "Update Required" : "Update Available")
+                      .setMessage("A new version of Walls is available.\n\nCurrent: v" + current + "\nLatest: v" + latest
+                          + (isForced ? "\n\nThis update is required to continue using the app." : ""))
+                      .setPositiveButton("Update Now", (d, w) -> {
+                          startActivity(new Intent(Intent.ACTION_VIEW,
+                              Uri.parse("https://walls.ovrica.name.ng/download")));
+                          if (isForced) finish();
+                      });
+                  if (!isForced) {
+                      builder.setNegativeButton("Later", (d, w) -> {
+                          getSharedPreferences("walls_prefs", MODE_PRIVATE).edit()
+                              .putLong("update_dismissed_at", System.currentTimeMillis()).apply();
+                          d.dismiss();
+                      });
+                  }
+                  android.app.AlertDialog dialog = builder.create();
+                  dialog.setCancelable(!isForced);
+                  dialog.show();
+              }
+
+              // Force update if user dismissed the dialog more than 3 days ago
+              private boolean isForcePeriodExpired() {
+                  long dismissed = getSharedPreferences("walls_prefs", MODE_PRIVATE)
+                      .getLong("update_dismissed_at", 0);
+                  if (dismissed == 0) return false;
+                  long threeDaysMs = 3L * 24 * 60 * 60 * 1000;
+                  return System.currentTimeMillis() - dismissed > threeDaysMs;
               }
 
               private void scheduleReminder() {
