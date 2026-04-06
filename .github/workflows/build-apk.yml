@@ -402,53 +402,107 @@ jobs:
           }
           EOF
 
-      - name: Patch AndroidManifest
-        run: |
-          M=android/app/src/main/AndroidManifest.xml
-          if ! grep -q "INTERNET" $M; then
-            sed -i '/<manifest/a\
-                <uses-permission android:name="android.permission.INTERNET" />\
-                <uses-permission android:name="android.permission.DOWNLOAD_WITHOUT_NOTIFICATION" />\
-                <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />\
-                <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />\
-                <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />\
-                <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\
-                <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\
-                <uses-permission android:name="android.permission.SET_WALLPAPER" />\
-                <uses-permission android:name="android.permission.SET_WALLPAPER_HINTS" />\
-                <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />\
-                <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />\
-                <uses-permission android:name="android.permission.WAKE_LOCK" />' $M
-          fi
-          grep -q "WallpaperReminderReceiver" $M || sed -i '/<\/application>/i\
-              <receiver android:name=".WallpaperReminderReceiver" android:exported="false" />' $M
-          grep -q "fileprovider" $M || sed -i '/<\/application>/i\
-              <provider\
-                  android:name="androidx.core.content.FileProvider"\
-                  android:authorities="ng.name.ovrica.walls.fileprovider"\
-                  android:exported="false"\
-                  android:grantUriPermissions="true">\
-                  <meta-data\
-                      android:name="android.support.FILE_PROVIDER_PATHS"\
-                      android:resource="@xml\/file_paths" />\
-              <\/provider>' $M
-          # Required for Android 12+: activity with intent-filter must declare exported
-          sed -i 's/android:name="\.MainActivity"/android:name=".MainActivity" android:exported="true"/' $M
-
-          grep -q "walls.ovrica.name.ng" $M || sed -i '/<\/activity>/i\
-                  <intent-filter android:autoVerify="true">\
-                      <action android:name="android.intent.action.VIEW" />\
-                      <category android:name="android.intent.category.DEFAULT" />\
-                      <category android:name="android.intent.category.BROWSABLE" />\
-                      <data android:scheme="https" android:host="walls.ovrica.name.ng" />\
-                  </intent-filter>' $M
-
       - name: Assets, sync and Kotlin fix
         run: |
           mkdir -p android/app/src/main/assets
           echo '[]' > android/app/src/main/assets/capacitor.plugins.json
           cp capacitor.config.json android/app/src/main/assets/capacitor.config.json
           npx cap sync android
+
+      - name: Patch AndroidManifest
+        run: |
+          python3 << 'PYEOF'
+          import xml.etree.ElementTree as ET
+          import re
+
+          ET.register_namespace('android', 'http://schemas.android.com/apk/res/android')
+          ET.register_namespace('tools', 'http://schemas.android.com/tools')
+          ET.register_namespace('', '')
+
+          path = 'android/app/src/main/AndroidManifest.xml'
+          with open(path, 'r') as f:
+              content = f.read()
+
+          NS = 'http://schemas.android.com/apk/res/android'
+
+          # 1. Add missing permissions before </manifest> close, after <manifest> open
+          permissions = [
+              'android.permission.INTERNET',
+              'android.permission.DOWNLOAD_WITHOUT_NOTIFICATION',
+              'android.permission.ACCESS_NETWORK_STATE',
+              'android.permission.READ_MEDIA_IMAGES',
+              'android.permission.POST_NOTIFICATIONS',
+              'android.permission.SET_WALLPAPER',
+              'android.permission.SET_WALLPAPER_HINTS',
+              'android.permission.SCHEDULE_EXACT_ALARM',
+              'android.permission.RECEIVE_BOOT_COMPLETED',
+              'android.permission.WAKE_LOCK',
+          ]
+          for perm in permissions:
+              tag = f'android:name="{perm}"'
+              if tag not in content:
+                  content = content.replace(
+                      '<application',
+                      f'    <uses-permission android:name="{perm}" />\n    <application',
+                      1
+                  )
+          # versioned permissions
+          for perm, maxSdk in [
+              ('android.permission.WRITE_EXTERNAL_STORAGE', '28'),
+              ('android.permission.READ_EXTERNAL_STORAGE', '32'),
+          ]:
+              tag = f'android:name="{perm}"'
+              if tag not in content:
+                  content = content.replace(
+                      '<application',
+                      f'    <uses-permission android:name="{perm}" android:maxSdkVersion="{maxSdk}" />\n    <application',
+                      1
+                  )
+
+          # 2. android:exported="true" on MainActivity (Android 12+ requirement)
+          # Matches any variant: .MainActivity or full package path
+          content = re.sub(
+              r'(<activity\b(?![^>]*android:exported)[^>]*MainActivity[^>]*)',
+              r'\1 android:exported="true"',
+              content
+          )
+
+          # 3. Deep link intent-filter inside MainActivity activity block
+          if 'walls.ovrica.name.ng' not in content:
+              deep_link = '''
+                  <intent-filter android:autoVerify="true">
+                      <action android:name="android.intent.action.VIEW" />
+                      <category android:name="android.intent.category.DEFAULT" />
+                      <category android:name="android.intent.category.BROWSABLE" />
+                      <data android:scheme="https" android:host="walls.ovrica.name.ng" />
+                  </intent-filter>'''
+              content = content.replace('</activity>', deep_link + '\n        </activity>', 1)
+
+          # 4. FileProvider
+          if 'fileprovider' not in content:
+              provider = '''
+              <provider
+                  android:name="androidx.core.content.FileProvider"
+                  android:authorities="ng.name.ovrica.walls.fileprovider"
+                  android:exported="false"
+                  android:grantUriPermissions="true">
+                  <meta-data
+                      android:name="android.support.FILE_PROVIDER_PATHS"
+                      android:resource="@xml/file_paths" />
+              </provider>'''
+              content = content.replace('</application>', provider + '\n    </application>', 1)
+
+          # 5. WallpaperReminderReceiver
+          if 'WallpaperReminderReceiver' not in content:
+              receiver = '        <receiver android:name=".WallpaperReminderReceiver" android:exported="false" />'
+              content = content.replace('</application>', receiver + '\n    </application>', 1)
+
+          with open(path, 'w') as f:
+              f.write(content)
+
+          print("Manifest patched successfully")
+          print(open(path).read())
+          PYEOF
           cat >> android/build.gradle << 'EOF'
           subprojects { configurations.all { resolutionStrategy {
             force "org.jetbrains.kotlin:kotlin-stdlib:1.9.0"
@@ -496,3 +550,4 @@ jobs:
           name: walls-release
           path: ${{ github.workspace }}/release/walls-release.zip
           retention-days: 30
+              
