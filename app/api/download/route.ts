@@ -2,19 +2,27 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(req: NextRequest) {
   const url = req.nextUrl.searchParams.get('url');
-  if (!url) return NextResponse.json({ error: 'Missing url' }, { status: 400 });
+  const name = req.nextUrl.searchParams.get('name') || 'wallpaper';
 
-  const response = await fetch(url);
-  if (!response.ok) return NextResponse.json({ error: 'Fetch failed' }, { status: 502 });
+  if (!url) return NextResponse.json({ error: 'No URL' }, { status: 400 });
 
-  const blob = await response.arrayBuffer();
-  const contentType = response.headers.get('content-type') ?? 'image/jpeg';
+  try {
+    const res = await fetch(url, { headers: { 'User-Agent': 'Walls-App/1.0' } });
+    if (!res.ok) throw new Error('Fetch failed');
 
-  return new NextResponse(blob, {
-    headers: {
-      'Content-Type': contentType,
-      'Content-Disposition': 'attachment; filename="wallpaper.jpg"',
-      'Cache-Control': 'public, max-age=86400',
-    },
-  });
+    const buffer = await res.arrayBuffer();
+    const contentType = res.headers.get('content-type') || 'image/jpeg';
+    const filename = `${name.replace(/[^a-z0-9_\-\s]/gi, '_')}.jpg`;
+
+    return new NextResponse(buffer, {
+      headers: {
+        'Content-Type': contentType,
+        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Content-Length': String(buffer.byteLength),
+        'Cache-Control': 'no-store',
+      },
+    });
+  } catch (e) {
+    return NextResponse.json({ error: 'Download failed' }, { status: 500 });
+  }
 }
