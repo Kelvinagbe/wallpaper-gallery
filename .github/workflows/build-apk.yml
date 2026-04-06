@@ -81,10 +81,15 @@ jobs:
 
           public class MainActivity extends BridgeActivity {
               private static final String DL_CH = "walls_downloads", PROMO_CH = "walls_promo";
-              private static final int NOTIF_ING = 2001, NOTIF_DONE = 2002;
+              private static final int NOTIF_ING = 2001, NOTIF_DONE = 2002, NOTIF_WELCOME = 4001;
+              private static final long TIMEOUT_MS = 60_000;
+
               private DownloadManager dm; private NotificationManager nm;
               private BroadcastReceiver dlReceiver;
-              private long lastId = -1; private boolean isImage; private String lastFile = "";
+              private Handler progressHandler = new Handler(Looper.getMainLooper());
+              private Runnable progressRunnable;
+              private long lastId = -1, downloadStartTime = 0;
+              private boolean isImage; private String lastFile = "";
 
               @Override public void onStart() {
                   super.onStart();
@@ -96,13 +101,14 @@ jobs:
                   if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this,
                       Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
                       ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.POST_NOTIFICATIONS}, 1001);
-                  setupDownload(); registerDlReceiver(); scheduleReminder(); handleDeepLink(getIntent());
+                  setupDownload(); registerDlReceiver(); scheduleReminder(); handleDeepLink(getIntent()); showWelcome();
               }
 
               @Override public void onNewIntent(Intent i) { super.onNewIntent(i); handleDeepLink(i); }
 
               @Override public void onDestroy() {
                   super.onDestroy();
+                  stopProgressPolling();
                   if (dlReceiver != null) try { unregisterReceiver(dlReceiver); } catch (Exception ignored) {}
               }
 
@@ -123,11 +129,31 @@ jobs:
                   if (data != null) { WebView wv = getBridge().getWebView(); if (wv != null) runOnUiThread(() -> wv.loadUrl(data.toString())); }
               }
 
+              private String fmtBytes(long b) {
+                  return b < 1024 * 1024 ? String.format("%.1f KB", b / 1024f) : String.format("%.1f MB", b / (1024f * 1024f));
+              }
+
+              private void showWelcome() {
+                  SharedPreferences prefs = getSharedPreferences("walls_prefs", MODE_PRIVATE);
+                  boolean isFirst = prefs.getBoolean("first_launch", true);
+                  String title = isFirst ? "Welcome to Walls \uD83D\uDDBC\uFE0F" : "Welcome back to Walls \u2728";
+                  String text  = isFirst
+                      ? "Discover stunning wallpapers curated just for you. Tap any image to preview & download."
+                      : "Fresh wallpapers are waiting. Find your next favorite today.";
+                  if (isFirst) prefs.edit().putBoolean("first_launch", false).apply();
+                  PendingIntent pi = PendingIntent.getActivity(this, 0,
+                      getPackageManager().getLaunchIntentForPackage(getPackageName()),
+                      PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+                  nm.notify(NOTIF_WELCOME, notif(PROMO_CH, android.R.drawable.ic_menu_gallery, title, text)
+                      .setPriority(NotificationCompat.PRIORITY_DEFAULT).setContentIntent(pi).setAutoCancel(true).build());
+              }
+
               private void setupDownload() {
                   getBridge().getWebView().setDownloadListener((url, ua, cd, mime, len) -> {
                       lastFile = URLUtil.guessFileName(url, cd, mime);
                       isImage = mime != null && mime.startsWith("image/");
-                      runOnUiThread(() -> Toast.makeText(this, "Downloading: " + lastFile, Toast.LENGTH_SHORT).show());
+                      downloadStartTime = System.currentTimeMillis();
+                      runOnUiThread(() -> Toast.makeText(this, "Starting download...", Toast.LENGTH_SHORT).show());
                       nm.notify(NOTIF_ING, notif(DL_CH, android.R.drawable.stat_sys_download,
                           "Downloading Wallpaper", lastFile).setProgress(0, 0, true).setOngoing(true).build());
                       DownloadManager.Request req = new DownloadManager.Request(Uri.parse(url));
@@ -136,7 +162,47 @@ jobs:
                       req.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, lastFile);
                       req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_HIDDEN);
                       lastId = dm.enqueue(req);
+                      startProgressPolling();
                   });
+              }
+
+              private void startProgressPolling() {
+                  stopProgressPolling();
+                  progressRunnable = new Runnable() {
+                      @Override public void run() {
+                          if (lastId == -1) return;
+                          if (System.currentTimeMillis() - downloadStartTime > TIMEOUT_MS) {
+                              dm.remove(lastId); lastId = -1; nm.cancel(NOTIF_ING);
+                              nm.notify(NOTIF_DONE, notif(DL_CH, android.R.drawable.stat_notify_error,
+                                  "Download Timed Out", "\"" + lastFile + "\" took too long. Try again.")
+                                  .setPriority(NotificationCompat.PRIORITY_HIGH).setAutoCancel(true).build());
+                              Toast.makeText(MainActivity.this, "Download timed out.", Toast.LENGTH_LONG).show();
+                              return;
+                          }
+                          Cursor c = dm.query(new DownloadManager.Query().setFilterById(lastId));
+                          if (c == null || !c.moveToFirst()) { if (c != null) c.close(); progressHandler.postDelayed(this, 1000); return; }
+                          int sCol = c.getColumnIndex(DownloadManager.COLUMN_STATUS);
+                          int dlCol = c.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR);
+                          int totCol = c.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES);
+                          if (sCol == -1 || dlCol == -1 || totCol == -1) { c.close(); progressHandler.postDelayed(this, 1000); return; }
+                          int status = c.getInt(sCol); long downloaded = c.getLong(dlCol); long total = c.getLong(totCol);
+                          c.close();
+                          if (status == DownloadManager.STATUS_RUNNING || status == DownloadManager.STATUS_PAUSED) {
+                              if (total > 0) {
+                                  int pct = (int) (downloaded * 100L / total);
+                                  nm.notify(NOTIF_ING, notif(DL_CH, android.R.drawable.stat_sys_download,
+                                      "Downloading Wallpaper", fmtBytes(downloaded) + " / " + fmtBytes(total))
+                                      .setProgress(100, pct, false).setOngoing(true).build());
+                              }
+                              progressHandler.postDelayed(this, 1000);
+                          } else { stopProgressPolling(); }
+                      }
+                  };
+                  progressHandler.postDelayed(progressRunnable, 500);
+              }
+
+              private void stopProgressPolling() {
+                  if (progressRunnable != null) { progressHandler.removeCallbacks(progressRunnable); progressRunnable = null; }
               }
 
               private void registerDlReceiver() {
@@ -144,6 +210,7 @@ jobs:
                       @Override public void onReceive(Context ctx, Intent intent) {
                           long id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1);
                           if (id != lastId) return;
+                          stopProgressPolling();
                           Cursor c = dm.query(new DownloadManager.Query().setFilterById(id));
                           if (!c.moveToFirst()) { c.close(); return; }
                           int sCol = c.getColumnIndex(DownloadManager.COLUMN_STATUS);
@@ -206,7 +273,7 @@ jobs:
                   ((NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE)).notify(3001,
                       new NotificationCompat.Builder(ctx, "walls_promo")
                           .setSmallIcon(android.R.drawable.ic_menu_gallery)
-                          .setContentTitle("New wallpapers are waiting 🖼️")
+                          .setContentTitle("New wallpapers are waiting \uD83D\uDDBC\uFE0F")
                           .setContentText("Fresh picks are live on Walls. Come see what's new.")
                           .setPriority(NotificationCompat.PRIORITY_DEFAULT)
                           .setContentIntent(pi).setAutoCancel(true).build());
@@ -256,7 +323,7 @@ jobs:
           } } }
           EOF
 
-      - name: Generate keystore
+     - name: Generate keystore
         run: |
           keytool -genkeypair -v -keystore walls.keystore \
             -alias walls -keyalg RSA -keysize 2048 -validity 10000 \
