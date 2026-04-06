@@ -252,16 +252,16 @@ jobs:
               }
 
               private void showUpdateDialog(String current, String latest, boolean forced) {
-                  AlertDialog d = new AlertDialog.Builder(this)
+                  AlertDialog.Builder b = new AlertDialog.Builder(this)
                       .setTitle(forced ? "Update Required" : "Update Available")
                       .setMessage("Current: v" + current + "\nLatest: v" + latest
                           + (forced ? "\n\nThis update is required to continue." : ""))
                       .setPositiveButton("Update Now", (dlg, w) -> {
                           startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(BASE_URL + "/download")));
                           if (forced) finish();
-                      })
-                      .apply(b -> { if (!forced) b.setNegativeButton("Later", (dlg, w) -> dlg.dismiss()); })
-                      .create();
+                      });
+                  if (!forced) b.setNegativeButton("Later", (dlg, w) -> dlg.dismiss());
+                  AlertDialog d = b.create();
                   d.setCancelable(!forced);
                   d.show();
               }
@@ -336,7 +336,7 @@ jobs:
                   if (progressRunnable != null) { progressHandler.removeCallbacks(progressRunnable); progressRunnable = null; }
               }
 
-             // ── Download complete receiver ─────────────────────────────────────────────
+              // ── Download complete receiver ─────────────────────────────────────────────
               private void registerDlReceiver() {
                   dlReceiver = new BroadcastReceiver() {
                       @Override public void onReceive(Context ctx, Intent intent) {
