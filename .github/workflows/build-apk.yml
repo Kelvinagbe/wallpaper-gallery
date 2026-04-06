@@ -47,7 +47,7 @@ jobs:
             "android": { "allowMixedContent": false },
             "plugins": {
               "SplashScreen": {
-                "launchShowDuration": 2500,
+                "launchShowDuration": 2000,
                 "launchAutoHide": true,
                 "backgroundColor": "#0a0a0a",
                 "androidSplashResourceName": "splash",
@@ -63,16 +63,35 @@ jobs:
           sudo apt-get install -y imagemagick -q
           LOGO="public/icons/icon-512x512.png"
           RES="android/app/src/main/res"
+
+          # Verify icon exists
+          if [ ! -f "$LOGO" ]; then
+            echo "ERROR: Icon not found at $LOGO"; find public -name "*.png" | head -10; exit 1
+          fi
+
+          # Launcher icons from your actual icon file
           for cfg in "mipmap-mdpi:48" "mipmap-hdpi:72" "mipmap-xhdpi:96" "mipmap-xxhdpi:144" "mipmap-xxxhdpi:192"; do
-            folder="${cfg%%:*}"
-            size="${cfg##*:}"
+            folder="${cfg%%:*}"; size="${cfg##*:}"
             mkdir -p "$RES/$folder"
             convert "$LOGO" -resize "${size}x${size}" "$RES/$folder/ic_launcher.png"
             cp "$RES/$folder/ic_launcher.png" "$RES/$folder/ic_launcher_round.png"
           done
+
+          # Notification icon: white monochrome (Android requirement)
+          for cfg in "drawable-mdpi:24" "drawable-hdpi:36" "drawable-xhdpi:48" "drawable-xxhdpi:72" "drawable-xxxhdpi:96"; do
+            folder="${cfg%%:*}"; size="${cfg##*:}"
+            mkdir -p "$RES/$folder"
+            convert "$LOGO" -resize "${size}x${size}" -colorspace Gray \
+              -threshold 50% -negate -background transparent -alpha shape \
+              "$RES/$folder/ic_notification.png" 2>/dev/null || \
+              convert "$LOGO" -resize "${size}x${size}" "$RES/$folder/ic_notification.png"
+          done
+
+          # Splash screen (dark background, centered logo)
           mkdir -p "$RES/drawable" "$RES/drawable-land"
-          convert -size 2048x2048 xc:"#0a0a0a" \( "$LOGO" -resize 512x512 \) -gravity center -composite "$RES/drawable/splash.png"
-          cp "$RES/drawable/splash.png" "$RES/drawable-land/splash.png"
+          convert -size 1080x1920 xc:"#0a0a0a" \( "$LOGO" -resize 256x256 \) -gravity center -composite "$RES/drawable/splash.png"
+          convert -size 1920x1080 xc:"#0a0a0a" \( "$LOGO" -resize 256x256 \) -gravity center -composite "$RES/drawable-land/splash.png"
+
           M="android/app/src/main/AndroidManifest.xml"
           sed -i 's/android:icon="[^"]*"/android:icon="@mipmap\/ic_launcher"/' $M
           sed -i 's/android:roundIcon="[^"]*"/android:roundIcon="@mipmap\/ic_launcher_round"/' $M
@@ -99,12 +118,14 @@ jobs:
           import android.content.*;
           import android.content.pm.PackageManager;
           import android.database.Cursor;
+          import android.graphics.*;
           import android.Manifest;
-          import android.net.Uri;
+          import android.net.*;
           import android.os.*;
           import android.provider.MediaStore;
+          import android.view.*;
           import android.webkit.*;
-          import android.widget.Toast;
+          import android.widget.*;
           import androidx.core.app.*;
           import androidx.core.content.ContextCompat;
           import androidx.core.content.FileProvider;
@@ -116,8 +137,8 @@ jobs:
               private static final String DL_CH = "walls_downloads", PROMO_CH = "walls_promo";
               private static final int NOTIF_ING = 2001, NOTIF_DONE = 2002, NOTIF_WELCOME = 4001;
               private static final long TIMEOUT_MS = 60_000;
-              private static final String WALLS_FOLDER = "Walls";
-              private static final String AUTHORITY = "ng.name.ovrica.walls.fileprovider";
+              private static final String WALLS_FOLDER = "Walls", AUTHORITY = "ng.name.ovrica.walls.fileprovider";
+              private static final String BASE_URL = "https://walls.ovrica.name.ng";
 
               private DownloadManager dm;
               private NotificationManager nm;
@@ -125,9 +146,20 @@ jobs:
               private Handler progressHandler = new Handler(Looper.getMainLooper());
               private Runnable progressRunnable;
               private long lastId = -1, downloadStartTime = 0;
-              private boolean isImage;
-              private String lastFile = "";
-              private String lastLocalPath = "";
+              private boolean isImage, webViewLoaded = false;
+              private String lastFile = "", lastLocalPath = "";
+
+              // UI
+              private FrameLayout rootFrame;
+              private View loadingOverlay, noNetworkView, downloadBar, navBar;
+              private TextView dlFileName, dlPercent;
+              private ProgressBar dlProgressBar;
+
+              @Override
+              public void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  setupOverlays();
+              }
 
               @Override
               public void onStart() {
@@ -141,6 +173,7 @@ jobs:
                       Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
                       ActivityCompat.requestPermissions(this,
                           new String[]{Manifest.permission.POST_NOTIFICATIONS}, 1001);
+                  setupWebViewClient();
                   setupDownload();
                   registerDlReceiver();
                   scheduleReminder();
@@ -159,48 +192,283 @@ jobs:
                   if (dlReceiver != null) try { unregisterReceiver(dlReceiver); } catch (Exception ignored) {}
               }
 
-              private void mkChannel(String id, String name, String desc) {
-                  if (Build.VERSION.SDK_INT >= 26) {
-                      NotificationChannel ch = new NotificationChannel(id, name, NotificationManager.IMPORTANCE_DEFAULT);
-                      ch.setDescription(desc);
-                      nm.createNotificationChannel(ch);
-                  }
+              // ─── Overlays ────────────────────────────────────────────────────────────
+
+              private void setupOverlays() {
+                  rootFrame = (FrameLayout) getWindow().getDecorView().getRootView();
+
+                  // Dark loading overlay shown while WebView first loads
+                  loadingOverlay = new FrameLayout(this);
+                  loadingOverlay.setBackgroundColor(0xFF0a0a0a);
+                  loadingOverlay.setLayoutParams(new FrameLayout.LayoutParams(
+                      FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+                  ProgressBar spinner = new ProgressBar(this);
+                  spinner.setIndeterminate(true);
+                  spinner.getIndeterminateDrawable().setColorFilter(0xFF22c55e, PorterDuff.Mode.SRC_IN);
+                  loadingOverlay.addView(spinner, new FrameLayout.LayoutParams(120, 120, Gravity.CENTER));
+                  rootFrame.addView(loadingOverlay);
+
+                  // No network screen
+                  noNetworkView = makeNoNetworkView();
+                  noNetworkView.setVisibility(View.GONE);
+                  rootFrame.addView(noNetworkView);
+
+                  // In-app download progress bar
+                  downloadBar = makeDownloadBar();
+                  downloadBar.setVisibility(View.GONE);
+                  rootFrame.addView(downloadBar);
               }
 
-              private NotificationCompat.Builder notif(String ch, int icon, String title, String text) {
-                  return new NotificationCompat.Builder(this, ch)
-                      .setSmallIcon(icon).setContentTitle(title).setContentText(text);
+              private View makeNoNetworkView() {
+                  FrameLayout container = new FrameLayout(this);
+                  container.setBackgroundColor(0xFF0a0a0a);
+                  container.setLayoutParams(new FrameLayout.LayoutParams(
+                      FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+                  LinearLayout inner = new LinearLayout(this);
+                  inner.setOrientation(LinearLayout.VERTICAL);
+                  inner.setGravity(Gravity.CENTER);
+                  inner.setLayoutParams(new FrameLayout.LayoutParams(
+                      FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER));
+                  TextView ico = new TextView(this); ico.setText("\uD83D\uDEF8"); ico.setTextSize(56); ico.setGravity(Gravity.CENTER);
+                  TextView t1 = new TextView(this); t1.setText("No Internet Connection");
+                  t1.setTextColor(0xFFFFFFFF); t1.setTextSize(20); t1.setTypeface(Typeface.DEFAULT_BOLD);
+                  t1.setGravity(Gravity.CENTER); t1.setPadding(0, 24, 0, 12);
+                  TextView t2 = new TextView(this); t2.setText("Check your connection and try again.");
+                  t2.setTextColor(0xFF9ca3af); t2.setTextSize(14); t2.setGravity(Gravity.CENTER);
+                  Button retry = new Button(this); retry.setText("Retry");
+                  retry.setBackground(makeRoundedBg(0xFF22c55e, 48));
+                  retry.setTextColor(0xFFFFFFFF); retry.setTextSize(15); retry.setPadding(80, 0, 80, 0);
+                  LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(
+                      LinearLayout.LayoutParams.WRAP_CONTENT, 120);
+                  bp.setMargins(0, 40, 0, 0); bp.gravity = Gravity.CENTER; retry.setLayoutParams(bp);
+                  retry.setOnClickListener(v -> {
+                      if (isNetworkAvailable()) {
+                          noNetworkView.setVisibility(View.GONE);
+                          showLoadingOverlay();
+                          getBridge().getWebView().reload();
+                      } else Toast.makeText(this, "Still no connection...", Toast.LENGTH_SHORT).show();
+                  });
+                  inner.addView(ico); inner.addView(t1); inner.addView(t2); inner.addView(retry);
+                  container.addView(inner);
+                  return container;
               }
+
+              private View makeDownloadBar() {
+                  LinearLayout bar = new LinearLayout(this);
+                  bar.setOrientation(LinearLayout.VERTICAL);
+                  bar.setBackground(makeRoundedBg(0xF0111827, 32));
+                  bar.setPadding(48, 32, 48, 32);
+                  FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+                      FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM);
+                  lp.setMargins(32, 0, 32, 80); bar.setLayoutParams(lp);
+                  LinearLayout row = new LinearLayout(this);
+                  row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.CENTER_VERTICAL);
+                  dlFileName = new TextView(this); dlFileName.setTextColor(0xFFFFFFFF); dlFileName.setTextSize(13);
+                  dlFileName.setMaxLines(1); dlFileName.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                  dlFileName.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+                  dlPercent = new TextView(this); dlPercent.setTextColor(0xFF22c55e); dlPercent.setTextSize(13);
+                  dlPercent.setTypeface(Typeface.DEFAULT_BOLD); dlPercent.setPadding(16, 0, 0, 0);
+                  row.addView(dlFileName); row.addView(dlPercent);
+                  dlProgressBar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+                  dlProgressBar.setMax(100);
+                  dlProgressBar.getProgressDrawable().setColorFilter(0xFF22c55e, PorterDuff.Mode.SRC_IN);
+                  LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(
+                      LinearLayout.LayoutParams.MATCH_PARENT, 16);
+                  pp.setMargins(0, 16, 0, 0); dlProgressBar.setLayoutParams(pp);
+                  bar.addView(row); bar.addView(dlProgressBar);
+                  return bar;
+              }
+
+              private android.graphics.drawable.GradientDrawable makeRoundedBg(int color, int radius) {
+                  android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
+                  gd.setColor(color); gd.setCornerRadius(radius); return gd;
+              }
+
+              private void showLoadingOverlay() { if (loadingOverlay != null) loadingOverlay.setVisibility(View.VISIBLE); }
+              private void hideLoadingOverlay() {
+                  if (loadingOverlay != null)
+                      loadingOverlay.animate().alpha(0f).setDuration(300)
+                          .withEndAction(() -> loadingOverlay.setVisibility(View.GONE)).start();
+              }
+
+              // ─── WebView client ───────────────────────────────────────────────────────
+
+              private void setupWebViewClient() {
+                  getBridge().getWebView().setWebViewClient(new WebViewClient() {
+                      @Override public void onPageStarted(WebView v, String url, Bitmap f) {
+                          super.onPageStarted(v, url, f);
+                          if (!webViewLoaded) showLoadingOverlay(); else showNavBar();
+                      }
+                      @Override public void onPageFinished(WebView v, String url) {
+                          super.onPageFinished(v, url);
+                          webViewLoaded = true;
+                          hideLoadingOverlay(); hideNavBar();
+                          noNetworkView.setVisibility(View.GONE);
+                          handlePageUrl(url);
+                      }
+                      @Override public void onReceivedError(WebView v, WebResourceRequest req, WebResourceError err) {
+                          if (req.isForMainFrame()) {
+                              hideLoadingOverlay(); hideNavBar();
+                              noNetworkView.setVisibility(View.VISIBLE);
+                          }
+                      }
+                      @Override public void onReceivedHttpError(WebView v, WebResourceRequest req,
+                              android.webkit.WebResourceResponse res) {
+                          if (req.isForMainFrame() && res.getStatusCode() >= 500) {
+                              hideLoadingOverlay();
+                              noNetworkView.setVisibility(View.VISIBLE);
+                          }
+                      }
+                  });
+              }
+
+              private void showNavBar() {
+                  if (navBar == null) {
+                      navBar = new View(this);
+                      navBar.setBackgroundColor(0xFF22c55e);
+                      rootFrame.addView(navBar, new FrameLayout.LayoutParams(
+                          FrameLayout.LayoutParams.MATCH_PARENT, 8, Gravity.TOP));
+                  }
+                  navBar.setAlpha(1f); navBar.setVisibility(View.VISIBLE);
+              }
+              private void hideNavBar() {
+                  if (navBar != null)
+                      navBar.animate().alpha(0f).setDuration(250)
+                          .withEndAction(() -> navBar.setVisibility(View.GONE)).start();
+              }
+
+              // ─── Deep link & /page?url= ───────────────────────────────────────────────
 
               private void handleDeepLink(Intent intent) {
                   if (intent == null) return;
-                  Uri data = intent.getData();
-                  if (data != null) {
-                      WebView wv = getBridge().getWebView();
-                      if (wv != null) runOnUiThread(() -> wv.loadUrl(data.toString()));
+                  Uri data = intent.getData(); if (data == null) return;
+                  String urlParam = data.getQueryParameter("url");
+                  if ("/page".equals(data.getPath()) && urlParam != null && !urlParam.isEmpty())
+                      openInAppPage(urlParam);
+                  else { WebView wv = getBridge().getWebView();
+                      if (wv != null) runOnUiThread(() -> wv.loadUrl(data.toString())); }
+              }
+
+              private void handlePageUrl(String url) {
+                  try {
+                      Uri u = Uri.parse(url);
+                      String p = u.getQueryParameter("url");
+                      if ("/page".equals(u.getPath()) && p != null && !p.isEmpty()) openInAppPage(p);
+                  } catch (Exception ignored) {}
+              }
+
+              private void openInAppPage(String targetUrl) {
+                  runOnUiThread(() -> {
+                      FrameLayout overlay = new FrameLayout(this);
+                      overlay.setBackgroundColor(0xFF0a0a0a);
+                      overlay.setLayoutParams(new FrameLayout.LayoutParams(
+                          FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
+                      int sbh = getStatusBarHeight();
+                      LinearLayout header = new LinearLayout(this);
+                      header.setOrientation(LinearLayout.HORIZONTAL);
+                      header.setBackgroundColor(0xFF111827);
+                      header.setGravity(Gravity.CENTER_VERTICAL);
+                      header.setPadding(16, sbh, 16, 0);
+                      header.setLayoutParams(new FrameLayout.LayoutParams(
+                          FrameLayout.LayoutParams.MATCH_PARENT, 160 + sbh, Gravity.TOP));
+
+                      Button back = new Button(this); back.setText("← Back");
+                      back.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+                      back.setTextColor(0xFF22c55e); back.setTextSize(14);
+                      back.setTypeface(Typeface.DEFAULT_BOLD);
+
+                      TextView title = new TextView(this); title.setText("Walls");
+                      title.setTextColor(0xFFFFFFFF); title.setTextSize(16);
+                      title.setTypeface(Typeface.DEFAULT_BOLD); title.setGravity(Gravity.CENTER);
+                      title.setLayoutParams(new LinearLayout.LayoutParams(0,
+                          LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+                      View spacer = new View(this); spacer.setLayoutParams(back.getLayoutParams());
+                      header.addView(back); header.addView(title); header.addView(spacer);
+
+                      WebView inner = new WebView(this);
+                      inner.getSettings().setJavaScriptEnabled(true);
+                      inner.getSettings().setDomStorageEnabled(true);
+                      FrameLayout.LayoutParams wlp = new FrameLayout.LayoutParams(
+                          FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT);
+                      wlp.topMargin = 160 + sbh; inner.setLayoutParams(wlp);
+
+                      ProgressBar pb = new ProgressBar(this); pb.setIndeterminate(true);
+                      pb.getIndeterminateDrawable().setColorFilter(0xFF22c55e, PorterDuff.Mode.SRC_IN);
+                      FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams(120, 120, Gravity.CENTER);
+                      plp.topMargin = 160 + sbh;
+
+                      inner.setWebViewClient(new WebViewClient() {
+                          @Override public void onPageStarted(WebView v, String u, Bitmap f) { pb.setVisibility(View.VISIBLE); }
+                          @Override public void onPageFinished(WebView v, String u) { pb.setVisibility(View.GONE); }
+                          @Override public void onReceivedError(WebView v, WebResourceRequest r, WebResourceError e) {
+                              if (r.isForMainFrame()) {
+                                  pb.setVisibility(View.GONE);
+                                  Toast.makeText(MainActivity.this, "No internet connection", Toast.LENGTH_SHORT).show();
+                              }
+                          }
+                      });
+                      inner.loadUrl(targetUrl);
+                      back.setOnClickListener(v -> rootFrame.removeView(overlay));
+                      overlay.addView(inner); overlay.addView(header); overlay.addView(pb);
+                      rootFrame.addView(overlay);
+                  });
+              }
+
+              private int getStatusBarHeight() {
+                  int id = getResources().getIdentifier("status_bar_height", "dimen", "android");
+                  return id > 0 ? getResources().getDimensionPixelSize(id) : 0;
+              }
+
+              // ─── Network ──────────────────────────────────────────────────────────────
+
+              private boolean isNetworkAvailable() {
+                  ConnectivityManager cm = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+                  if (cm == null) return false;
+                  if (Build.VERSION.SDK_INT >= 23) {
+                      android.net.Network net = cm.getActiveNetwork(); if (net == null) return false;
+                      android.net.NetworkCapabilities caps = cm.getNetworkCapabilities(net);
+                      return caps != null && caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET);
+                  }
+                  android.net.NetworkInfo info = cm.getActiveNetworkInfo();
+                  return info != null && info.isConnected();
+              }
+
+              // ─── Notifications ────────────────────────────────────────────────────────
+
+              private void mkChannel(String id, String name, String desc) {
+                  if (Build.VERSION.SDK_INT >= 26) {
+                      NotificationChannel ch = new NotificationChannel(id, name, NotificationManager.IMPORTANCE_DEFAULT);
+                      ch.setDescription(desc); nm.createNotificationChannel(ch);
                   }
               }
 
-              private String fmtBytes(long b) {
-                  return b < 1024 * 1024
-                      ? String.format("%.1f KB", b / 1024f)
-                      : String.format("%.1f MB", b / (1024f * 1024f));
+              private NotificationCompat.Builder notif(String ch, String title, String text) {
+                  return new NotificationCompat.Builder(this, ch)
+                      .setSmallIcon(R.drawable.ic_notification).setContentTitle(title).setContentText(text);
               }
 
               private void showWelcome() {
                   SharedPreferences prefs = getSharedPreferences("walls_prefs", MODE_PRIVATE);
                   boolean isFirst = prefs.getBoolean("first_launch", true);
-                  String title = isFirst ? "Welcome to Walls \uD83D\uDDBC\uFE0F" : "Welcome back to Walls \u2728";
-                  String text = isFirst
-                      ? "Discover stunning wallpapers curated just for you. Tap any image to preview & download."
-                      : "Fresh wallpapers are waiting. Find your next favorite today.";
                   if (isFirst) prefs.edit().putBoolean("first_launch", false).apply();
                   PendingIntent pi = PendingIntent.getActivity(this, 0,
                       getPackageManager().getLaunchIntentForPackage(getPackageName()),
                       PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-                  nm.notify(NOTIF_WELCOME, notif(PROMO_CH, android.R.drawable.ic_menu_gallery, title, text)
+                  nm.notify(NOTIF_WELCOME, notif(PROMO_CH,
+                      isFirst ? "Welcome to Walls \uD83D\uDDBC\uFE0F" : "Welcome back to Walls \u2728",
+                      isFirst ? "Discover stunning wallpapers curated just for you."
+                              : "Fresh wallpapers are waiting for you.")
                       .setPriority(NotificationCompat.PRIORITY_DEFAULT)
                       .setContentIntent(pi).setAutoCancel(true).build());
+              }
+
+              // ─── Download ─────────────────────────────────────────────────────────────
+
+              private String fmtBytes(long b) {
+                  return b < 1048576 ? String.format("%.1f KB", b / 1024f)
+                                     : String.format("%.1f MB", b / 1048576f);
               }
 
               private void setupDownload() {
@@ -208,36 +476,41 @@ jobs:
                       lastFile = URLUtil.guessFileName(url, cd, mime);
                       if (!lastFile.contains(".")) lastFile += ".jpg";
                       isImage = mime == null || mime.startsWith("image/");
-                      downloadStartTime = System.currentTimeMillis();
-                      lastLocalPath = "";
+                      downloadStartTime = System.currentTimeMillis(); lastLocalPath = "";
 
-                      runOnUiThread(() -> Toast.makeText(this, "Starting download...", Toast.LENGTH_SHORT).show());
-                      nm.notify(NOTIF_ING, notif(DL_CH, android.R.drawable.stat_sys_download,
-                          "Downloading Wallpaper", lastFile)
+                      if (!isNetworkAvailable()) {
+                          runOnUiThread(() -> Toast.makeText(this,
+                              "No internet connection. Cannot download.", Toast.LENGTH_LONG).show());
+                          return;
+                      }
+
+                      runOnUiThread(() -> {
+                          dlFileName.setText("Downloading: " + lastFile);
+                          dlPercent.setText("0%"); dlProgressBar.setProgress(0);
+                          dlProgressBar.setIndeterminate(true);
+                          downloadBar.setVisibility(View.VISIBLE);
+                      });
+                      nm.notify(NOTIF_ING, notif(DL_CH, "Downloading Wallpaper", lastFile)
                           .setProgress(0, 0, true).setOngoing(true).build());
 
                       try {
-                          File wallsDir = new File(
-                              Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
-                              WALLS_FOLDER);
-                          wallsDir.mkdirs();
-
+                          new File(android.os.Environment.getExternalStoragePublicDirectory(
+                              android.os.Environment.DIRECTORY_PICTURES), WALLS_FOLDER).mkdirs();
                           DownloadManager.Request req = new DownloadManager.Request(Uri.parse(url));
-                          req.setTitle(lastFile);
-                          req.setDescription("Downloading wallpaper...");
-                          req.setMimeType(mime);
+                          req.setTitle(lastFile).setDescription("Downloading wallpaper...").setMimeType(mime);
                           req.addRequestHeader("User-Agent", ua);
-                          // FIX: first arg must be a standard directory constant; subfolder goes in second arg
                           req.setDestinationInExternalPublicDir(
-                              Environment.DIRECTORY_PICTURES, WALLS_FOLDER + "/" + lastFile);
+                              android.os.Environment.DIRECTORY_PICTURES, WALLS_FOLDER + "/" + lastFile);
                           req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
                           req.allowScanningByMediaScanner();
                           lastId = dm.enqueue(req);
                           startProgressPolling();
                       } catch (Exception e) {
                           nm.cancel(NOTIF_ING);
-                          runOnUiThread(() -> Toast.makeText(this,
-                              "Download failed to start: " + e.getMessage(), Toast.LENGTH_LONG).show());
+                          runOnUiThread(() -> {
+                              downloadBar.setVisibility(View.GONE);
+                              Toast.makeText(this, "Download failed: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                          });
                       }
                   });
               }
@@ -249,42 +522,49 @@ jobs:
                           if (lastId == -1) return;
                           if (System.currentTimeMillis() - downloadStartTime > TIMEOUT_MS) {
                               dm.remove(lastId); lastId = -1; nm.cancel(NOTIF_ING);
-                              nm.notify(NOTIF_DONE, notif(DL_CH, android.R.drawable.stat_notify_error,
-                                  "Download Timed Out", "\"" + lastFile + "\" took too long. Try again.")
+                              runOnUiThread(() -> { downloadBar.setVisibility(View.GONE);
+                                  Toast.makeText(MainActivity.this, "Download timed out.", Toast.LENGTH_LONG).show(); });
+                              nm.notify(NOTIF_DONE, notif(DL_CH, "Download Timed Out",
+                                  "\"" + lastFile + "\" took too long. Try again.")
                                   .setPriority(NotificationCompat.PRIORITY_HIGH).setAutoCancel(true).build());
-                              runOnUiThread(() -> Toast.makeText(MainActivity.this,
-                                  "Download timed out.", Toast.LENGTH_LONG).show());
                               return;
                           }
                           Cursor c = dm.query(new DownloadManager.Query().setFilterById(lastId));
-                          if (c == null || !c.moveToFirst()) {
-                              if (c != null) c.close();
-                              progressHandler.postDelayed(this, 1000);
-                              return;
-                          }
+                          if (c == null || !c.moveToFirst()) { if (c != null) c.close();
+                              progressHandler.postDelayed(this, 1000); return; }
                           int sCol = c.getColumnIndex(DownloadManager.COLUMN_STATUS);
                           int dlCol = c.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR);
                           int totCol = c.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES);
                           int uCol = c.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI);
                           if (sCol == -1 || dlCol == -1 || totCol == -1) {
-                              c.close(); progressHandler.postDelayed(this, 1000); return;
-                          }
+                              c.close(); progressHandler.postDelayed(this, 1000); return; }
                           int status = c.getInt(sCol);
-                          long downloaded = c.getLong(dlCol);
-                          long total = c.getLong(totCol);
+                          long downloaded = c.getLong(dlCol), total = c.getLong(totCol);
                           if (uCol != -1 && c.getString(uCol) != null) lastLocalPath = c.getString(uCol);
                           c.close();
                           if (status == DownloadManager.STATUS_RUNNING || status == DownloadManager.STATUS_PAUSED) {
                               if (total > 0) {
-                                  int pct = (int) (downloaded * 100L / total);
-                                  nm.notify(NOTIF_ING, notif(DL_CH, android.R.drawable.stat_sys_download,
-                                      "Downloading Wallpaper", fmtBytes(downloaded) + " / " + fmtBytes(total))
+                                  int pct = (int)(downloaded * 100L / total);
+                                  runOnUiThread(() -> { dlProgressBar.setIndeterminate(false);
+                                      dlProgressBar.setProgress(pct); dlPercent.setText(pct + "%");
+                                      dlFileName.setText(fmtBytes(downloaded) + " / " + fmtBytes(total)); });
+                                  nm.notify(NOTIF_ING, notif(DL_CH, "Downloading Wallpaper",
+                                      fmtBytes(downloaded) + " / " + fmtBytes(total) + " (" + pct + "%)")
                                       .setProgress(100, pct, false).setOngoing(true).build());
                               }
-                              progressHandler.postDelayed(this, 1000);
-                          } else {
+                              progressHandler.postDelayed(this, 800);
+                          } else if (status == DownloadManager.STATUS_SUCCESSFUL) {
                               stopProgressPolling();
-                          }
+                              runOnUiThread(() -> downloadBar.setVisibility(View.GONE));
+                              onDownloadSuccess(lastLocalPath);
+                          } else if (status == DownloadManager.STATUS_FAILED) {
+                              stopProgressPolling();
+                              runOnUiThread(() -> downloadBar.setVisibility(View.GONE));
+                              nm.cancel(NOTIF_ING);
+                              nm.notify(NOTIF_DONE, notif(DL_CH, "Download Failed",
+                                  "Could not download \"" + lastFile + "\". Try again.")
+                                  .setPriority(NotificationCompat.PRIORITY_HIGH).setAutoCancel(true).build());
+                          } else stopProgressPolling();
                       }
                   };
                   progressHandler.postDelayed(progressRunnable, 500);
@@ -292,9 +572,7 @@ jobs:
 
               private void stopProgressPolling() {
                   if (progressRunnable != null) {
-                      progressHandler.removeCallbacks(progressRunnable);
-                      progressRunnable = null;
-                  }
+                      progressHandler.removeCallbacks(progressRunnable); progressRunnable = null; }
               }
 
               private void registerDlReceiver() {
@@ -303,60 +581,20 @@ jobs:
                           long id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1);
                           if (id != lastId) return;
                           stopProgressPolling();
-
                           Cursor c = dm.query(new DownloadManager.Query().setFilterById(id));
                           if (c == null || !c.moveToFirst()) { if (c != null) c.close(); return; }
                           int sCol = c.getColumnIndex(DownloadManager.COLUMN_STATUS);
                           int uCol = c.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI);
                           if (sCol == -1) { c.close(); return; }
                           int status = c.getInt(sCol);
-                          String localUri = (uCol != -1) ? c.getString(uCol) : null;
-                          c.close();
-                          nm.cancel(NOTIF_ING);
-
-                          runOnUiThread(() -> {
-                              if (status == DownloadManager.STATUS_SUCCESSFUL && localUri != null) {
-                                  try {
-                                      File file = new File(Uri.parse(localUri).getPath());
-
-                                      ContentValues cv = new ContentValues();
-                                      cv.put(MediaStore.Images.Media.DISPLAY_NAME, lastFile);
-                                      cv.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
-                                      cv.put(MediaStore.Images.Media.RELATIVE_PATH,
-                                          Environment.DIRECTORY_PICTURES + "/" + WALLS_FOLDER);
-                                      getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, cv);
-
-                                      Uri safeUri = FileProvider.getUriForFile(ctx, AUTHORITY, file);
-
-                                      Intent wall = new Intent(Intent.ACTION_ATTACH_DATA);
-                                      wall.setDataAndType(safeUri, "image/*");
-                                      wall.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                                      wall.putExtra("mimeType", "image/*");
-                                      Intent chooser = Intent.createChooser(wall, "Set as wallpaper");
-
-                                      PendingIntent pi = PendingIntent.getActivity(ctx, 0, chooser,
-                                          PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-                                      nm.notify(NOTIF_DONE, notif(DL_CH, android.R.drawable.stat_sys_download_done,
-                                          "Wallpaper Downloaded!", "Tap to set \"" + lastFile + "\" as wallpaper")
-                                          .setPriority(NotificationCompat.PRIORITY_HIGH)
-                                          .setContentIntent(pi).setAutoCancel(true).build());
-                                      Toast.makeText(ctx, "Saved to Pictures/Walls/. Tap notification to set wallpaper.",
-                                          Toast.LENGTH_LONG).show();
-                                      if (isImage) startActivity(chooser);
-                                  } catch (Exception e) {
-                                      nm.notify(NOTIF_DONE, notif(DL_CH, android.R.drawable.stat_notify_error,
-                                          "Download Error", "Could not open \"" + lastFile + "\": " + e.getMessage())
-                                          .setPriority(NotificationCompat.PRIORITY_HIGH).setAutoCancel(true).build());
-                                      Toast.makeText(ctx, "Saved to Pictures/Walls/ but could not open: "
-                                          + e.getMessage(), Toast.LENGTH_LONG).show();
-                                  }
-                              } else {
-                                  nm.notify(NOTIF_DONE, notif(DL_CH, android.R.drawable.stat_notify_error,
-                                      "Download Failed", "Could not download \"" + lastFile + "\". Try again.")
-                                      .setPriority(NotificationCompat.PRIORITY_HIGH).setAutoCancel(true).build());
-                                  Toast.makeText(ctx, "Download failed. Please try again.", Toast.LENGTH_SHORT).show();
-                              }
-                          });
+                          String localUri = uCol != -1 ? c.getString(uCol) : null;
+                          c.close(); nm.cancel(NOTIF_ING);
+                          runOnUiThread(() -> downloadBar.setVisibility(View.GONE));
+                          if (status == DownloadManager.STATUS_SUCCESSFUL && localUri != null)
+                              onDownloadSuccess(localUri);
+                          else nm.notify(NOTIF_DONE, notif(DL_CH, "Download Failed",
+                              "Could not download \"" + lastFile + "\". Try again.")
+                              .setPriority(NotificationCompat.PRIORITY_HIGH).setAutoCancel(true).build());
                       }
                   };
                   IntentFilter f = new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE);
@@ -364,77 +602,111 @@ jobs:
                   else registerReceiver(dlReceiver, f);
               }
 
+              private void onDownloadSuccess(String localUri) {
+                  try {
+                      File file = new File(Uri.parse(localUri).getPath());
+                      ContentValues cv = new ContentValues();
+                      cv.put(MediaStore.Images.Media.DISPLAY_NAME, lastFile);
+                      cv.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
+                      cv.put(MediaStore.Images.Media.RELATIVE_PATH,
+                          android.os.Environment.DIRECTORY_PICTURES + "/" + WALLS_FOLDER);
+                      getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, cv);
+
+                      Uri safeUri = FileProvider.getUriForFile(this, AUTHORITY, file);
+                      Intent wall = new Intent(Intent.ACTION_ATTACH_DATA);
+                      wall.setDataAndType(safeUri, "image/*");
+                      wall.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                      wall.putExtra("mimeType", "image/*");
+                      Intent chooser = Intent.createChooser(wall, "Set as wallpaper");
+
+                      NotificationCompat.Builder nb = notif(DL_CH, "Wallpaper Downloaded!",
+                          "Tap to set \"" + lastFile + "\" as wallpaper")
+                          .setPriority(NotificationCompat.PRIORITY_HIGH)
+                          .setContentIntent(PendingIntent.getActivity(this, 0, chooser,
+                              PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE))
+                          .setAutoCancel(true);
+                      // Thumbnail preview in notification
+                      try {
+                          BitmapFactory.Options opts = new BitmapFactory.Options(); opts.inSampleSize = 4;
+                          Bitmap thumb = BitmapFactory.decodeFile(file.getAbsolutePath(), opts);
+                          if (thumb != null) nb.setLargeIcon(thumb)
+                              .setStyle(new NotificationCompat.BigPictureStyle().bigPicture(thumb));
+                      } catch (Exception ignored) {}
+
+                      nm.notify(NOTIF_DONE, nb.build());
+                      runOnUiThread(() -> {
+                          Toast.makeText(this, "Saved to Pictures/Walls/ \u2713", Toast.LENGTH_LONG).show();
+                          if (isImage) startActivity(chooser);
+                      });
+                  } catch (Exception e) {
+                      nm.notify(NOTIF_DONE, notif(DL_CH, "Download Error",
+                          "Could not open \"" + lastFile + "\": " + e.getMessage())
+                          .setPriority(NotificationCompat.PRIORITY_HIGH).setAutoCancel(true).build());
+                      runOnUiThread(() -> Toast.makeText(this,
+                          "Saved but could not open: " + e.getMessage(), Toast.LENGTH_LONG).show());
+                  }
+              }
+
+              // ─── Version check ────────────────────────────────────────────────────────
+
               private void checkForUpdate() {
-                  String currentVersion = "1.0.0";
-                  try { currentVersion = getPackageManager().getPackageInfo(getPackageName(), 0).versionName; } catch (Exception ignored) {}
-                  final String cv = currentVersion;
+                  if (!isNetworkAvailable()) return;
+                  String cv; try { cv = getPackageManager().getPackageInfo(getPackageName(), 0).versionName; }
+                  catch (Exception e) { cv = "1.0.0"; }
+                  final String current = cv;
                   new Thread(() -> {
                       try {
-                          java.net.URL url = new java.net.URL("https://walls.ovrica.name.ng/version.json");
-                          java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+                          java.net.HttpURLConnection conn = (java.net.HttpURLConnection)
+                              new java.net.URL(BASE_URL + "/version.json").openConnection();
                           conn.setConnectTimeout(5000); conn.setReadTimeout(5000);
-                          java.io.BufferedReader br = new java.io.BufferedReader(
-                              new java.io.InputStreamReader(conn.getInputStream()));
-                          StringBuilder sb = new StringBuilder();
-                          String line; while ((line = br.readLine()) != null) sb.append(line);
-                          br.close();
+                          BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+                          StringBuilder sb = new StringBuilder(); String line;
+                          while ((line = br.readLine()) != null) sb.append(line); br.close();
                           String json = sb.toString();
-                          // Parse "latest" and "minVersion" from JSON e.g. {"latest":"1.2.0","minVersion":"1.1.0"}
                           String latest = json.replaceAll(".*\"latest\"\\s*:\\s*\"([^\"]+)\".*", "$1");
-                          String minVersion = json.replaceAll(".*\"minVersion\"\\s*:\\s*\"([^\"]+)\".*", "$1");
-                          if (isNewer(latest, cv)) {
-                              runOnUiThread(() -> showUpdateDialog(cv, latest, minVersion));
-                          }
+                          String minVer = json.replaceAll(".*\"minVersion\"\\s*:\\s*\"([^\"]+)\".*", "$1");
+                          if (isNewer(latest, current))
+                              runOnUiThread(() -> showUpdateDialog(current, latest, minVer));
                       } catch (Exception ignored) {}
                   }).start();
               }
 
-              // Returns true if versionA > versionB
-              private boolean isNewer(String versionA, String versionB) {
+              private boolean isNewer(String a, String b) {
                   try {
-                      String[] a = versionA.split("\\."), b = versionB.split("\\.");
-                      int len = Math.max(a.length, b.length);
-                      for (int i = 0; i < len; i++) {
-                          int ai = i < a.length ? Integer.parseInt(a[i]) : 0;
-                          int bi = i < b.length ? Integer.parseInt(b[i]) : 0;
-                          if (ai > bi) return true;
-                          if (ai < bi) return false;
+                      String[] av = a.split("\\."), bv = b.split("\\.");
+                      for (int i = 0; i < Math.max(av.length, bv.length); i++) {
+                          int ai = i < av.length ? Integer.parseInt(av[i]) : 0;
+                          int bi = i < bv.length ? Integer.parseInt(bv[i]) : 0;
+                          if (ai > bi) return true; if (ai < bi) return false;
                       }
-                  } catch (Exception ignored) {}
-                  return false;
+                  } catch (Exception ignored) {} return false;
               }
 
-              private void showUpdateDialog(String current, String latest, String minVersion) {
-                  boolean isForced = isNewer(current, minVersion) || isForcePeriodExpired();
-                  android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(this)
-                      .setTitle(isForced ? "Update Required" : "Update Available")
-                      .setMessage("A new version of Walls is available.\n\nCurrent: v" + current + "\nLatest: v" + latest
-                          + (isForced ? "\n\nThis update is required to continue using the app." : ""))
+              private void showUpdateDialog(String current, String latest, String minVer) {
+                  boolean forced = isNewer(current, minVer) || isForcePeriodExpired();
+                  android.app.AlertDialog.Builder b = new android.app.AlertDialog.Builder(this)
+                      .setTitle(forced ? "Update Required" : "Update Available")
+                      .setMessage("A new version of Walls is available.\n\nCurrent: v" + current
+                          + "\nLatest: v" + latest
+                          + (forced ? "\n\nThis update is required to continue." : ""))
                       .setPositiveButton("Update Now", (d, w) -> {
-                          startActivity(new Intent(Intent.ACTION_VIEW,
-                              Uri.parse("https://walls.ovrica.name.ng/download")));
-                          if (isForced) finish();
+                          startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(BASE_URL + "/download")));
+                          if (forced) finish();
                       });
-                  if (!isForced) {
-                      builder.setNegativeButton("Later", (d, w) -> {
-                          getSharedPreferences("walls_prefs", MODE_PRIVATE).edit()
-                              .putLong("update_dismissed_at", System.currentTimeMillis()).apply();
-                          d.dismiss();
-                      });
-                  }
-                  android.app.AlertDialog dialog = builder.create();
-                  dialog.setCancelable(!isForced);
-                  dialog.show();
+                  if (!forced) b.setNegativeButton("Later", (d, w) -> {
+                      getSharedPreferences("walls_prefs", MODE_PRIVATE).edit()
+                          .putLong("update_dismissed_at", System.currentTimeMillis()).apply();
+                      d.dismiss();
+                  });
+                  android.app.AlertDialog dlg = b.create(); dlg.setCancelable(!forced); dlg.show();
               }
 
-              // Force update if user dismissed the dialog more than 3 days ago
               private boolean isForcePeriodExpired() {
-                  long dismissed = getSharedPreferences("walls_prefs", MODE_PRIVATE)
-                      .getLong("update_dismissed_at", 0);
-                  if (dismissed == 0) return false;
-                  long threeDaysMs = 3L * 24 * 60 * 60 * 1000;
-                  return System.currentTimeMillis() - dismissed > threeDaysMs;
+                  long t = getSharedPreferences("walls_prefs", MODE_PRIVATE).getLong("update_dismissed_at", 0);
+                  return t > 0 && System.currentTimeMillis() - t > 3L * 24 * 60 * 60 * 1000;
               }
+
+              // ─── Reminders ────────────────────────────────────────────────────────────
 
               private void scheduleReminder() {
                   AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
@@ -465,7 +737,7 @@ jobs:
                       PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
                   ((NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE)).notify(3001,
                       new NotificationCompat.Builder(ctx, "walls_promo")
-                          .setSmallIcon(android.R.drawable.ic_menu_gallery)
+                          .setSmallIcon(R.drawable.ic_notification)
                           .setContentTitle("New wallpapers are waiting \uD83D\uDDBC\uFE0F")
                           .setContentText("Fresh picks are live on Walls. Come see what's new.")
                           .setPriority(NotificationCompat.PRIORITY_DEFAULT)
