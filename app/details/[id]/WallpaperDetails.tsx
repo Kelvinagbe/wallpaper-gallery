@@ -1,3 +1,6 @@
+Here's the full rewrite with the fixed `handleDownload`:
+
+```tsx
 'use client';
 
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
@@ -35,6 +38,12 @@ const timeAgoStr = (date: string) => {
   const d = Math.floor((Date.now() - new Date(date).getTime()) / 1000);
   return d < 60 ? 'Just now' : d < 3600 ? `${Math.floor(d / 60)}m ago` : d < 86400 ? `${Math.floor(d / 3600)}h ago` : d < 604800 ? `${Math.floor(d / 86400)}d ago` : `${Math.floor(d / 604800)}w ago`;
 };
+
+// Detect Android WebView
+const isAndroidWebView = () =>
+  typeof navigator !== 'undefined' &&
+  /Android/.test(navigator.userAgent) &&
+  /wv|WebView/.test(navigator.userAgent);
 
 // ── Shared style helpers ─────────────────────────────────────────
 const sheet = (active?: boolean): React.CSSProperties => ({ flex: 1, padding: '12px 0', borderRadius: 12, background: active ? 'rgba(16,185,129,0.06)' : 'rgba(0,0,0,0.04)', border: `1px solid ${active ? 'rgba(16,185,129,0.3)' : 'rgba(0,0,0,0.07)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontFamily: F, fontSize: 13, fontWeight: 600, color: active ? '#10b981' : 'rgba(0,0,0,0.55)', cursor: 'pointer', transition: 'all .15s' });
@@ -243,14 +252,38 @@ export default function WallpaperDetail({ initialWallpaper: wp, ad }: { initialW
     set({ downloading: true }); navigator.vibrate?.(50);
     try {
       await incrementDownloads(wp.id);
-      const res = await fetch(`https://walls.ovrica.name.ng/api/download?url=${encodeURIComponent(wp.url)}&name=${encodeURIComponent(wp.title || 'wallpaper')}`);
-      if (!res.ok) throw new Error('Download failed');
-      const objectUrl = URL.createObjectURL(await res.blob());
-      const a = Object.assign(document.createElement('a'), { href: objectUrl, download: `${wp.title || 'wallpaper'}.jpg`, style: 'display:none' });
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+
+      if (isAndroidWebView()) {
+        // Android WebView: pass direct HTTPS URL so DownloadManager can handle it
+        // Do NOT use blob URLs — DownloadManager cannot handle blob: scheme
+        const filename = `${wp.title || 'wallpaper'}.jpg`;
+        const a = Object.assign(document.createElement('a'), {
+          href: wp.url,           // direct CDN/Supabase HTTPS URL
+          download: filename,
+          style: 'display:none',
+        });
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } else {
+        // Regular browser: use blob approach for forced download
+        const res = await fetch(`/api/download?url=${encodeURIComponent(wp.url)}&name=${encodeURIComponent(wp.title || 'wallpaper')}`);
+        if (!res.ok) throw new Error('Download failed');
+        const objectUrl = URL.createObjectURL(await res.blob());
+        const a = Object.assign(document.createElement('a'), {
+          href: objectUrl,
+          download: `${wp.title || 'wallpaper'}.jpg`,
+          style: 'display:none',
+        });
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      }
+
       set({ downloading: false, downloaded: true }); navigator.vibrate?.(100);
-    } catch (e) { console.error('Download error:', e); set({ downloading: false }); }
+    } catch (e) {
+      console.error('Download error:', e);
+      set({ downloading: false });
+    }
   };
 
   const handleSetPfp = async () => {
@@ -356,8 +389,19 @@ export default function WallpaperDetail({ initialWallpaper: wp, ad }: { initialW
 
         {/* Actions */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-          <button onClick={session ? handleDownload : () => set({ loginAction: 'download wallpapers', showLogin: true })} disabled={st.downloading} className="act-btn" style={{ flex: 2, padding: '13px 0', borderRadius: 12, border: 'none', fontFamily: F, fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, color: '#fff', background: st.downloaded ? '#10b981' : '#0a0a0a', opacity: st.downloading ? 0.7 : 1, cursor: st.downloading ? 'not-allowed' : 'pointer', transition: 'background .2s,opacity .2s' }}>
-            {st.downloading ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> : st.downloaded ? <><Check size={16} />Downloaded</> : !session ? <><Lock size={16} />Download</> : <><Download size={16} />Download</>}
+          <button
+            onClick={session ? handleDownload : () => set({ loginAction: 'download wallpapers', showLogin: true })}
+            disabled={st.downloading}
+            className="act-btn"
+            style={{ flex: 2, padding: '13px 0', borderRadius: 12, border: 'none', fontFamily: F, fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, color: '#fff', background: st.downloaded ? '#10b981' : '#0a0a0a', opacity: st.downloading ? 0.7 : 1, cursor: st.downloading ? 'not-allowed' : 'pointer', transition: 'background .2s,opacity .2s' }}
+          >
+            {st.downloading
+              ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
+              : st.downloaded
+                ? <><Check size={16} />Downloaded</>
+                : !session
+                  ? <><Lock size={16} />Download</>
+                  : <><Download size={16} />Download</>}
           </button>
           <button onClick={handleShare} className="act-btn" aria-label="Share" style={sheet()}><Share2 size={17} /></button>
           <button onClick={() => set({ copyOpen: true })} className="act-btn" aria-label="Copy link" style={sheet()}><LinkIcon size={17} /></button>
@@ -365,10 +409,13 @@ export default function WallpaperDetail({ initialWallpaper: wp, ad }: { initialW
 
         {session && (
           <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-           <button onClick={handleSetPfp} disabled={st.pfpSetting || st.pfpSet} className="act-btn" style={sheet(st.pfpSet)}>
-              {st.pfpSetting ? <><Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} />Setting...</> : st.pfpSet ? <><Check size={15} />Picture Set</> : <><UserCircle size={15} />Set as profile picture</>}
+            <button onClick={handleSetPfp} disabled={st.pfpSetting || st.pfpSet} className="act-btn" style={sheet(st.pfpSet)}>
+              {st.pfpSetting
+                ? <><Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} />Setting...</>
+                : st.pfpSet
+                  ? <><Check size={15} />Picture Set</>
+                  : <><UserCircle size={15} />Set as profile picture</>}
             </button>
- 
           </div>
         )}
 
