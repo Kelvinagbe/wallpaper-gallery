@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Walls</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Syne:wght@600;700;800&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg:       #0a0a0a;
+    --surface:  #111111;
+    --border:   #1e1e1e;
+    --text:     #f5f0e8;
+    --muted:    #6b6560;
+    --accent:   #e8d5b0;
+    --pill:     #1a1a1a;
+    --radius:   14px;
+    --nav-h:    64px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;-webkit-font-smoothing:antialiased;overflow:hidden}
+
+  /* ── Layout ── */
+  #app{display:flex;flex-direction:column;height:100vh}
+  #view{flex:1;overflow-y:auto;padding:16px 16px 80px;scroll-behavior:smooth}
+  #view::-webkit-scrollbar{width:3px}
+  #view::-webkit-scrollbar-track{background:transparent}
+  #view::-webkit-scrollbar-thumb{background:var(--border);border-radius:99px}
+
+  /* ── Nav ── */
+  nav{position:fixed;bottom:0;left:0;right:0;height:var(--nav-h);background:rgba(10,10,10,.92);backdrop-filter:blur(20px);border-top:1px solid var(--border);display:flex;z-index:100}
+  nav button{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;background:none;border:none;color:var(--muted);cursor:pointer;font-family:'DM Sans',sans-serif;font-size:10px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;transition:color .2s}
+  nav button.active{color:var(--accent)}
+  nav button svg{width:20px;height:20px;stroke-width:1.6}
+
+  /* ── Header ── */
+  .page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;padding-top:4px}
+  .page-title{font-family:'Syne',sans-serif;font-size:26px;font-weight:800;letter-spacing:-.02em;color:var(--text)}
+  .page-sub{font-size:12px;color:var(--muted);margin-top:2px}
+
+  /* ── Filter pills ── */
+  .filters{display:flex;gap:8px;margin-bottom:18px;overflow-x:auto;padding-bottom:2px}
+  .filters::-webkit-scrollbar{display:none}
+  .pill{flex-shrink:0;padding:7px 14px;border-radius:99px;border:1px solid var(--border);background:var(--pill);color:var(--muted);font-size:12px;font-weight:500;cursor:pointer;transition:all .18s;white-space:nowrap}
+  .pill.active,.pill:hover{border-color:var(--accent);color:var(--accent)}
+
+  /* ── Grid ── */
+  .grid{columns:2;gap:10px;column-gap:10px}
+  @media(min-width:600px){.grid{columns:3}}
+  @media(min-width:900px){.grid{columns:4}}
+
+  .card{break-inside:avoid;margin-bottom:10px;border-radius:var(--radius);overflow:hidden;position:relative;cursor:pointer;background:var(--surface)}
+  .card img{width:100%;display:block;transition:transform .35s ease}
+  .card:hover img{transform:scale(1.03)}
+  .card-info{position:absolute;bottom:0;left:0;right:0;padding:28px 10px 10px;background:linear-gradient(transparent,rgba(0,0,0,.75));opacity:0;transition:opacity .25s}
+  .card:hover .card-info{opacity:1}
+  .card-title{font-size:11px;font-weight:500;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .card-meta{display:flex;align-items:center;gap:8px;margin-top:3px}
+  .card-meta span{font-size:10px;color:rgba(255,255,255,.55);display:flex;align-items:center;gap:3px}
+  .card-dl{position:absolute;top:8px;right:8px;width:28px;height:28px;border-radius:50%;background:rgba(0,0,0,.55);backdrop-filter:blur(8px);border:none;color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;opacity:0;transition:opacity .25s;z-index:2}
+  .card:hover .card-dl{opacity:1}
+  .card-dl:hover{background:rgba(232,213,176,.25)}
+  .card-dl svg{width:14px;height:14px;stroke-width:2}
+
+  /* ── Shimmer skeletons ── */
+  .shimmer{background:linear-gradient(90deg,var(--surface) 25%,var(--border) 50%,var(--surface) 75%);background-size:200% 100%;animation:sh 1.4s infinite}
+  @keyframes sh{0%{background-position:200% 0}100%{background-position:-200% 0}}
+  .sk-card{break-inside:avoid;margin-bottom:10px;border-radius:var(--radius);overflow:hidden}
+  .sk-block{width:100%;display:block}
+
+  /* ── Load more ── */
+  .load-more{display:flex;justify-content:center;margin-top:20px}
+  .load-more button{padding:10px 28px;border-radius:99px;border:1px solid var(--border);background:transparent;color:var(--muted);font-family:'DM Sans',sans-serif;font-size:13px;cursor:pointer;transition:all .2s}
+  .load-more button:hover{border-color:var(--accent);color:var(--accent)}
+
+  /* ── Search ── */
+  .search-wrap{position:relative;margin-bottom:20px}
+  .search-wrap input{width:100%;padding:12px 16px 12px 42px;border-radius:var(--radius);border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;outline:none;transition:border-color .2s}
+  .search-wrap input::placeholder{color:var(--muted)}
+  .search-wrap input:focus{border-color:var(--accent)}
+  .search-wrap svg{position:absolute;left:14px;top:50%;transform:translateY(-50%);width:16px;height:16px;stroke:var(--muted);pointer-events:none}
+  .search-wrap .clear-btn{position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);cursor:pointer;padding:4px;display:none;align-items:center}
+  .search-wrap .clear-btn.visible{display:flex}
+
+  /* ── AI search ── */
+  .ai-strip{display:flex;align-items:center;gap:8px;margin-bottom:20px;padding:10px 14px;border-radius:var(--radius);border:1px solid var(--border);background:var(--surface);cursor:pointer;transition:border-color .2s}
+  .ai-strip:hover{border-color:var(--accent)}
+  .ai-icon{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,#e8d5b0,#b8a080);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .ai-icon svg{width:14px;height:14px;stroke:#0a0a0a;stroke-width:2}
+  .ai-label{flex:1}
+  .ai-label p{font-size:13px;font-weight:500;color:var(--text)}
+  .ai-label span{font-size:11px;color:var(--muted)}
+  .ai-modal{position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(8px);z-index:200;display:flex;align-items:flex-end;opacity:0;pointer-events:none;transition:opacity .25s}
+  .ai-modal.open{opacity:1;pointer-events:all}
+  .ai-sheet{width:100%;background:var(--surface);border-radius:20px 20px 0 0;border-top:1px solid var(--border);padding:20px 16px 36px;transform:translateY(40px);transition:transform .3s}
+  .ai-modal.open .ai-sheet{transform:translateY(0)}
+  .ai-sheet h3{font-family:'Syne',sans-serif;font-size:18px;font-weight:700;margin-bottom:4px}
+  .ai-sheet p{font-size:12px;color:var(--muted);margin-bottom:14px}
+  .ai-input-row{display:flex;gap:8px;margin-bottom:12px}
+  .ai-input-row input{flex:1;padding:11px 14px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;outline:none}
+  .ai-input-row input:focus{border-color:var(--accent)}
+  .ai-input-row button{padding:11px 18px;border-radius:10px;border:none;background:var(--accent);color:var(--bg);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer}
+  .ai-result{font-size:13px;color:var(--text);line-height:1.6;background:var(--bg);border-radius:10px;padding:12px 14px;min-height:48px}
+  .ai-close{position:absolute;top:16px;right:16px;background:none;border:none;color:var(--muted);cursor:pointer;padding:4px}
+  .ai-sheet{position:relative}
+
+  /* ── Empty / status ── */
+  .empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:60px 20px;text-align:center}
+  .empty svg{width:40px;height:40px;stroke:var(--muted);stroke-width:1.2}
+  .empty p{font-size:14px;color:var(--muted)}
+  .empty small{font-size:12px;color:var(--border)}
+
+  /* ── Downloads ── */
+  .dl-item{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)}
+  .dl-thumb{width:52px;height:52px;border-radius:10px;object-fit:cover;flex-shrink:0;background:var(--surface)}
+  .dl-info{flex:1;min-width:0}
+  .dl-info p{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .dl-info span{font-size:11px;color:var(--muted)}
+  .dl-open{padding:7px 14px;border-radius:99px;border:1px solid var(--border);background:transparent;color:var(--muted);font-family:'DM Sans',sans-serif;font-size:11px;cursor:pointer;transition:all .2s;white-space:nowrap}
+  .dl-open:hover{border-color:var(--accent);color:var(--accent)}
+
+  /* ── Toast ── */
+  .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--surface);border:1px solid var(--border);color:var(--text);font-size:12px;padding:9px 18px;border-radius:99px;z-index:300;opacity:0;transition:all .3s;white-space:nowrap;pointer-events:none}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  /* ── Entrance anim ── */
+  @keyframes up{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+  .up{animation:up .35s ease both}
+  .d1{animation-delay:.05s}.d2{animation-delay:.1s}.d3{animation-delay:.15s}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="view"></div>
+  <nav>
+    <button id="nav-home" class="active" onclick="showPage('home')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 01-1 1H4a1 1 0 01-1-1V9.5z"/><path d="M9 21V12h6v9"/></svg>
+      Home
+    </button>
+    <button id="nav-search" onclick="showPage('search')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
+      Search
+    </button>
+    <button id="nav-downloads" onclick="showPage('downloads')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 3v13M5 16l7 5 7-5"/><path d="M3 21h18"/></svg>
+      Downloads
+    </button>
+  </nav>
+</div>
+
+<!-- AI Modal -->
+<div class="ai-modal" id="aiModal" onclick="closeAI(event)">
+  <div class="ai-sheet">
+    <button class="ai-close" onclick="closeAIModal()">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+    <h3>Ask AI</h3>
+    <p>Describe what you're looking for and get smart search suggestions</p>
+    <div class="ai-input-row">
+      <input id="aiInput" placeholder="e.g. dark forest with mist…" onkeydown="if(event.key==='Enter')askAI()"/>
+      <button onclick="askAI()" id="aiBtn">Ask</button>
+    </div>
+    <div class="ai-result" id="aiResult" style="display:none"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = 'https://walls.ovrica.name.ng/api/wallpapers';
+let state = { page:'home', filter:'recent', category:'', search:'', wpPage:0, wpItems:[], wpTotal:0, loading:false, searchTimer:null };
+let downloads = JSON.parse(localStorage.getItem('walls_dl') || '[]');
+
+// ── Utils ──────────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const fmt = n => n >= 1000 ? (n/1000).toFixed(1)+'k' : n;
+function toast(msg,ms=2200){const t=$('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),ms)}
+function icon(paths){return`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor">${paths}</svg>`}
+
+// ── Nav ────────────────────────────────────────────────────────────────────
+function showPage(p){
+  state.page=p;
+  ['home','search','downloads'].forEach(n=>{
+    $('nav-'+n).classList.toggle('active',n===p);
+  });
+  if(p==='home') renderHome();
+  else if(p==='search') renderSearch();
+  else renderDownloads();
+}
+
+// ── API ────────────────────────────────────────────────────────────────────
+async function fetchWPs(extra={}){
+  const params = new URLSearchParams({
+    page: extra.page ?? state.wpPage,
+    limit: 20,
+    filter: extra.filter ?? state.filter,
+    ...(state.category && {category: state.category}),
+    ...(state.search && {search: state.search}),
+    ...extra
+  });
+  const res = await fetch(`${API}?${params}`);
+  if(!res.ok) throw new Error('fetch failed');
+  return res.json();
+}
+
+// ── Skeleton ───────────────────────────────────────────────────────────────
+function skeletons(n=8){
+  const heights=[220,160,260,180,200,240,170,210];
+  return Array.from({length:n},(_,i)=>`
+    <div class="sk-card shimmer"><div class="sk-block" style="height:${heights[i%8]}px"></div></div>
+  `).join('');
+}
+
+// ── Card ───────────────────────────────────────────────────────────────────
+function cardHTML(wp){
+  return`
+  <div class="card up" style="animation-delay:${Math.random()*.15}s" onclick="openWP('${wp.id}','${wp.url}','${encodeURIComponent(wp.title)}')">
+    <img src="${wp.thumbnail}" loading="lazy" alt="${wp.title}" style="min-height:120px"/>
+    <button class="card-dl" onclick="event.stopPropagation();saveWP(event,'${wp.id}','${wp.thumbnail}','${encodeURIComponent(wp.title)}')" title="Download">
+      ${icon('<path d="M12 3v10M7 9l5 5 5-5"/><path d="M3 17v2a2 2 0 002 2h14a2 2 0 002-2v-2"/>')}
+    </button>
+    <div class="card-info">
+      <div class="card-title">${decodeURIComponent(encodeURIComponent(wp.title))}</div>
+      <div class="card-meta">
+        <span>${icon('<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7"/><circle cx="12" cy="12" r="3"/>')} ${fmt(wp.views)}</span>
+        <span>${icon('<path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>')} ${fmt(wp.likes)}</span>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ── Home ───────────────────────────────────────────────────────────────────
+async function renderHome(reset=true){
+  const v=$('view');
+  if(reset){state.wpPage=0;state.wpItems=[];}
+  if(reset) v.innerHTML=`
+    <div class="page-header up">
+      <div><div class="page-title">Walls</div><div class="page-sub">Curated wallpapers</div></div>
+    </div>
+    <div class="filters up d1" id="filters">
+      ${['recent','trending','popular'].map(f=>`<div class="pill${f===state.filter?' active':''}" onclick="setFilter('${f}')">${f.charAt(0).toUpperCase()+f.slice(1)}</div>`).join('')}
+    </div>
+    <div class="grid up d2" id="grid">${skeletons()}</div>
+    <div class="load-more" id="loadMore" style="display:none"><button onclick="loadMore()">Load more</button></div>
+  `;
+  try{
+    const {wallpapers,pagination} = await fetchWPs({page:0});
+    state.wpItems=wallpapers;
+    state.wpTotal=pagination.total;
+    $('grid').innerHTML = wallpapers.length ? wallpapers.map(cardHTML).join('') : '<div class="empty" style="column-span:all"><p>No wallpapers found</p></div>';
+    $('loadMore').style.display = pagination.hasMore ? 'flex' : 'none';
+  }catch{
+    $('grid').innerHTML='<div class="empty" style="column-span:all"><p>Failed to load. Check connection.</p></div>';
+  }
+}
+
+function setFilter(f){
+  state.filter=f;
+  document.querySelectorAll('#filters .pill').forEach(p=>{p.classList.toggle('active',p.textContent.toLowerCase()===f)});
+  renderHome();
+}
+
+async function loadMore(){
+  state.wpPage++;
+  const btn = document.querySelector('.load-more button');
+  if(btn) btn.textContent='Loading…';
+  try{
+    const {wallpapers,pagination} = await fetchWPs({page:state.wpPage});
+    state.wpItems=[...state.wpItems,...wallpapers];
+    const g=$('grid');
+    wallpapers.forEach(wp=>g.insertAdjacentHTML('beforeend',cardHTML(wp)));
+    $('loadMore').style.display = pagination.hasMore ? 'flex' : 'none';
+    if(btn) btn.textContent='Load more';
+  }catch{if(btn)btn.textContent='Retry'}
+}
+
+// ── Search ─────────────────────────────────────────────────────────────────
+function renderSearch(){
+  const v=$('view');
+  v.innerHTML=`
+    <div class="page-header up"><div class="page-title">Search</div></div>
+    <div class="search-wrap up d1">
+      ${icon('<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/>')}
+      <input id="searchInput" placeholder="Search wallpapers…" value="${state.search}" oninput="onSearch(this.value)" autofocus/>
+      <button class="clear-btn${state.search?' visible':''}" id="clearBtn" onclick="clearSearch()">
+        ${icon('<path d="M18 6L6 18M6 6l12 12"/>')}
+      </button>
+    </div>
+    <div class="ai-strip up d2" onclick="openAIModal()">
+      <div class="ai-icon">${icon('<path d="M12 2l2 7h7l-5.5 4 2 7L12 16l-5.5 4 2-7L3 9h7z"/>')}</div>
+      <div class="ai-label"><p>AI Search</p><span>Describe what you're looking for</span></div>
+      ${icon('<path d="M9 18l6-6-6-6"/>')}
+    </div>
+    <div class="grid up d3" id="searchGrid">${state.search?skeletons(6):''}</div>
+  `;
+  if(state.search) doSearch(state.search);
+}
+
+function onSearch(val){
+  state.search=val;
+  $('clearBtn').classList.toggle('visible',!!val);
+  clearTimeout(state.searchTimer);
+  if(!val){$('searchGrid').innerHTML='';return;}
+  $('searchGrid').innerHTML=skeletons(6);
+  state.searchTimer=setTimeout(()=>doSearch(val),450);
+}
+
+function clearSearch(){state.search='';renderSearch();}
+
+async function doSearch(q){
+  try{
+    const {wallpapers} = await fetchWPs({search:q,page:0,filter:'recent'});
+    const g=$('searchGrid');
+    if(!g) return;
+    g.innerHTML = wallpapers.length ? wallpapers.map(cardHTML).join('') : `<div class="empty" style="column-span:all">${icon('<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/>')}<p>No results for "${q}"</p></div>`;
+  }catch{if($('searchGrid'))$('searchGrid').innerHTML='<div class="empty" style="column-span:all"><p>Search failed</p></div>';}
+}
+
+// ── AI Modal ───────────────────────────────────────────────────────────────
+function openAIModal(){$('aiModal').classList.add('open');setTimeout(()=>$('aiInput').focus(),300)}
+function closeAIModal(){$('aiModal').classList.remove('open')}
+function closeAI(e){if(e.target===$('aiModal'))closeAIModal()}
+
+async function askAI(){
+  const q=$('aiInput').value.trim();
+  if(!q) return;
+  const res=$('aiResult');const btn=$('aiBtn');
+  res.style.display='block';res.textContent='Thinking…';btn.disabled=true;btn.textContent='…';
+  try{
+    const r=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-20250514',
+        max_tokens:1000,
+        system:'You are a wallpaper search assistant for the WALLS app. Given a user description, suggest 3–5 specific search keywords they should try (one per line, no bullets, no explanation). Only return the keywords, nothing else.',
+        messages:[{role:'user',content:q}]
+      })
+    });
+    const d=await r.json();
+    const text=d.content?.map(c=>c.text||'').join('')||'No suggestions.';
+    res.innerHTML='<strong style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Try searching for:</strong><br/><br/>'+
+      text.split('\n').filter(Boolean).map(k=>`<span onclick="applyAISuggestion('${k.trim()}')" style="display:inline-block;margin:3px 4px 3px 0;padding:5px 12px;border-radius:99px;border:1px solid var(--border);cursor:pointer;font-size:12px;transition:all .2s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color=''">${k.trim()}</span>`).join('');
+  }catch{res.textContent='Could not reach AI. Check connection.'}
+  btn.disabled=false;btn.textContent='Ask';
+}
+
+function applyAISuggestion(kw){
+  closeAIModal();
+  state.search=kw;
+  renderSearch();
+  setTimeout(()=>{const i=$('searchInput');if(i){i.value=kw;$('clearBtn').classList.add('visible');}doSearch(kw);},100);
+}
+
+// ── Open wallpaper ─────────────────────────────────────────────────────────
+function openWP(id,url,title){
+  window.open(url,'_blank','noopener');
+}
+
+// ── Download / Save ────────────────────────────────────────────────────────
+function saveWP(e,id,thumb,title){
+  e.preventDefault();
+  const decoded=decodeURIComponent(title);
+  const already=downloads.find(d=>d.id===id);
+  if(!already){
+    downloads.unshift({id,thumb,title:decoded,savedAt:Date.now()});
+    if(downloads.length>200) downloads=downloads.slice(0,200);
+    localStorage.setItem('walls_dl',JSON.stringify(downloads));
+    toast('Saved to Downloads');
+  } else {
+    toast('Already saved');
+  }
+  // trigger actual download
+  const a=document.createElement('a');a.href=thumb;a.download=decoded||'wallpaper';a.target='_blank';a.click();
+}
+
+// ── Downloads page ─────────────────────────────────────────────────────────
+function renderDownloads(){
+  const v=$('view');
+  v.innerHTML=`
+    <div class="page-header up">
+      <div><div class="page-title">Downloads</div><div class="page-sub">${downloads.length} saved</div></div>
+      ${downloads.length?`<button onclick="clearDownloads()" style="background:none;border:none;color:var(--muted);font-size:12px;cursor:pointer;padding:4px 8px;border-radius:8px;border:1px solid var(--border)">Clear all</button>`:''}
+    </div>
+    <div class="up d1" id="dlList">
+      ${downloads.length ? downloads.map(dl=>`
+        <div class="dl-item">
+          <img class="dl-thumb" src="${dl.thumb}" alt="${dl.title}" loading="lazy"/>
+          <div class="dl-info">
+            <p>${dl.title}</p>
+            <span>${new Date(dl.savedAt).toLocaleDateString('en',{month:'short',day:'numeric',year:'numeric'})}</span>
+          </div>
+          <button class="dl-open" onclick="window.open('${dl.thumb}','_blank','noopener')">Open</button>
+        </div>
+      `).join('') : `
+        <div class="empty">
+          ${icon('<path d="M12 3v13M5 16l7 5 7-5"/><path d="M3 21h18"/>')}
+          <p>No downloads yet</p>
+          <small>Save wallpapers and they'll appear here</small>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+function clearDownloads(){
+  if(!confirm('Clear all saved wallpapers?')) return;
+  downloads=[];localStorage.removeItem('walls_dl');renderDownloads();toast('Downloads cleared');
+}
+
+// ── Boot ───────────────────────────────────────────────────────────────────
+showPage('home');
+</script>
+</body>
+</html>
