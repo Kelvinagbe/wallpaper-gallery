@@ -229,7 +229,7 @@ jobs:
                           // FIX: first arg must be a standard directory constant; subfolder goes in second arg
                           req.setDestinationInExternalPublicDir(
                               Environment.DIRECTORY_PICTURES, WALLS_FOLDER + "/" + lastFile);
-                          req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_HIDDEN);
+                          req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
                           req.allowScanningByMediaScanner();
                           lastId = dm.enqueue(req);
                           startProgressPolling();
@@ -359,7 +359,7 @@ jobs:
                           });
                       }
                   };
-                 IntentFilter f = new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE);
+                  IntentFilter f = new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE);
                   if (Build.VERSION.SDK_INT >= 33) registerReceiver(dlReceiver, f, RECEIVER_NOT_EXPORTED);
                   else registerReceiver(dlReceiver, f);
               }
