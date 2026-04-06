@@ -164,15 +164,17 @@ jobs:
                   super.onStart();
                   dm = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
                   nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-                  getBridge().getWebView().getSettings().setTextZoom(100);
                   mkChannel(DL_CH, "Walls Downloads", "Download notifications");
                   mkChannel(PROMO_CH, "Wallpaper Reminders", "Periodic reminders");
                   if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this,
                       Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
                       ActivityCompat.requestPermissions(this,
                           new String[]{Manifest.permission.POST_NOTIFICATIONS}, 1001);
-                  setupWebViewClient();
-                  setupDownload();
+                  if (getBridge() != null && getBridge().getWebView() != null) {
+                      getBridge().getWebView().getSettings().setTextZoom(100);
+                      setupWebViewClient();
+                      setupDownload();
+                  }
                   registerDlReceiver();
                   scheduleReminder();
                   handleDeepLink(getIntent());
@@ -434,7 +436,7 @@ jobs:
                           req.setDestinationInExternalPublicDir(
                               android.os.Environment.DIRECTORY_PICTURES, WALLS_FOLDER + "/" + lastFile);
                           req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
-                          req.allowScanningByMediaScanner();
+                          // allowScanningByMediaScanner() removed — public dir files are scanned automatically (API 29+)
                           lastId = dm.enqueue(req);
                           startProgressPolling();
                       } catch (Exception e) {
@@ -694,7 +696,9 @@ jobs:
                 <uses-permission android:name="android.permission.WAKE_LOCK" />' $M
           fi
           grep -q "WallpaperReminderReceiver" $M || sed -i '/<\/application>/i\
-              <receiver android:name=".WallpaperReminderReceiver" android:exported="false" />' $M
+              <receiver android:name=".WallpaperReminderReceiver" android:exported="false">\
+                  <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /></intent-filter>\
+              <\/receiver>' $M
           grep -q "fileprovider" $M || sed -i '/<\/application>/i\
               <provider\
                   android:name="androidx.core.content.FileProvider"\
@@ -705,6 +709,11 @@ jobs:
                       android:name="android.support.FILE_PROVIDER_PATHS"\
                       android:resource="@xml\/file_paths" />\
               <\/provider>' $M
+          # Ensure MainActivity has android:exported="true" (required for Android 12+)
+          sed -i 's/<activity android:name="\.MainActivity"/<activity android:name=".MainActivity" android:exported="true"/' $M
+          # Also handle if it was already partially set without exported
+          grep -q 'android:exported' $M || sed -i 's/<activity /<activity android:exported="true" /' $M
+
           grep -q "walls.ovrica.name.ng" $M || sed -i '/<\/activity>/i\
                   <intent-filter android:autoVerify="true">\
                       <action android:name="android.intent.action.VIEW" />\
