@@ -154,9 +154,23 @@ jobs:
               @Override
               public void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
-                  // FIX: findViewById(android.R.id.content) is always a FrameLayout — safe, no crash
-                  rootFrame = findViewById(android.R.id.content);
-                  setupOverlays();
+                  // Post to ensure Capacitor's view hierarchy is fully attached before we add overlays
+                  new Handler(Looper.getMainLooper()).post(() -> {
+                      try {
+                          View decorContent = getWindow().getDecorView().findViewById(android.R.id.content);
+                          if (decorContent instanceof FrameLayout) {
+                              rootFrame = (FrameLayout) decorContent;
+                          } else {
+                              rootFrame = new FrameLayout(this);
+                              rootFrame.setLayoutParams(new FrameLayout.LayoutParams(
+                                  FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+                              ((android.view.ViewGroup) getWindow().getDecorView()).addView(rootFrame);
+                          }
+                          setupOverlays();
+                      } catch (Exception e) {
+                          android.util.Log.e("Walls", "setupOverlays failed: " + e.getMessage(), e);
+                      }
+                  });
               }
 
               @Override
@@ -194,6 +208,7 @@ jobs:
               // ─── Overlays ────────────────────────────────────────────────────────────
 
               private void setupOverlays() {
+                  if (rootFrame == null) return;
                   loadingOverlay = new FrameLayout(this);
                   loadingOverlay.setBackgroundColor(0xFF0a0a0a);
                   loadingOverlay.setLayoutParams(new FrameLayout.LayoutParams(
@@ -318,14 +333,14 @@ jobs:
                           super.onPageFinished(v, url);
                           webViewLoaded = true;
                           hideLoadingOverlay(); hideNavBar();
-                          noNetworkView.setVisibility(View.GONE);
+                          if (noNetworkView != null) noNetworkView.setVisibility(View.GONE);
                           // handlePageUrl removed — main WebView handles all pages directly
                       }
                       @Override public void onReceivedError(WebView v, WebResourceRequest req, WebResourceError err) {
-                          if (req.isForMainFrame()) { hideLoadingOverlay(); hideNavBar(); noNetworkView.setVisibility(View.VISIBLE); }
+                          if (req.isForMainFrame()) { hideLoadingOverlay(); hideNavBar(); if (noNetworkView != null) noNetworkView.setVisibility(View.VISIBLE); }
                       }
                       @Override public void onReceivedHttpError(WebView v, WebResourceRequest req, android.webkit.WebResourceResponse res) {
-                          if (req.isForMainFrame() && res.getStatusCode() >= 500) { hideLoadingOverlay(); noNetworkView.setVisibility(View.VISIBLE); }
+                          if (req.isForMainFrame() && res.getStatusCode() >= 500) { hideLoadingOverlay(); if (noNetworkView != null) noNetworkView.setVisibility(View.VISIBLE); }
                       }
                   });
               }
@@ -420,10 +435,10 @@ jobs:
                           return;
                       }
                       runOnUiThread(() -> {
-                          dlFileName.setText("Downloading: " + lastFile);
-                          dlPercent.setText("0%"); dlProgressBar.setProgress(0);
-                          dlProgressBar.setIndeterminate(true);
-                          downloadBar.setVisibility(View.VISIBLE);
+                          if (dlFileName != null) dlFileName.setText("Downloading: " + lastFile);
+                          if (dlPercent != null) { dlPercent.setText("0%"); }
+                          if (dlProgressBar != null) { dlProgressBar.setProgress(0); dlProgressBar.setIndeterminate(true); }
+                          if (downloadBar != null) downloadBar.setVisibility(View.VISIBLE);
                       });
                       nm.notify(NOTIF_ING, notif(DL_CH, "Downloading Wallpaper", lastFile)
                           .setProgress(0, 0, true).setOngoing(true).build());
@@ -436,7 +451,7 @@ jobs:
                           req.setDestinationInExternalPublicDir(
                               android.os.Environment.DIRECTORY_PICTURES, WALLS_FOLDER + "/" + lastFile);
                           req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
-                          // allowScanningByMediaScanner() removed — public dir files are scanned automatically (API 29+)
+                          // allowScanningByMediaScanner() removed — public dir files auto-scanned (API 29+)
                           lastId = dm.enqueue(req);
                           startProgressPolling();
                       } catch (Exception e) {
@@ -696,9 +711,7 @@ jobs:
                 <uses-permission android:name="android.permission.WAKE_LOCK" />' $M
           fi
           grep -q "WallpaperReminderReceiver" $M || sed -i '/<\/application>/i\
-              <receiver android:name=".WallpaperReminderReceiver" android:exported="false">\
-                  <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /></intent-filter>\
-              <\/receiver>' $M
+              <receiver android:name=".WallpaperReminderReceiver" android:exported="false" />' $M
           grep -q "fileprovider" $M || sed -i '/<\/application>/i\
               <provider\
                   android:name="androidx.core.content.FileProvider"\
@@ -709,9 +722,8 @@ jobs:
                       android:name="android.support.FILE_PROVIDER_PATHS"\
                       android:resource="@xml\/file_paths" />\
               <\/provider>' $M
-          # Ensure MainActivity has android:exported="true" (required for Android 12+)
+          # Ensure MainActivity has android:exported="true" (required Android 12+)
           sed -i 's/<activity android:name="\.MainActivity"/<activity android:name=".MainActivity" android:exported="true"/' $M
-          # Also handle if it was already partially set without exported
           grep -q 'android:exported' $M || sed -i 's/<activity /<activity android:exported="true" /' $M
 
           grep -q "walls.ovrica.name.ng" $M || sed -i '/<\/activity>/i\
