@@ -58,25 +58,6 @@ jobs:
           EOF
           [ ! -d "android" ] && npx cap add android || true
 
-      - name: Generate icons and splash
-        run: |
-          sudo apt-get install -y imagemagick -q
-          LOGO="public/icons/icon-512x512.png"
-          RES="android/app/src/main/res"
-          for cfg in "mipmap-mdpi:48" "mipmap-hdpi:72" "mipmap-xhdpi:96" "mipmap-xxhdpi:144" "mipmap-xxxhdpi:192"; do
-            folder="${cfg%%:*}"
-            size="${cfg##*:}"
-            mkdir -p "$RES/$folder"
-            convert "$LOGO" -resize "${size}x${size}" "$RES/$folder/ic_launcher.png"
-            cp "$RES/$folder/ic_launcher.png" "$RES/$folder/ic_launcher_round.png"
-          done
-          mkdir -p "$RES/drawable" "$RES/drawable-land"
-          convert -size 2048x2048 xc:"#0a0a0a" \( "$LOGO" -resize 512x512 \) -gravity center -composite "$RES/drawable/splash.png"
-          cp "$RES/drawable/splash.png" "$RES/drawable-land/splash.png"
-          M="android/app/src/main/AndroidManifest.xml"
-          sed -i 's/android:icon="[^"]*"/android:icon="@mipmap\/ic_launcher"/' $M
-          sed -i 's/android:roundIcon="[^"]*"/android:roundIcon="@mipmap\/ic_launcher_round"/' $M
-
       - name: Write file_paths.xml
         run: |
           mkdir -p android/app/src/main/res/xml
@@ -363,7 +344,7 @@ jobs:
                   else registerReceiver(dlReceiver, f);
               }
 
-             private void scheduleReminder() {
+              private void scheduleReminder() {
                   AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
                   PendingIntent pi = PendingIntent.getBroadcast(this, 0,
                       new Intent(this, WallpaperReminderReceiver.class),
@@ -375,6 +356,7 @@ jobs:
           }
           EOF
 
+     
       - name: Write WallpaperReminderReceiver.java
         run: |
           FILE=android/app/src/main/java/ng/name/ovrica/walls/WallpaperReminderReceiver.java
@@ -401,12 +383,29 @@ jobs:
           }
           EOF
 
-      - name: Assets, sync and Kotlin fix
+      - name: Assets, sync, icons and Kotlin fix
         run: |
+          sudo apt-get install -y imagemagick -q
           mkdir -p android/app/src/main/assets
           echo '[]' > android/app/src/main/assets/capacitor.plugins.json
           cp capacitor.config.json android/app/src/main/assets/capacitor.config.json
           npx cap sync android
+
+          # Generate icons and splash AFTER cap sync so they don't get overwritten
+          LOGO="public/icons/icon-512x512.png"
+          RES="android/app/src/main/res"
+          for cfg in "mipmap-mdpi:48" "mipmap-hdpi:72" "mipmap-xhdpi:96" "mipmap-xxhdpi:144" "mipmap-xxxhdpi:192"; do
+            folder="${cfg%%:*}"; size="${cfg##*:}"
+            mkdir -p "$RES/$folder"
+            convert "$LOGO" -resize "${size}x${size}" "$RES/$folder/ic_launcher.png"
+            cp "$RES/$folder/ic_launcher.png" "$RES/$folder/ic_launcher_round.png"
+          done
+          mkdir -p "$RES/drawable" "$RES/drawable-land"
+          convert -size 2048x2048 xc:"#0a0a0a" \( "$LOGO" -resize 512x512 \) -gravity center -composite "$RES/drawable/splash.png"
+          cp "$RES/drawable/splash.png" "$RES/drawable-land/splash.png"
+          M="android/app/src/main/AndroidManifest.xml"
+          sed -i 's/android:icon="[^"]*"/android:icon="@mipmap\/ic_launcher"/' $M
+          sed -i 's/android:roundIcon="[^"]*"/android:roundIcon="@mipmap\/ic_launcher_round"/' $M
 
       - name: Patch AndroidManifest
         run: |
