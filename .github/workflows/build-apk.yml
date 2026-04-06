@@ -309,7 +309,7 @@ jobs:
                       <data android:scheme="https" android:host="walls.ovrica.name.ng" />\
                   </intent-filter>' $M
 
-      - name: Assets, sync and Kotlin fix
+    - name: Assets, sync and Kotlin fix
         run: |
           mkdir -p android/app/src/main/assets
           echo '[]' > android/app/src/main/assets/capacitor.plugins.json
@@ -323,7 +323,7 @@ jobs:
           } } }
           EOF
 
-     - name: Generate keystore
+      - name: Generate keystore
         run: |
           keytool -genkeypair -v -keystore walls.keystore \
             -alias walls -keyalg RSA -keysize 2048 -validity 10000 \
