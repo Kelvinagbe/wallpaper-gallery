@@ -146,7 +146,7 @@ jobs:
               private String lastFile = "", lastLocalPath = "";
 
               // UI
-              private FrameLayout rootFrame, loadingOverlay;  // FIX: loadingOverlay must be FrameLayout
+              private FrameLayout rootFrame, loadingOverlay;
               private View noNetworkView, downloadBar, navBar;
               private TextView dlFileName, dlPercent;
               private ProgressBar dlProgressBar;
@@ -154,6 +154,8 @@ jobs:
               @Override
               public void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
+                  // FIX: findViewById(android.R.id.content) is always a FrameLayout — safe, no crash
+                  rootFrame = findViewById(android.R.id.content);
                   setupOverlays();
               }
 
@@ -190,8 +192,6 @@ jobs:
               // ─── Overlays ────────────────────────────────────────────────────────────
 
               private void setupOverlays() {
-                  rootFrame = (FrameLayout) getWindow().getDecorView().getRootView();
-
                   loadingOverlay = new FrameLayout(this);
                   loadingOverlay.setBackgroundColor(0xFF0a0a0a);
                   loadingOverlay.setLayoutParams(new FrameLayout.LayoutParams(
@@ -317,7 +317,7 @@ jobs:
                           webViewLoaded = true;
                           hideLoadingOverlay(); hideNavBar();
                           noNetworkView.setVisibility(View.GONE);
-                          handlePageUrl(url);
+                          // handlePageUrl removed — main WebView handles all pages directly
                       }
                       @Override public void onReceivedError(WebView v, WebResourceRequest req, WebResourceError err) {
                           if (req.isForMainFrame()) { hideLoadingOverlay(); hideNavBar(); noNetworkView.setVisibility(View.VISIBLE); }
@@ -343,91 +343,18 @@ jobs:
                           .withEndAction(() -> navBar.setVisibility(View.GONE)).start();
               }
 
-              // ─── Deep link & /page?url= ───────────────────────────────────────────────
+              // ─── Deep link ────────────────────────────────────────────────────────────
+              // Matches: https://walls.ovrica.name.ng/walls/<any-page>
+              // Loads URL directly into the main WebView — no overlay, no second WebView.
 
               private void handleDeepLink(Intent intent) {
                   if (intent == null) return;
                   Uri data = intent.getData(); if (data == null) return;
-                  String urlParam = data.getQueryParameter("url");
-                  if ("/page".equals(data.getPath()) && urlParam != null && !urlParam.isEmpty())
-                      openInAppPage(urlParam);
-                  else { WebView wv = getBridge().getWebView();
-                      if (wv != null) runOnUiThread(() -> wv.loadUrl(data.toString())); }
-              }
-
-              private void handlePageUrl(String url) {
-                  try {
-                      Uri u = Uri.parse(url);
-                      String p = u.getQueryParameter("url");
-                      if ("/page".equals(u.getPath()) && p != null && !p.isEmpty()) openInAppPage(p);
-                  } catch (Exception ignored) {}
-              }
-
-              private void openInAppPage(String targetUrl) {
-                  runOnUiThread(() -> {
-                      int sbh = getStatusBarHeight();
-                      FrameLayout overlay = new FrameLayout(this);
-                      overlay.setBackgroundColor(0xFF0a0a0a);
-                      overlay.setLayoutParams(new FrameLayout.LayoutParams(
-                          FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
-
-                      LinearLayout header = new LinearLayout(this);
-                      header.setOrientation(LinearLayout.HORIZONTAL);
-                      header.setBackgroundColor(0xFF111827);
-                      header.setGravity(Gravity.CENTER_VERTICAL);
-                      header.setPadding(16, sbh, 16, 0);
-                      header.setLayoutParams(new FrameLayout.LayoutParams(
-                          FrameLayout.LayoutParams.MATCH_PARENT, 160 + sbh, Gravity.TOP));
-
-                      Button back = new Button(this);
-                      back.setText("← Back");
-                      back.setBackgroundColor(android.graphics.Color.TRANSPARENT);
-                      back.setTextColor(0xFF22c55e); back.setTextSize(14);
-                      back.setTypeface(Typeface.DEFAULT_BOLD);
-
-                      TextView title = new TextView(this);
-                      title.setText("Walls"); title.setTextColor(0xFFFFFFFF); title.setTextSize(16);
-                      title.setTypeface(Typeface.DEFAULT_BOLD); title.setGravity(Gravity.CENTER);
-                      title.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-
-                      View spacer = new View(this); spacer.setLayoutParams(back.getLayoutParams());
-                      header.addView(back); header.addView(title); header.addView(spacer);
-
-                      WebView inner = new WebView(this);
-                      inner.getSettings().setJavaScriptEnabled(true);
-                      inner.getSettings().setDomStorageEnabled(true);
-                      FrameLayout.LayoutParams wlp = new FrameLayout.LayoutParams(
-                          FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT);
-                      wlp.topMargin = 160 + sbh;
-                      inner.setLayoutParams(wlp);
-
-                      ProgressBar pb = new ProgressBar(this);
-                      pb.setIndeterminate(true);
-                      pb.getIndeterminateDrawable().setColorFilter(0xFF22c55e, PorterDuff.Mode.SRC_IN);
-                      FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams(120, 120, Gravity.CENTER);
-                      plp.topMargin = 160 + sbh;
-                      pb.setLayoutParams(plp);
-
-                      inner.setWebViewClient(new WebViewClient() {
-                          @Override public void onPageStarted(WebView v, String u, Bitmap f) { pb.setVisibility(View.VISIBLE); }
-                          @Override public void onPageFinished(WebView v, String u) { pb.setVisibility(View.GONE); }
-                          @Override public void onReceivedError(WebView v, WebResourceRequest r, WebResourceError e) {
-                              if (r.isForMainFrame()) {
-                                  pb.setVisibility(View.GONE);
-                                  Toast.makeText(MainActivity.this, "No internet connection", Toast.LENGTH_SHORT).show();
-                              }
-                          }
-                      });
-                      inner.loadUrl(targetUrl);
-                      back.setOnClickListener(v -> rootFrame.removeView(overlay));
-                      overlay.addView(inner); overlay.addView(header); overlay.addView(pb);
-                      rootFrame.addView(overlay);
-                  });
-              }
-
-              private int getStatusBarHeight() {
-                  int id = getResources().getIdentifier("status_bar_height", "dimen", "android");
-                  return id > 0 ? getResources().getDimensionPixelSize(id) : 0;
+                  String path = data.getPath();
+                  if (path != null && path.startsWith("/walls")) {
+                      WebView wv = getBridge().getWebView();
+                      if (wv != null) runOnUiThread(() -> wv.loadUrl(data.toString()));
+                  }
               }
 
               // ─── Network ──────────────────────────────────────────────────────────────
@@ -783,7 +710,7 @@ jobs:
                       <action android:name="android.intent.action.VIEW" />\
                       <category android:name="android.intent.category.DEFAULT" />\
                       <category android:name="android.intent.category.BROWSABLE" />\
-                      <data android:scheme="https" android:host="walls.ovrica.name.ng" />\
+                      <data android:scheme="https" android:host="walls.ovrica.name.ng" android:pathPrefix="\/walls" />\
                   </intent-filter>' $M
 
       - name: Assets, sync and Kotlin fix
