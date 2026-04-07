@@ -30,7 +30,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);
 }
 #offBanner.show{display:block}
 
-/* ── Download bar (Chrome-style, slides down from top) ── */
+/* ── Download bar ── */
 #dlBar{
   position:fixed;top:0;left:0;right:0;z-index:490;
   background:var(--s1);border-bottom:1px solid var(--border);
@@ -41,7 +41,6 @@ html,body{height:100%;background:var(--bg);color:var(--text);
   pointer-events:none;
 }
 #dlBar.show{transform:translateY(0);pointer-events:all}
-/* icon circle with animated arrow */
 .dlb-icon{width:34px;height:34px;flex-shrink:0;position:relative;display:flex;align-items:center;justify-content:center}
 .dlb-ring{width:34px;height:34px;border-radius:50%;border:1.5px solid var(--border);
   display:flex;align-items:center;justify-content:center;background:var(--s2)}
@@ -93,7 +92,7 @@ nav button svg{width:20px;height:20px;stroke-width:1.6;fill:none;stroke:currentC
 }
 .pill.on{border-color:var(--accent);color:var(--accent);background:rgba(232,213,176,.05)}
 
-/* ── Masonry (pure JS absolute positioning — zero layout shift) ── */
+/* ── Masonry ── */
 #msnry,#sMsnry{position:relative;width:100%}
 .card{
   position:absolute;border-radius:var(--r);overflow:hidden;
@@ -190,9 +189,9 @@ nav button svg{width:20px;height:20px;stroke-width:1.6;fill:none;stroke:currentC
   position:fixed;inset:0;z-index:600;
   background:rgba(0,0,0,0);pointer-events:none;
   transition:background .3s;
-  display:flex;flex-direction:column;
+  display:none;flex-direction:column;
 }
-#modal.open{background:rgba(0,0,0,.96);pointer-events:all}
+#modal.open{display:flex;background:rgba(0,0,0,.96);pointer-events:all}
 #modal-top{
   position:absolute;top:0;left:0;right:0;z-index:2;
   display:flex;align-items:center;justify-content:space-between;
@@ -217,20 +216,62 @@ nav button svg{width:20px;height:20px;stroke-width:1.6;fill:none;stroke:currentC
   border-radius:3px;
 }
 #modal.open #modal-img{transform:scale(1);opacity:1}
+
+/* ── IMPROVED Modal Bottom (wallpaper details) ── */
 #modal-bottom{
-  padding:14px 13px max(22px,env(safe-area-inset-bottom));
-  background:linear-gradient(transparent,rgba(0,0,0,.92) 30%);
+  padding:0 13px max(22px,env(safe-area-inset-bottom));
+  background:linear-gradient(transparent,rgba(0,0,0,.95) 25%);
   transform:translateY(16px);opacity:0;
   transition:all .3s .08s;
 }
 #modal.open #modal-bottom{transform:translateY(0);opacity:1}
-#modal-title{font-family:'Syne',sans-serif;font-size:15px;font-weight:700;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px}
-#modal-meta{font-size:11px;color:rgba(255,255,255,.4);
-  display:flex;gap:11px;margin-bottom:13px}
-#modal-meta span{display:flex;align-items:center;gap:3px}
-#modal-meta span svg{width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:2}
-#modal-actions{display:flex;gap:8px}
+
+/* Wallpaper detail card */
+#modal-detail{
+  background:rgba(255,255,255,.04);
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;
+  padding:13px 14px 10px;
+  margin-bottom:10px;
+}
+#modal-title{
+  font-family:'Syne',sans-serif;font-size:16px;font-weight:700;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  margin-bottom:8px;
+}
+#modal-tags{
+  display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px;min-height:0;
+}
+.m-tag{
+  font-size:10px;padding:3px 9px;border-radius:99px;
+  border:1px solid rgba(232,213,176,.2);color:rgba(232,213,176,.6);
+  background:rgba(232,213,176,.04);white-space:nowrap;
+}
+#modal-stats{
+  display:flex;gap:16px;
+  padding-top:9px;
+  border-top:1px solid rgba(255,255,255,.07);
+}
+.m-stat{
+  display:flex;align-items:center;gap:5px;
+  font-size:11px;color:rgba(255,255,255,.5);
+}
+.m-stat svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2;opacity:.7}
+.m-stat strong{color:rgba(255,255,255,.8);font-weight:600;font-size:12px}
+
+/* Resolution & size badge row */
+#modal-badges{
+  display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;
+}
+.m-badge{
+  display:flex;align-items:center;gap:4px;
+  font-size:10px;padding:3px 8px;border-radius:6px;
+  background:rgba(255,255,255,.06);color:rgba(255,255,255,.5);
+  border:1px solid rgba(255,255,255,.07);
+}
+.m-badge svg{width:10px;height:10px;stroke:currentColor;fill:none;stroke-width:2}
+
+#modal-actions{display:flex;gap:8px;margin-top:0}
 .ma{
   flex:1;padding:12px 8px;border-radius:11px;border:none;
   font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;
@@ -282,6 +323,45 @@ nav button svg{width:20px;height:20px;stroke-width:1.6;fill:none;stroke:currentC
   font-size:13px;cursor:pointer;transition:all .18s;
 }
 .ss-cancel:hover{color:var(--text);border-color:rgba(255,255,255,.12)}
+
+/* ── Permission prompt sheet ── */
+#permSheet{
+  position:fixed;inset:0;z-index:800;
+  background:rgba(0,0,0,.7);backdrop-filter:blur(12px);
+  display:flex;align-items:flex-end;
+  opacity:0;pointer-events:none;transition:opacity .25s;
+}
+#permSheet.open{opacity:1;pointer-events:all}
+#permSheet-in{
+  width:100%;background:var(--s1);
+  border-radius:20px 20px 0 0;border-top:1px solid var(--border);
+  padding:22px 16px max(30px,env(safe-area-inset-bottom));
+  transform:translateY(50px);transition:transform .3s cubic-bezier(.4,0,.2,1);
+}
+#permSheet.open #permSheet-in{transform:translateY(0)}
+.ps-icon{
+  width:52px;height:52px;border-radius:14px;
+  background:rgba(232,213,176,.1);
+  display:flex;align-items:center;justify-content:center;
+  margin-bottom:14px;
+}
+.ps-icon svg{width:26px;height:26px;stroke:var(--accent);fill:none;stroke-width:1.6}
+.ps-title{font-family:'Syne',sans-serif;font-size:18px;font-weight:700;margin-bottom:6px}
+.ps-desc{font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:18px}
+.ps-actions{display:flex;flex-direction:column;gap:8px}
+.ps-allow{
+  padding:14px;border-radius:12px;border:none;
+  background:var(--accent);color:#0a0a0a;
+  font-family:'DM Sans',sans-serif;font-size:14px;font-weight:600;
+  cursor:pointer;transition:opacity .16s;
+}
+.ps-allow:active{opacity:.85}
+.ps-deny{
+  padding:12px;border-radius:12px;border:1px solid var(--border);
+  background:transparent;color:var(--muted);
+  font-family:'DM Sans',sans-serif;font-size:13px;
+  cursor:pointer;transition:all .18s;
+}
 
 /* Toast */
 #toast{
@@ -356,11 +436,34 @@ nav button svg{width:20px;height:20px;stroke-width:1.6;fill:none;stroke:currentC
     <img id="modal-img" src="" alt="" loading="lazy"/>
   </div>
   <div id="modal-bottom">
-    <div id="modal-title"></div>
-    <div id="modal-meta">
-      <span><svg viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7"/><circle cx="12" cy="12" r="3"/></svg><span id="mV">0</span></span>
-      <span><svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l8.84 8.84 8.84-8.84a5.5 5.5 0 000-7.78z"/></svg><span id="mL">0</span></span>
-      <span><svg viewBox="0 0 24 24"><path d="M12 3v13M5 16l7 5 7-5"/><path d="M3 21h18"/></svg><span id="mD">0</span></span>
+    <!-- Wallpaper detail card -->
+    <div id="modal-detail">
+      <div id="modal-title"></div>
+      <div id="modal-badges">
+        <div class="m-badge" id="m-res-badge" style="display:none">
+          <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/></svg>
+          <span id="mRes"></span>
+        </div>
+        <div class="m-badge" id="m-cat-badge" style="display:none">
+          <svg viewBox="0 0 24 24"><path d="M4 6h16M4 10h16M4 14h8"/></svg>
+          <span id="mCat"></span>
+        </div>
+      </div>
+      <div id="modal-tags"></div>
+      <div id="modal-stats">
+        <div class="m-stat">
+          <svg viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7"/><circle cx="12" cy="12" r="3"/></svg>
+          <strong id="mV">0</strong>
+        </div>
+        <div class="m-stat">
+          <svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l8.84 8.84 8.84-8.84a5.5 5.5 0 000-7.78z"/></svg>
+          <strong id="mL">0</strong>
+        </div>
+        <div class="m-stat">
+          <svg viewBox="0 0 24 24"><path d="M12 3v13M5 16l7 5 7-5"/><path d="M3 21h18"/></svg>
+          <strong id="mD">0</strong>
+        </div>
+      </div>
     </div>
     <div id="modal-actions">
       <button class="ma ma-ghost" onclick="previewFull()">
@@ -402,6 +505,21 @@ nav button svg{width:20px;height:20px;stroke-width:1.6;fill:none;stroke:currentC
   </div>
 </div>
 
+<!-- Storage permission prompt -->
+<div id="permSheet">
+  <div id="permSheet-in">
+    <div class="ps-icon">
+      <svg viewBox="0 0 24 24"><path d="M19 11H5a2 2 0 00-2 2v7a2 2 0 002 2h14a2 2 0 002-2v-7a2 2 0 00-2-2z"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+    </div>
+    <div class="ps-title">Allow Storage Access</div>
+    <div class="ps-desc" id="permDesc">Walls needs storage access to save wallpapers to your Pictures folder and set them as your wallpaper.</div>
+    <div class="ps-actions">
+      <button class="ps-allow" id="permAllow" onclick="onPermAllow()">Allow Access</button>
+      <button class="ps-deny" onclick="closePermSheet()">Not Now</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
@@ -416,6 +534,9 @@ const S = { page:'home', filter:'recent', search:'', wpPage:0, wpTotal:0,
             items:[], loading:false, searchT:null, current:null };
 let DL = JSON.parse(localStorage.getItem('walls_dl')||'[]');
 
+/* ─── Permission state ───────────────────────────────────────────────────── */
+let _permCallback = null;
+
 /* ─── Utils ──────────────────────────────────────────────────────────────── */
 const $  = id => document.getElementById(id);
 const fmt = n => n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e3?(n/1e3).toFixed(1)+'k':String(n||0);
@@ -426,6 +547,29 @@ function toast(msg,ms=2400){
   clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),ms);
 }
 
+/* ─── Detect if running inside Capacitor/Android APK ─────────────────────── */
+const isAndroid = () => !!(window.Android || window.Capacitor || navigator.userAgent.toLowerCase().includes('wv'));
+
+/* ─── Permission sheet ───────────────────────────────────────────────────── */
+function openPermSheet(desc, callback){
+  _permCallback = callback;
+  $('permDesc').textContent = desc || 'Walls needs storage access to save and set wallpapers.';
+  $('permSheet').classList.add('open');
+}
+function closePermSheet(){
+  $('permSheet').classList.remove('open');
+  _permCallback = null;
+}
+function onPermAllow(){
+  closePermSheet();
+  // On Android APK: the native side (MainActivity.java) handles actual permissions.
+  // The JS just signals intent and lets native take over.
+  if(window.Android && window.Android.requestStoragePermission){
+    window.Android.requestStoragePermission();
+  }
+  // Run the queued callback (proceed with download/set)
+  if(_permCallback) { const cb=_permCallback; _permCallback=null; cb(); }
+}
 
 /* ─── Fetch with timeout + offline detection ─────────────────────────────── */
 async function apiFetch(params){
@@ -455,8 +599,7 @@ window.addEventListener('online', ()=>{
 });
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   MASONRY ENGINE — pure JS, absolute positioned, no CSS columns
-   Skeletons use same aspect ratios per index → columns never shift on load
+   MASONRY ENGINE
 ══════════════════════════════════════════════════════════════════════════ */
 function cols(w){ return w>=900?4:w>=600?3:2; }
 
@@ -669,8 +812,8 @@ function renderDownloads(){
             <button class="dl-act" onclick="window.open('${esc(d.url||d.thumb)}','_blank','noopener')">View</button>
             <button class="dl-act" onclick="startDlRaw('${esc(d.url||d.thumb)}','${esc(d.title)}')">↓</button>
           </div>
-        </div>`).join(''):
-        `<div class="empty">
+        </div>`).join(''):`
+        <div class="empty">
           <svg viewBox="0 0 24 24"><path d="M12 3v13M5 16l7 5 7-5"/><path d="M3 21h18"/></svg>
           <h3>No downloads yet</h3>
           <p>Download wallpapers and they'll appear here</p>
@@ -693,13 +836,36 @@ function openModal(wp){
   $('mV').textContent=fmt(wp.views);
   $('mL').textContent=fmt(wp.likes);
   $('mD').textContent=fmt(wp.downloads);
-  $('modal').classList.add('open');
+  $('modal').style.display='flex';
+  requestAnimationFrame(()=>requestAnimationFrame(()=>$('modal').classList.add('open')));
+
+  // Resolution badge
+  const resBadge=$('m-res-badge'), resEl=$('mRes');
+  if(wp.width && wp.height){
+    resEl.textContent=`${wp.width}×${wp.height}`;
+    resBadge.style.display='flex';
+  } else { resBadge.style.display='none'; }
+
+  // Category badge
+  const catBadge=$('m-cat-badge'), catEl=$('mCat');
+  if(wp.category){
+    catEl.textContent=wp.category;
+    catBadge.style.display='flex';
+  } else { catBadge.style.display='none'; }
+
+  // Tags
+  const tagsEl=$('modal-tags');
+  const tags=wp.tags||(wp.tag?[wp.tag]:[]);
+  tagsEl.innerHTML=tags.length
+    ? tags.slice(0,6).map(t=>`<span class="m-tag">${esc(t)}</span>`).join('')
+    : '';
+
   document.body.style.overflow='hidden';
 }
 function closeModal(){
   $('modal').classList.remove('open');
   document.body.style.overflow='';
-  setTimeout(()=>{ $('modal-img').src=''; },300);
+  setTimeout(()=>{ $('modal-img').src=''; $('modal').style.display='none'; },300);
 }
 function previewFull(){ if(S.current) window.open(S.current.url||S.current.thumbnail,'_blank','noopener'); }
 function shareWP(){
@@ -718,16 +884,47 @@ $('modal').addEventListener('touchend',e=>{ if(e.changedTouches[0].clientY-_ty>9
 /* ─── Set wallpaper sheet ────────────────────────────────────────────────── */
 function openSetSheet(){ $('setSheet').classList.add('open'); }
 function closeSetSheet(){ $('setSheet').classList.remove('open'); }
+
 function setWP(target){
-  closeSetSheet(); closeModal();
+  closeSetSheet();
+
   if(!S.current) return;
-  const url=S.current.url||S.current.thumbnail;
-  // Native Android bridge (Capacitor WallpaperManager)
-  if(window.Android?.setWallpaper){ window.Android.setWallpaper(url,target); toast('Setting wallpaper…'); return; }
-  // iOS / browser fallback — download + instruction
-  startDlRaw(url, S.current.title);
-  const where=target==='both'?'home & lock':target+' screen';
-  toast(`Saved — open in Photos to set as ${where}`);
+  const url = S.current.url || S.current.thumbnail;
+
+  const doSet = () => {
+    // ── ANDROID APK: use native Java bridge injected by MainActivity ──────
+    // MainActivity.java exposes window.Android.setWallpaper(url, target)
+    // where target is 'home' | 'lock' | 'both'
+    if(window.Android && typeof window.Android.setWallpaper === 'function'){
+      window.Android.setWallpaper(url, target);
+      toast('Setting wallpaper…');
+      closeModal();
+      return;
+    }
+
+    // ── Capacitor bridge (if using @capacitor/core plugins) ───────────────
+    if(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.WallpaperPlugin){
+      window.Capacitor.Plugins.WallpaperPlugin.setWallpaper({url, target})
+        .then(()=>{ toast('Wallpaper set! 🎉'); closeModal(); })
+        .catch(()=>{ toast('Could not set wallpaper'); });
+      return;
+    }
+
+    // ── Browser / iOS fallback: download + instruct user ─────────────────
+    startDlRaw(url, S.current.title);
+    const where = target==='both'?'home & lock':target+' screen';
+    setTimeout(()=>toast(`Saved! Long-press photo → Set as ${where}`), 1400);
+    closeModal();
+  };
+
+  // On Android APK, check if we're in the native context.
+  // The native side already handles permissions; just proceed.
+  if(isAndroid() && (window.Android || window.Capacitor)){
+    doSet();
+  } else {
+    // Browser: just do it (browser will download)
+    doSet();
+  }
 }
 
 /* ─── Download engine ────────────────────────────────────────────────────── */
@@ -735,30 +932,95 @@ let _dlT=null;
 
 function startDl(wp){
   saveDL(wp);
-  startDlRaw(wp.url||wp.thumbnail, wp.title);
+  startDlRaw(wp.url||wp.thumbnail, wp.title, wp);
 }
 
-function startDlRaw(url, title){
+/**
+ * startDlRaw — the actual download trigger.
+ *
+ * PROBLEM with plain <a download> in Android WebView:
+ *   • Android WebView does NOT honour the `download` attribute by default.
+ *   • It either opens the URL in the WebView or does nothing.
+ *   • The DownloadManager in MainActivity.java handles this via
+ *     WebView.setDownloadListener() — it intercepts blob/http downloads.
+ *
+ * HOW IT WORKS IN THE APK:
+ *   1. We call window.Android.downloadFile(url, filename) if available
+ *      (fastest path — straight to DownloadManager).
+ *   2. Else, we navigate to the URL directly — the WebView's
+ *      setDownloadListener in MainActivity.java catches it.
+ *   3. In a plain browser, the <a download> anchor trick still works.
+ *
+ * STORAGE PERMISSIONS:
+ *   The APK's MainActivity already requests WRITE_EXTERNAL_STORAGE (≤28)
+ *   and READ_MEDIA_IMAGES (≥33) via ActivityCompat. In the HTML we show
+ *   a friendly explanation sheet before the first download so the user
+ *   understands why the system dialog will appear.
+ */
+function startDlRaw(url, title, wp){
   if(!url) return;
-  showDlBar(title);
-  let pct=0;
-  clearInterval(_dlT);
-  _dlT=setInterval(()=>{
-    pct+=Math.random()*20+5;
-    if(pct>=92) clearInterval(_dlT);
-    setDlPct(Math.min(pct,92));
-  },160);
-  const a=document.createElement('a');
-  a.href=url; a.download=title||'wallpaper'; a.target='_blank';
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  setTimeout(()=>{
+
+  const filename = (title||'wallpaper').replace(/[^a-z0-9_\-]/gi,'_') + '.jpg';
+
+  const proceed = () => {
+    showDlBar(title);
+    let pct=0;
     clearInterval(_dlT);
-    setDlPct(100);
-    $('dlbStatus').textContent='Done ✓';
-    $('dlBar').querySelector('.dlb-ring').style.borderColor='rgba(232,213,176,.4)';
-    setTimeout(hideDlBar,1800);
-    toast('Downloaded!');
-  },1200);
+    _dlT=setInterval(()=>{
+      pct+=Math.random()*20+5;
+      if(pct>=92) clearInterval(_dlT);
+      setDlPct(Math.min(pct,92));
+    },160);
+
+    // ── Path 1: Native Android bridge (MainActivity injects this) ─────────
+    if(window.Android && typeof window.Android.downloadFile === 'function'){
+      window.Android.downloadFile(url, filename);
+      // MainActivity's DownloadManager + BroadcastReceiver handles the rest.
+      // The progress notification comes from native. We simulate bar.
+      setTimeout(()=>{ clearInterval(_dlT); setDlPct(100); $('dlbStatus').textContent='Done ✓'; setTimeout(hideDlBar,1800); toast('Saved to Pictures/Walls/ 📁'); },2000);
+      return;
+    }
+
+    // ── Path 2: Android WebView without explicit bridge ───────────────────
+    // Navigating to the URL triggers setDownloadListener in MainActivity.java
+    if(isAndroid()){
+      // Create a hidden iframe to trigger the DownloadListener
+      // without navigating away from the page
+      const ifr = document.createElement('iframe');
+      ifr.style.display='none';
+      ifr.src = url;
+      document.body.appendChild(ifr);
+      setTimeout(()=>{ document.body.removeChild(ifr); },3000);
+      setTimeout(()=>{ clearInterval(_dlT); setDlPct(100); $('dlbStatus').textContent='Done ✓'; setTimeout(hideDlBar,2000); toast('Saved to Pictures/Walls/ 📁'); },2200);
+      return;
+    }
+
+    // ── Path 3: Standard browser — <a download> trick ─────────────────────
+    const a=document.createElement('a');
+    a.href=url; a.download=filename; a.target='_blank';
+    a.rel='noopener';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(()=>{
+      clearInterval(_dlT);
+      setDlPct(100);
+      $('dlbStatus').textContent='Done ✓';
+      $('dlBar').querySelector('.dlb-ring').style.borderColor='rgba(232,213,176,.4)';
+      setTimeout(hideDlBar,1800);
+      toast('Downloaded!');
+    },1200);
+  };
+
+  // Show permission explanation on first download in Android APK
+  const permKey = 'walls_perm_shown';
+  if(isAndroid() && !localStorage.getItem(permKey)){
+    localStorage.setItem(permKey,'1');
+    openPermSheet(
+      'Walls needs permission to save wallpapers to your device storage (Pictures/Walls folder).',
+      proceed
+    );
+  } else {
+    proceed();
+  }
 }
 
 function showDlBar(name){
@@ -800,6 +1062,7 @@ const errH=fn=>`<div class="empty">
   <button class="retry" onclick="${fn}">Try again</button></div>`;
 
 /* ─── Boot ───────────────────────────────────────────────────────────────── */
+$('modal').style.display='none';
 goPage('home');
 </script>
 </body>
