@@ -964,14 +964,7 @@ jobs:
           cp "$RES/mipmap-anydpi-v26/ic_launcher.xml" "$RES/mipmap-anydpi-v26/ic_launcher_round.xml"
 
           # ── Monochrome notification icon ─────────────────────────────────────
-          # White silhouette of app logo on transparent bg — required for correct small icon rendering
-          convert "$LOGO" -alpha on \
-            \( +clone -alpha extract \) \
-            -channel RGB -white-threshold 1 \
-            +channel -compose CopyOpacity -composite \
-            -colorspace Gray -negate \
-            "$RES/drawable/ic_notification.png"
-          # Also write an XML vector fallback (pure white circle — always works)
+          # Vector XML only — do NOT also write a .png or Android throws duplicate resource error
           cat > "$RES/drawable/ic_notification.xml" << 'XMLEOF'
           <?xml version="1.0" encoding="utf-8"?>
           <vector xmlns:android="http://schemas.android.com/apk/res/android"
