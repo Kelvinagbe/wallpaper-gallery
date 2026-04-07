@@ -86,6 +86,7 @@ jobs:
           import android.content.res.Configuration;
           import android.database.Cursor;
           import android.graphics.*;
+          import android.graphics.drawable.ColorDrawable;
           import android.Manifest;
           import android.net.Uri;
           import android.os.*;
