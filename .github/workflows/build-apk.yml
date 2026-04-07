@@ -496,7 +496,7 @@ jobs:
                           .setTitle(lastFile).setDescription("Downloading wallpaper…")
                           .setMimeType("image/jpeg")
                           .setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_PICTURES, WALLS_FOLDER + "/" + lastFile)
-                          .setNotificationVisibility(DownloadManager.Request.VISIBILITY_HIDDEN);
+                          .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
                       lastId = dm.enqueue(req); startProgressPolling();
                       WebView wv = getBridge() != null ? getBridge().getWebView() : null;
                       if (wv != null) wv.evaluateJavascript(
@@ -700,6 +700,9 @@ jobs:
                   return new NotificationCompat.Builder(this, ch)
                       .setSmallIcon(R.mipmap.ic_launcher)  // App's own icon
                       .setContentTitle(title).setContentText(text)
+                      .setPriority(NotificationCompat.PRIORITY_HIGH)
+                      .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                      .setFullScreenIntent(launchIntent(), false)
                       .setDefaults(NotificationCompat.DEFAULT_ALL);
               }
 
@@ -750,15 +753,18 @@ jobs:
                           StringBuilder sb = new StringBuilder(); String line;
                           while ((line = br.readLine()) != null) sb.append(line);
                           br.close();
-                          String json = sb.toString();
-                          String latest = json.replaceAll(".*\"latest\"\\s*:\\s*\"([^\"]+)\".*", "$1");
-                          String minVer = json.replaceAll(".*\"minVersion\"\\s*:\\s*\"([^\"]+)\".*", "$1");
-                          if (!minVer.equals(json)) prefs.edit().putString(PREF_MIN_VER, minVer).apply();
-                          if (!latest.equals(json) && isNewer(latest, cv)) {
-                              boolean forced = !minVer.equals(json) && isNewer(minVer, cv);
+                          // Use JSONObject - regex fails on multiline JSON
+                          JSONObject vObj = new JSONObject(sb.toString());
+                          String latest = vObj.optString("latest", "");
+                          String minVer = vObj.optString("minVersion", "");
+                          if (!minVer.isEmpty()) prefs.edit().putString(PREF_MIN_VER, minVer).apply();
+                          if (!latest.isEmpty() && isNewer(latest, cv)) {
+                              boolean forced = !minVer.isEmpty() && isNewer(minVer, cv);
                               runOnUiThread(() -> showUpdateUI(cv, latest, forced));
                           }
-                      } catch (Exception ignored) {}
+                      } catch (Exception e) {
+                          android.util.Log.e("WallsUpdate", "checkForUpdate failed: " + e.getMessage());
+                      }
                   }).start();
               }
 
@@ -774,7 +780,7 @@ jobs:
                   return false;
               }
 
-              // ── Full-page update UI injected into WebView (NOT a bottom sheet) ──────
+              // ── Full-page update UI injected into WebView ───────────────────────────
               private void showUpdateUI(String current, String latest, boolean forced) {
                   WebView wv = getBridge() != null ? getBridge().getWebView() : null;
                   if (wv == null) return;
@@ -782,44 +788,65 @@ jobs:
                   String bg   = dark ? "#0d0d12" : "#F1F3F4";
                   String fg   = dark ? "#ffffff" : "#111318";
                   String muted= dark ? "rgba(255,255,255,0.5)" : "rgba(0,0,0,0.45)";
-                  String card = dark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)";
                   String bdr  = dark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.1)";
                   String acc  = "#6c63ff";
                   String label = forced ? "Update Required" : "Update Available";
-                  String sub   = "v" + current + " → v" + latest + (forced ? " · Required to continue" : "");
-                  String laterBtn = forced ? "" :
-                      "<button id='walls-upd-later' style='margin-top:10px;width:100%;padding:13px;" +
-                      "background:transparent;border:1px solid " + bdr + ";border-radius:14px;" +
-                      "color:" + muted + ";font-size:14px;cursor:pointer;font-family:inherit' " +
-                      "onclick=document.getElementById(\\'walls-upd-overlay\\').remove()>Maybe Later</button>";
-                  // Full-screen overlay (covers entire viewport, not a bottom sheet)
+                  String sub   = "v" + current + " to v" + latest + (forced ? " - Required to continue" : "");
+                  String dlUrl = BASE_URL + "/download";
+                  // Build UI via DOM properties (not innerHTML) to avoid JS string-escaping issues
                   String js =
                       "(function(){" +
                       "if(document.getElementById('walls-upd-overlay'))return;" +
                       "var o=document.createElement('div');" +
                       "o.id='walls-upd-overlay';" +
-                      "o.style.cssText='position:fixed;inset:0;background:" + bg + ";z-index:2147483647;" +
-                      "display:flex;flex-direction:column;align-items:center;justify-content:center;" +
-                      "font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:32px;box-sizing:border-box;text-align:center';" +
-                      "o.innerHTML='" +
-                        // App icon from drawable resources
-                        "<img src=\"file:///android_res/mipmap/ic_launcher.png\" " +
-                        "style=\"width:80px;height:80px;border-radius:20px;margin-bottom:24px;" +
-                        "box-shadow:0 4px 32px rgba(108,99,255,0.35)\" onerror=\"this.style.display=\\'none\\'\">" +
-                        "<div style=\"font-size:24px;font-weight:800;color:" + fg + ";margin-bottom:8px\">" + label + "</div>" +
-                        "<div style=\"font-size:14px;color:" + muted + ";margin-bottom:40px\">" + sub + "</div>" +
-                        "<div style=\"width:100%;max-width:340px\">" +
-                        "<button style=\"width:100%;padding:16px;background:" + acc + ";border:none;border-radius:16px;" +
-                        "color:#fff;font-size:16px;font-weight:700;cursor:pointer;letter-spacing:-.01em\" " +
-                        "onclick=\"window.Android&&Android.openUrl(\\'" + BASE_URL + "/download\\')\">Update Now</button>" +
-                        laterBtn +
-                        "</div>" +
-                      "';" +
+                      "o.style.cssText='position:fixed;inset:0;background:" + bg + ";" +
+                          "z-index:2147483647;display:flex;flex-direction:column;" +
+                          "align-items:center;justify-content:center;" +
+                          "font-family:-apple-system,BlinkMacSystemFont,sans-serif;" +
+                          "padding:32px;box-sizing:border-box;text-align:center';" +
+                      // Icon
+                      "var img=document.createElement('img');" +
+                      "img.src='file:///android_res/mipmap/ic_launcher.png';" +
+                      "img.style.cssText='width:80px;height:80px;border-radius:20px;" +
+                          "margin-bottom:24px;box-shadow:0 4px 32px rgba(108,99,255,0.35)';" +
+                      "img.onerror=function(){this.style.display='none'};" +
+                      "o.appendChild(img);" +
+                      // Title
+                      "var h=document.createElement('div');" +
+                      "h.textContent='" + label + "';" +
+                      "h.style.cssText='font-size:24px;font-weight:800;color:" + fg + ";margin-bottom:8px';" +
+                      "o.appendChild(h);" +
+                      // Subtitle
+                      "var s=document.createElement('div');" +
+                      "s.textContent='" + sub + "';" +
+                      "s.style.cssText='font-size:14px;color:" + muted + ";margin-bottom:40px';" +
+                      "o.appendChild(s);" +
+                      // Wrap
+                      "var w=document.createElement('div');" +
+                      "w.style.cssText='width:100%;max-width:340px';" +
+                      // Update button
+                      "var btn=document.createElement('button');" +
+                      "btn.textContent='Update Now';" +
+                      "btn.style.cssText='width:100%;padding:16px;background:" + acc + ";" +
+                          "border:none;border-radius:16px;color:#fff;font-size:16px;" +
+                          "font-weight:700;cursor:pointer;letter-spacing:-.01em';" +
+                      "btn.onclick=function(){window.Android&&Android.openUrl('" + dlUrl + "')};" +
+                      "w.appendChild(btn);" +
+                      (forced ? "" :
+                      // Maybe Later button
+                      "var later=document.createElement('button');" +
+                      "later.textContent='Maybe Later';" +
+                      "later.style.cssText='margin-top:10px;width:100%;padding:13px;" +
+                          "background:transparent;border:1px solid " + bdr + ";" +
+                          "border-radius:14px;color:" + muted + ";" +
+                          "font-size:14px;cursor:pointer;font-family:inherit';" +
+                      "later.onclick=function(){document.getElementById('walls-upd-overlay').remove()};" +
+                      "w.appendChild(later);") +
+                      "o.appendChild(w);" +
                       "document.body.appendChild(o);" +
                       "})();";
-                  wv.evaluateJavascript(js, null);
+                  wv.post(() -> wv.evaluateJavascript(js, null));
               }
-
               private void scheduleReminder() {
                   AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
                   PendingIntent pi = PendingIntent.getBroadcast(this, 0,
@@ -993,12 +1020,16 @@ jobs:
         run: |
           sudo apt-get install -y imagemagick -q
           cp capacitor.config.json android/app/src/main/assets/capacitor.config.json
+          # Sync FIRST — so Capacitor's defaults land, then we overwrite with custom assets below
           npx cap sync android
 
           LOGO="public/icons/icon-512x512.png"
           RES="android/app/src/main/res"
 
-          # Legacy bitmap icons (all densities)
+          # Verify logo exists
+          if [ ! -f "$LOGO" ]; then echo "ERROR: $LOGO not found!"; exit 1; fi
+
+          # Legacy bitmap icons (all densities) — written AFTER sync so they are not overwritten
           for cfg in "mipmap-mdpi:48" "mipmap-hdpi:72" "mipmap-xhdpi:96" "mipmap-xxhdpi:144" "mipmap-xxxhdpi:192"; do
             folder="${cfg%%:*}"; size="${cfg##*:}"
             mkdir -p "$RES/$folder"
@@ -1006,7 +1037,7 @@ jobs:
             cp "$RES/$folder/ic_launcher.png" "$RES/$folder/ic_launcher_round.png"
           done
 
-          # Adaptive icon (Android 8+)
+          # Adaptive icon (Android 8+) — written AFTER sync
           mkdir -p "$RES/drawable" "$RES/drawable-land" "$RES/mipmap-anydpi-v26" "$RES/values"
           convert "$LOGO" -resize 432x432 "$RES/drawable/ic_launcher_foreground.png"
           cat > "$RES/values/ic_launcher_background.xml" << 'XMLEOF'
@@ -1022,7 +1053,7 @@ jobs:
           XMLEOF
           cp "$RES/mipmap-anydpi-v26/ic_launcher.xml" "$RES/mipmap-anydpi-v26/ic_launcher_round.xml"
 
-          # Splash screen: black background + centred app logo (your custom icon, not default)
+          # Splash screen: black background + centred app logo — written AFTER sync
           convert -size 2048x2048 xc:"#000000" \( "$LOGO" -resize 512x512 \) -gravity center -composite "$RES/drawable/splash.png"
           cp "$RES/drawable/splash.png" "$RES/drawable-land/splash.png"
 
