@@ -148,7 +148,7 @@ jobs:
                       ActivityCompat.requestPermissions(this,
                           new String[]{ Manifest.permission.POST_NOTIFICATIONS }, REQ_NOTIF);
                   if (getBridge() != null && getBridge().getWebView() != null && !webLoaded) {
-                      setupWebView(); setupJsBridge(); setupDownload(); webLoaded = true;
+                      setupWebView(); setupJsBridge(); webLoaded = true;
                   }
                   registerDlReceiver(); scheduleReminder(); handleDeepLink(getIntent());
                   showWelcome(); checkForUpdate();
