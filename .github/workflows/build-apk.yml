@@ -802,15 +802,15 @@ jobs:
                       "font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:32px;box-sizing:border-box;text-align:center';" +
                       "o.innerHTML='" +
                         // App icon from drawable resources
-                        "<img src=\\"file:///android_res/mipmap/ic_launcher.png\\" " +
-                        "style=\\"width:80px;height:80px;border-radius:20px;margin-bottom:24px;" +
-                        "box-shadow:0 4px 32px rgba(108,99,255,0.35)\\" onerror=\\"this.style.display=\\'none\\'\\">" +
-                        "<div style=\\"font-size:24px;font-weight:800;color:" + fg + ";margin-bottom:8px\\">" + label + "</div>" +
-                        "<div style=\\"font-size:14px;color:" + muted + ";margin-bottom:40px\\">" + sub + "</div>" +
-                        "<div style=\\"width:100%;max-width:340px\\">" +
-                        "<button style=\\"width:100%;padding:16px;background:" + acc + ";border:none;border-radius:16px;" +
-                        "color:#fff;font-size:16px;font-weight:700;cursor:pointer;letter-spacing:-.01em\\" " +
-                        "onclick=\\"window.Android&&Android.openUrl(\\'" + BASE_URL + "/download\\')\\">Update Now</button>" +
+                        "<img src=\"file:///android_res/mipmap/ic_launcher.png\" " +
+                        "style=\"width:80px;height:80px;border-radius:20px;margin-bottom:24px;" +
+                        "box-shadow:0 4px 32px rgba(108,99,255,0.35)\" onerror=\"this.style.display=\\'none\\'\">" +
+                        "<div style=\"font-size:24px;font-weight:800;color:" + fg + ";margin-bottom:8px\">" + label + "</div>" +
+                        "<div style=\"font-size:14px;color:" + muted + ";margin-bottom:40px\">" + sub + "</div>" +
+                        "<div style=\"width:100%;max-width:340px\">" +
+                        "<button style=\"width:100%;padding:16px;background:" + acc + ";border:none;border-radius:16px;" +
+                        "color:#fff;font-size:16px;font-weight:700;cursor:pointer;letter-spacing:-.01em\" " +
+                        "onclick=\"window.Android&&Android.openUrl(\\'" + BASE_URL + "/download\\')\">Update Now</button>" +
                         laterBtn +
                         "</div>" +
                       "';" +
