@@ -1017,21 +1017,28 @@ jobs:
           XMLEOF
 
           # Force manifest icon + splash theme on MainActivity
-          M="android/app/src/main/AndroidManifest.xml"
-          sed -i 's/android:icon="[^"]*"/android:icon="@mipmap\/ic_launcher"/' $M
-          sed -i 's/android:roundIcon="[^"]*"/android:roundIcon="@mipmap\/ic_launcher_round"/' $M
-          # Set splash theme on the activity (replaces any existing android:theme on MainActivity)
-          sed -i '/MainActivity/{s/android:theme="[^"]*"//; s/MainActivity/MainActivity android:theme="@style\/Theme.App.SplashScreen"/}' $M
-
       - name: Patch AndroidManifest
         run: |
           python3 << 'PYEOF'
-          import xml.etree.ElementTree as ET, re
+          import xml.etree.ElementTree as ET
+
+          # Preserve namespace so output is valid XML
+          ET.register_namespace('android', 'http://schemas.android.com/apk/res/android')
+          ET.register_namespace('tools',   'http://schemas.android.com/tools')
+
+          ANDROID = 'http://schemas.android.com/apk/res/android'
+          def a(name): return f'{{{ANDROID}}}{name}'
 
           path = 'android/app/src/main/AndroidManifest.xml'
-          content = open(path).read()
+          tree = ET.parse(path)
+          root = tree.getroot()
 
-          for perm in [
+          manifest_ns = root.get('xmlns:android', '')
+
+          # ── Permissions ──────────────────────────────────────────────────────
+          existing = {el.get(a('name')) for el in root.findall('uses-permission')}
+
+          simple_perms = [
               'android.permission.INTERNET',
               'android.permission.ACCESS_NETWORK_STATE',
               'android.permission.READ_MEDIA_IMAGES',
@@ -1041,60 +1048,99 @@ jobs:
               'android.permission.SCHEDULE_EXACT_ALARM',
               'android.permission.USE_EXACT_ALARM',
               'android.permission.RECEIVE_BOOT_COMPLETED',
-          ]:
-              if f'android:name="{perm}"' not in content:
-                  content = content.replace('<application', f'    <uses-permission android:name="{perm}" />\n    <application', 1)
+          ]
+          for perm in simple_perms:
+              if perm not in existing:
+                  el = ET.SubElement(root, 'uses-permission')
+                  el.set(a('name'), perm)
 
-          for perm, maxSdk in [
+          maxsdk_perms = [
               ('android.permission.WRITE_EXTERNAL_STORAGE', '28'),
               ('android.permission.READ_EXTERNAL_STORAGE',  '32'),
-          ]:
-              if f'android:name="{perm}"' not in content:
-                  content = content.replace('<application',
-                      f'    <uses-permission android:name="{perm}" android:maxSdkVersion="{maxSdk}" />\n    <application', 1)
+          ]
+          for perm, sdk in maxsdk_perms:
+              if perm not in existing:
+                  el = ET.SubElement(root, 'uses-permission')
+                  el.set(a('name'), perm)
+                  el.set(a('maxSdkVersion'), sdk)
 
-          if 'android:usesCleartextTraffic' not in content:
-              content = content.replace('<application', '<application android:usesCleartextTraffic="true"', 1)
-          if 'android:hardwareAccelerated' not in content:
-              content = content.replace('<application', '<application android:hardwareAccelerated="true"', 1)
+          # ── Application attributes ────────────────────────────────────────────
+          app = root.find('application')
+          app.set(a('icon'),              '@mipmap/ic_launcher')
+          app.set(a('roundIcon'),         '@mipmap/ic_launcher_round')
+          app.set(a('usesCleartextTraffic'), 'true')
+          app.set(a('hardwareAccelerated'),  'true')
 
-          content = re.sub(
-              r'(<activity\b(?![^>]*android:exported)[^>]*MainActivity[^>]*)',
-              r'\1 android:exported="true" android:configChanges="uiMode|orientation|screenSize|keyboardHidden"', content)
+          # ── MainActivity ─────────────────────────────────────────────────────
+          activity = None
+          for act in app.findall('activity'):
+              name = act.get(a('name'), '')
+              if 'MainActivity' in name:
+                  activity = act
+                  break
 
-          if 'walls.ovrica.name.ng' not in content:
-              content = content.replace('</activity>',
-                  '\n                <intent-filter android:autoVerify="true">'
-                  '\n                    <action android:name="android.intent.action.VIEW" />'
-                  '\n                    <category android:name="android.intent.category.DEFAULT" />'
-                  '\n                    <category android:name="android.intent.category.BROWSABLE" />'
-                  '\n                    <data android:scheme="https" android:host="walls.ovrica.name.ng" />'
-                  '\n                </intent-filter>\n        </activity>', 1)
+          if activity is not None:
+              # Safe set — won't duplicate
+              activity.set(a('exported'), 'true')
+              activity.set(a('theme'), '@style/Theme.App.SplashScreen')
+              activity.set(a('configChanges'), 'uiMode|orientation|screenSize|keyboardHidden')
 
-          if 'fileprovider' not in content:
-              content = content.replace('</application>',
-                  '\n            <provider android:name="androidx.core.content.FileProvider"'
-                  ' android:authorities="ng.name.ovrica.walls.fileprovider"'
-                  ' android:exported="false" android:grantUriPermissions="true">'
-                  '\n                <meta-data android:name="android.support.FILE_PROVIDER_PATHS"'
-                  ' android:resource="@xml/file_paths" />'
-                  '\n            </provider>\n    </application>', 1)
+              # Deep-link intent filter
+              existing_hosts = [
+                  d.get(a('host'), '')
+                  for f in activity.findall('intent-filter')
+                  for d in f.findall('data')
+              ]
+              if 'walls.ovrica.name.ng' not in existing_hosts:
+                  filt = ET.SubElement(activity, 'intent-filter')
+                  filt.set(a('autoVerify'), 'true')
+                  action = ET.SubElement(filt, 'action')
+                  action.set(a('name'), 'android.intent.action.VIEW')
+                  cat1 = ET.SubElement(filt, 'category')
+                  cat1.set(a('name'), 'android.intent.category.DEFAULT')
+                  cat2 = ET.SubElement(filt, 'category')
+                  cat2.set(a('name'), 'android.intent.category.BROWSABLE')
+                  data = ET.SubElement(filt, 'data')
+                  data.set(a('scheme'), 'https')
+                  data.set(a('host'),   'walls.ovrica.name.ng')
 
-          if 'WallpaperReminderReceiver' not in content:
-              content = content.replace('</application>',
-                  '        <receiver android:name=".WallpaperReminderReceiver" android:exported="false" />\n    </application>', 1)
+          # ── FileProvider ──────────────────────────────────────────────────────
+          providers = [p.get(a('authorities'), '') for p in app.findall('provider')]
+          if 'ng.name.ovrica.walls.fileprovider' not in providers:
+              prov = ET.SubElement(app, 'provider')
+              prov.set(a('name'),               'androidx.core.content.FileProvider')
+              prov.set(a('authorities'),         'ng.name.ovrica.walls.fileprovider')
+              prov.set(a('exported'),            'false')
+              prov.set(a('grantUriPermissions'), 'true')
+              meta = ET.SubElement(prov, 'meta-data')
+              meta.set(a('name'),     'android.support.FILE_PROVIDER_PATHS')
+              meta.set(a('resource'), '@xml/file_paths')
 
-          if 'BootReceiver' not in content:
-              content = content.replace('</application>',
-                  '        <receiver android:name=".BootReceiver" android:exported="true">\n'
-                  '            <intent-filter>\n'
-                  '                <action android:name="android.intent.action.BOOT_COMPLETED" />\n'
-                  '                <action android:name="android.intent.action.QUICKBOOT_POWERON" />\n'
-                  '            </intent-filter>\n'
-                  '        </receiver>\n    </application>', 1)
+          # ── Receivers ─────────────────────────────────────────────────────────
+          receiver_names = [r.get(a('name'), '') for r in app.findall('receiver')]
 
-          open(path, 'w').write(content)
+          if '.WallpaperReminderReceiver' not in receiver_names:
+              rec = ET.SubElement(app, 'receiver')
+              rec.set(a('name'),     '.WallpaperReminderReceiver')
+              rec.set(a('exported'), 'false')
+
+          if '.BootReceiver' not in receiver_names:
+              rec = ET.SubElement(app, 'receiver')
+              rec.set(a('name'),     '.BootReceiver')
+              rec.set(a('exported'), 'true')
+              filt = ET.SubElement(rec, 'intent-filter')
+              a1 = ET.SubElement(filt, 'action')
+              a1.set(a('name'), 'android.intent.action.BOOT_COMPLETED')
+              a2 = ET.SubElement(filt, 'action')
+              a2.set(a('name'), 'android.intent.action.QUICKBOOT_POWERON')
+
+          # ── Write back ────────────────────────────────────────────────────────
+          tree.write(path, encoding='utf-8', xml_declaration=True)
           print("Manifest patched OK")
+
+          # Verify it parses cleanly
+          ET.parse(path)
+          print("Manifest XML valid OK")
           PYEOF
 
           cat >> android/build.gradle << 'EOF'
