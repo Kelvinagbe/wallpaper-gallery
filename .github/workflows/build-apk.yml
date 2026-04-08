@@ -123,12 +123,15 @@ jobs:
 
               @Override
               protected void onCreate(Bundle savedInstanceState) {
-                  // ── Native splash screen (shows your icon on themed bg, no plugin needed) ──
+                  // ── Native splash screen ──────────────────────────────────────────────
                   SplashScreen splashScreen = SplashScreen.installSplashScreen(this);
-                  // Keep splash visible until our webLoaded flag is set
                   splashScreen.setKeepOnScreenCondition(() -> !splashDone);
 
-                  getWindow().setBackgroundDrawable(new ColorDrawable(Color.BLACK));
+                  // Match window background to system theme so no flash on transition
+                  boolean dark = (getResources().getConfiguration().uiMode &
+                      Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+                  getWindow().setBackgroundDrawable(new ColorDrawable(
+                      Color.parseColor(dark ? "#111318" : "#F1F3F4")));
                   getWindow().addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
                   super.onCreate(savedInstanceState);
                   applySystemTheme();
@@ -662,13 +665,50 @@ jobs:
               }
 
               private void handleDeepLink(Intent intent) {
-                  if (intent == null) return;
+                  if (intent == null || getBridge() == null) return;
                   Uri data = intent.getData();
-                  if (data == null || getBridge() == null) return;
+                  if (data == null) return;
                   String url = data.toString();
+                  WebView wv = getBridge().getWebView();
+                  if (wv == null) return;
                   runOnUiThread(() -> {
-                      WebView wv = getBridge().getWebView();
-                      showLoadingOverlay(wv); wv.loadUrl(url);
+                      showLoadingOverlay(wv);
+                      wv.setWebViewClient(new WebViewClient() {
+                          @Override public void onPageStarted(WebView v, String u, Bitmap f) {
+                              runOnUiThread(() -> showLoadingOverlay(v));
+                          }
+                          @Override public void onPageFinished(WebView v, String u) {
+                              splashDone = true;
+                              runOnUiThread(() -> hideLoadingOverlay(v));
+                          }
+                          @Override public void onReceivedError(WebView v, WebResourceRequest req, WebResourceError err) {
+                              if (!req.isForMainFrame()) return;
+                              splashDone = true;
+                              runOnUiThread(() -> {
+                                  hideLoadingOverlay(v);
+                                  boolean dark = isDarkTheme();
+                                  String bg = dark ? "#111318" : "#F1F3F4", fg = dark ? "#ffffff" : "#1a1a1a";
+                                  v.loadData(
+                                      "<html><body style='background:" + bg + ";color:" + fg + ";font-family:sans-serif;" +
+                                      "display:flex;flex-direction:column;align-items:center;justify-content:center;" +
+                                      "height:100vh;margin:0;text-align:center;padding:24px'>" +
+                                      "<div style='font-size:48px'>📡</div>" +
+                                      "<h2 style='margin:12px 0 8px'>No Internet</h2>" +
+                                      "<p style='opacity:0.6;margin:0 0 24px'>Check your connection and try again</p>" +
+                                      "<button onclick='location.reload()' style='padding:12px 28px;background:#6c63ff;" +
+                                      "border:none;border-radius:10px;color:#fff;font-size:15px;cursor:pointer'>Retry</button>" +
+                                      "</body></html>", "text/html", "UTF-8");
+                              });
+                          }
+                          @Override public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest req) {
+                              String u = req.getUrl().toString();
+                              if (u.startsWith(BASE_URL) || u.startsWith("https://localhost") ||
+                                  u.startsWith("http://localhost") || u.startsWith("capacitor://")) return false;
+                              try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(u))); } catch (Exception ignored) {}
+                              return true;
+                          }
+                      });
+                      wv.loadUrl(url);
                       wv.evaluateJavascript("window.dispatchEvent(new CustomEvent('walls_deeplink',{detail:{url:'" + url + "'}}))", null);
                   });
               }
@@ -830,7 +870,10 @@ jobs:
                       if (!imgUrls.isEmpty()) try {
                           HttpURLConnection ic = (HttpURLConnection) new URL(imgUrls.get(0)).openConnection();
                           ic.setConnectTimeout(5000); ic.setReadTimeout(5000);
-                          bigPic = BitmapFactory.decodeStream(ic.getInputStream());
+                          ic.setRequestProperty("User-Agent", "Walls-Android/1.0");
+                          ic.connect();
+                          if (ic.getResponseCode() == 200)
+                              bigPic = BitmapFactory.decodeStream(ic.getInputStream());
                       } catch (Exception ignored) {}
 
                       // App launcher as large icon
@@ -963,16 +1006,25 @@ jobs:
           XMLEOF
           cp "$RES/mipmap-anydpi-v26/ic_launcher.xml" "$RES/mipmap-anydpi-v26/ic_launcher_round.xml"
 
-          # ── Monochrome notification icon ─────────────────────────────────────
-          # Vector XML only — do NOT also write a .png or Android throws duplicate resource error
+          # ── Monochrome notification icon — WALLS logo (4-rect grid) ─────────────
+          # Matches the SVG in the Logo component exactly. Vector XML only — no .png.
           cat > "$RES/drawable/ic_notification.xml" << 'XMLEOF'
           <?xml version="1.0" encoding="utf-8"?>
           <vector xmlns:android="http://schemas.android.com/apk/res/android"
               android:width="24dp" android:height="24dp"
-              android:viewportWidth="24" android:viewportHeight="24">
+              android:viewportWidth="20" android:viewportHeight="20">
+            <!-- top-left rect -->
             <path android:fillColor="#FFFFFF"
-              android:pathData="M12,3C7.03,3 3,7.03 3,12s4.03,9 9,9 9,-4.03 9,-9S16.97,3 12,3z
-                               M13,17h-2v-6h2v6zM13,9h-2V7h2v2z"/>
+              android:pathData="M0,2 Q0,0 2,0 L9,0 Q9,0 9,2 L9,9 Q9,9 7,9 L2,9 Q0,9 0,7 Z"/>
+            <!-- top-right rect -->
+            <path android:fillColor="#FFFFFF"
+              android:pathData="M11,2 Q11,0 13,0 L18,0 Q20,0 20,2 L20,9 Q20,9 18,9 L13,9 Q11,9 11,7 Z"/>
+            <!-- bottom-left rect -->
+            <path android:fillColor="#FFFFFF"
+              android:pathData="M0,13 Q0,11 2,11 L7,11 Q9,11 9,13 L9,18 Q9,20 7,20 L2,20 Q0,20 0,18 Z"/>
+            <!-- bottom-right rect (30% opacity) -->
+            <path android:fillColor="#FFFFFF" android:fillAlpha="0.3"
+              android:pathData="M11,13 Q11,11 13,11 L18,11 Q20,11 20,13 L20,18 Q20,20 18,20 L13,20 Q11,20 11,18 Z"/>
           </vector>
           XMLEOF
 
@@ -989,13 +1041,40 @@ jobs:
           # Light-mode splash
           convert -size 1080x1920 xc:"$LIGHT_BG" \( "$LOGO" -resize 300x300 \) -gravity center -composite "$RES/drawable/splash.png"
 
-          # ── Native splash screen theme (androidx.core:core-splashscreen) ──────
-          # This is what actually shows your icon — no Capacitor splash plugin needed
-          mkdir -p "$RES/values" "$RES/values-v31"
+          # ── AppTheme: hide the ActionBar so the blue "Walls" header bar is gone ──
+          mkdir -p "$RES/values"
+          cat > "$RES/values/app_theme.xml" << 'XMLEOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+            <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
+              <item name="android:windowBackground">#111318</item>
+              <item name="android:windowNoTitle">true</item>
+              <item name="android:windowActionBar">false</item>
+            </style>
+            <style name="AppTheme.Light" parent="Theme.AppCompat.Light.NoActionBar">
+              <item name="android:windowBackground">#F1F3F4</item>
+            </style>
+          </resources>
+          XMLEOF
+
+          # ── Native splash screen theme — system-theme-aware ──────────────────
+          # values/ = light mode default, values-night/ = dark mode
+          mkdir -p "$RES/values" "$RES/values-night" "$RES/values-v31" "$RES/values-night-v31"
+
           cat > "$RES/values/splash_theme.xml" << 'XMLEOF'
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
-            <!-- Pre-API-31 splash: full-screen window background -->
+            <style name="Theme.App.SplashScreen" parent="Theme.SplashScreen">
+              <item name="windowSplashScreenBackground">#F1F3F4</item>
+              <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+              <item name="postSplashScreenTheme">@style/AppTheme</item>
+            </style>
+          </resources>
+          XMLEOF
+
+          cat > "$RES/values-night/splash_theme.xml" << 'XMLEOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
             <style name="Theme.App.SplashScreen" parent="Theme.SplashScreen">
               <item name="windowSplashScreenBackground">#111318</item>
               <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
@@ -1003,10 +1082,22 @@ jobs:
             </style>
           </resources>
           XMLEOF
+
           cat > "$RES/values-v31/splash_theme.xml" << 'XMLEOF'
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
-            <!-- API 31+ native splash with icon + background -->
+            <style name="Theme.App.SplashScreen" parent="Theme.SplashScreen">
+              <item name="windowSplashScreenBackground">#F1F3F4</item>
+              <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+              <item name="windowSplashScreenIconBackgroundColor">#000000</item>
+              <item name="postSplashScreenTheme">@style/AppTheme</item>
+            </style>
+          </resources>
+          XMLEOF
+
+          cat > "$RES/values-night-v31/splash_theme.xml" << 'XMLEOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
             <style name="Theme.App.SplashScreen" parent="Theme.SplashScreen">
               <item name="windowSplashScreenBackground">#111318</item>
               <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
