@@ -1,0 +1,40 @@
+{
+  "project_info": {
+    "project_number": "338363935717",
+    "firebase_url": "https://kelvintopup-2e785-default-rtdb.firebaseio.com",
+    "project_id": "kelvintopup-2e785",
+    "storage_bucket": "kelvintopup-2e785.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:338363935717:android:3fb53b73ba8ab5a27f9d0c",
+        "android_client_info": {
+          "package_name": "ng.name.ovrica.walls"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "338363935717-cb1h2ld10dbmg2p25bse63o8u21mj552.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA6bvyXV-7zFHqZwO9XkCC1Q7AzJbAYA4w"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "338363935717-cb1h2ld10dbmg2p25bse63o8u21mj552.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
