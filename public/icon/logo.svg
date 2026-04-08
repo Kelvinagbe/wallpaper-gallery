@@ -1,0 +1,13 @@
+<svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="200" height="200" rx="44" fill="#0d0d12"/>
+
+  <!-- Top-left square -->
+  <rect x="36" y="36" width="56" height="56" rx="12" fill="#6c63ff"/>
+  <!-- Top-right square -->
+  <rect x="108" y="36" width="56" height="56" rx="12" fill="#6c63ff"/>
+  <!-- Bottom-left square -->
+  <rect x="36" y="108" width="56" height="56" rx="12" fill="#6c63ff"/>
+  <!-- Bottom-right square (faded) -->
+  <rect x="108" y="108" width="56" height="56" rx="12" fill="#6c63ff" opacity="0.3"/>
+</svg>
