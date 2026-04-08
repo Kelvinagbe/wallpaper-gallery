@@ -10,11 +10,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-
       - uses: actions/setup-java@v4
         with:
           java-version: '21'
@@ -29,26 +27,18 @@ jobs:
           printf "24333f8a63b6825ea9c5514f83c2829b004d1fee\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e" > $SDK/licenses/android-sdk-license
           echo "y" | $SDK/cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools" 2>&1 | tail -3
 
-      - name: Install dependencies
+      - name: Install dependencies & Configure Capacitor
         run: |
-          # NO @capacitor/splash-screen — we use Android native splash instead
           npm install @capacitor/core @capacitor/cli @capacitor/android
           [ -f "public/app/index.html" ] || (echo "ERROR: public/app/index.html not found." && exit 1)
-
-      - name: Configure Capacitor
-        run: |
-          cat > capacitor.config.json << 'EOF'
-          {
-            "appId": "ng.name.ovrica.walls",
-            "appName": "Walls",
-            "webDir": "public/app",
-            "android": { "allowMixedContent": true, "backgroundColor": "#000000" }
-          }
-          EOF
+          printf '{"appId":"ng.name.ovrica.walls","appName":"Walls","webDir":"public/app","android":{"allowMixedContent":true,"backgroundColor":"#000000"}}' > capacitor.config.json
           npx cap add android
 
-      - name: Write file_paths.xml
+      - name: Write resource files
         run: |
+          RES=android/app/src/main/res
+
+          # ── file_paths.xml ────────────────────────────────────────────────────
           mkdir -p android/app/src/main/res/xml
           cat > android/app/src/main/res/xml/file_paths.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
@@ -59,6 +49,11 @@ jobs:
             <cache-path name="cache" path="." />
           </paths>
           EOF
+
+          # ── ic_launcher_background color ──────────────────────────────────────
+          mkdir -p "$RES/values"
+          printf '<?xml version="1.0" encoding="utf-8"?>\n<resources><color name="ic_launcher_background">#000000</color></resources>' \
+            > "$RES/values/ic_launcher_background.xml"
 
       # ─── MainActivity.java ────────────────────────────────────────────────────
       - name: Write MainActivity.java
@@ -118,15 +113,12 @@ jobs:
               private String pendingDlUrl, pendingDlName, pendingWpUrl, pendingWpTarget;
               private long backPressedTime = 0;
               private boolean webLoaded = false;
-              // Native splash: keep visible until WebView finishes loading
               private boolean splashDone = false;
 
               @Override
               protected void onCreate(Bundle savedInstanceState) {
                   SplashScreen splashScreen = SplashScreen.installSplashScreen(this);
                   splashScreen.setKeepOnScreenCondition(() -> !splashDone);
-
-                  // Match window background to system theme so no flash on transition
                   boolean dark = (getResources().getConfiguration().uiMode &
                       Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
                   getWindow().setBackgroundDrawable(new ColorDrawable(
@@ -225,8 +217,7 @@ jobs:
                   ws.setSupportZoom(false); ws.setUseWideViewPort(true);
                   ws.setMediaPlaybackRequiresUserGesture(false);
                   if (Build.VERSION.SDK_INT >= 21) ws.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-                  boolean dark = isDarkTheme();
-                  wv.setBackgroundColor(Color.parseColor(dark ? "#111318" : "#F1F3F4"));
+                  wv.setBackgroundColor(Color.parseColor(isDarkTheme() ? "#111318" : "#F1F3F4"));
 
                   wv.setWebViewClient(new WebViewClient() {
                       @Override public void onPageStarted(WebView v, String url, Bitmap favicon) { runOnUiThread(() -> showLoadingOverlay(v)); }
@@ -598,7 +589,6 @@ jobs:
                       WebView wv = getBridge() != null ? getBridge().getWebView() : null;
                       if (wv != null) wv.evaluateJavascript("window.dispatchEvent(new CustomEvent('walls_dl_done',{detail:{name:'" + lastFile + "'}}))", null);
 
-                      // Load thumbnail from saved file for notification
                       Bitmap thumb = null;
                       try { BitmapFactory.Options o = new BitmapFactory.Options(); o.inSampleSize = 4; thumb = BitmapFactory.decodeFile(file.getAbsolutePath(), o); } catch (Exception ignored) {}
 
@@ -632,7 +622,6 @@ jobs:
                   nm.createNotificationChannel(ch);
               }
 
-              // Central notification builder — monochrome small icon + app launcher as large icon
               private NotificationCompat.Builder notifBuilder(String ch, String title, String text) {
                   Bitmap appIcon = null;
                   try { appIcon = BitmapFactory.decodeResource(getResources(), R.mipmap.ic_launcher); } catch (Exception ignored) {}
@@ -662,13 +651,8 @@ jobs:
                   runOnUiThread(() -> {
                       showLoadingOverlay(wv);
                       wv.setWebViewClient(new WebViewClient() {
-                          @Override public void onPageStarted(WebView v, String u, Bitmap f) {
-                              runOnUiThread(() -> showLoadingOverlay(v));
-                          }
-                          @Override public void onPageFinished(WebView v, String u) {
-                              splashDone = true;
-                              runOnUiThread(() -> hideLoadingOverlay(v));
-                          }
+                          @Override public void onPageStarted(WebView v, String u, Bitmap f) { runOnUiThread(() -> showLoadingOverlay(v)); }
+                          @Override public void onPageFinished(WebView v, String u) { splashDone = true; runOnUiThread(() -> hideLoadingOverlay(v)); }
                           @Override public void onReceivedError(WebView v, WebResourceRequest req, WebResourceError err) {
                               if (!req.isForMainFrame()) return;
                               splashDone = true;
@@ -680,8 +664,7 @@ jobs:
                                       "<html><body style='background:" + bg + ";color:" + fg + ";font-family:sans-serif;" +
                                       "display:flex;flex-direction:column;align-items:center;justify-content:center;" +
                                       "height:100vh;margin:0;text-align:center;padding:24px'>" +
-                                      "<div style='font-size:48px'>📡</div>" +
-                                      "<h2 style='margin:12px 0 8px'>No Internet</h2>" +
+                                      "<div style='font-size:48px'>📡</div><h2 style='margin:12px 0 8px'>No Internet</h2>" +
                                       "<p style='opacity:0.6;margin:0 0 24px'>Check your connection and try again</p>" +
                                       "<button onclick='location.reload()' style='padding:12px 28px;background:#6c63ff;" +
                                       "border:none;border-radius:10px;color:#fff;font-size:15px;cursor:pointer'>Retry</button>" +
@@ -853,18 +836,15 @@ jobs:
                       }
                       if (titles.isEmpty()) { fallback(ctx, nm); return; }
 
-                      // Fetch wallpaper image for BigPicture style
                       Bitmap bigPic = null;
                       if (!imgUrls.isEmpty()) try {
                           HttpURLConnection ic = (HttpURLConnection) new URL(imgUrls.get(0)).openConnection();
                           ic.setConnectTimeout(5000); ic.setReadTimeout(5000);
                           ic.setRequestProperty("User-Agent", "Walls-Android/1.0");
                           ic.connect();
-                          if (ic.getResponseCode() == 200)
-                              bigPic = BitmapFactory.decodeStream(ic.getInputStream());
+                          if (ic.getResponseCode() == 200) bigPic = BitmapFactory.decodeStream(ic.getInputStream());
                       } catch (Exception ignored) {}
 
-                      // App launcher as large icon
                       Bitmap appIcon = null;
                       try { appIcon = BitmapFactory.decodeResource(ctx.getResources(), R.mipmap.ic_launcher); } catch (Exception ignored) {}
 
@@ -879,14 +859,11 @@ jobs:
                               .setContentTitle("🔥 Hot wallpapers waiting!")
                               .setContentText(titles.get(0) + (titles.size() > 1 ? " +" + (titles.size()-1) + " more" : ""))
                               .setStyle(new NotificationCompat.BigPictureStyle()
-                                  .bigPicture(bigPic)
-                                  .setBigContentTitle("🔥 Hot wallpapers waiting!")
-                                  .setSummaryText(titles.get(0)))
+                                  .bigPicture(bigPic).setBigContentTitle("🔥 Hot wallpapers waiting!").setSummaryText(titles.get(0)))
                               .setLargeIcon(bigPic);
                       } else {
                           NotificationCompat.InboxStyle inbox = new NotificationCompat.InboxStyle()
-                              .setBigContentTitle("🔥 Hot wallpapers waiting!")
-                              .setSummaryText(titles.size() + " hot wallpapers");
+                              .setBigContentTitle("🔥 Hot wallpapers waiting!").setSummaryText(titles.size() + " hot wallpapers");
                           for (String t : titles) inbox.addLine("🖼️  " + t);
                           nb = new NotificationCompat.Builder(ctx, TREND_CH)
                               .setSmallIcon(R.drawable.ic_notification)
@@ -960,8 +937,8 @@ jobs:
           }
           EOF
 
-      # ─── Assets, sync, icons, splash ─────────────────────────────────────────
-      - name: Assets, sync, icons, splash
+      # ─── Assets, icons, splash, styles ───────────────────────────────────────
+      - name: Assets, sync, icons, splash & styles
         run: |
           sudo apt-get install -y imagemagick -q
           cp capacitor.config.json android/app/src/main/assets/capacitor.config.json
@@ -981,11 +958,11 @@ jobs:
           # ── Adaptive icon (Android 8+) ───────────────────────────────────────
           mkdir -p "$RES/drawable" "$RES/mipmap-anydpi-v26"
           convert "$LOGO" -resize 432x432 "$RES/drawable/ic_launcher_foreground.png"
-          printf '<?xml version="1.0" encoding="utf-8"?>\n<resources><color name="ic_launcher_background">#000000</color></resources>' > "$RES/values/ic_launcher_background.xml"
-          printf '<?xml version="1.0" encoding="utf-8"?>\n<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n  <background android:drawable="@color/ic_launcher_background"/>\n  <foreground android:drawable="@drawable/ic_launcher_foreground"/>\n</adaptive-icon>' > "$RES/mipmap-anydpi-v26/ic_launcher.xml"
+          printf '<?xml version="1.0" encoding="utf-8"?>\n<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n  <background android:drawable="@color/ic_launcher_background"/>\n  <foreground android:drawable="@drawable/ic_launcher_foreground"/>\n</adaptive-icon>' \
+            > "$RES/mipmap-anydpi-v26/ic_launcher.xml"
           cp "$RES/mipmap-anydpi-v26/ic_launcher.xml" "$RES/mipmap-anydpi-v26/ic_launcher_round.xml"
 
-          # ── Notification icon — WALLS 4-rect logo ────────────────────────────
+          # ── Notification icon ────────────────────────────────────────────────
           cat > "$RES/drawable/ic_notification.xml" << 'XMLEOF'
           <?xml version="1.0" encoding="utf-8"?>
           <vector xmlns:android="http://schemas.android.com/apk/res/android"
@@ -998,7 +975,7 @@ jobs:
           </vector>
           XMLEOF
 
-          # ── Splash images (dark default, light for drawable/) ────────────────
+          # ── Splash images ────────────────────────────────────────────────────
           for dir in drawable-mdpi drawable-hdpi drawable-xhdpi drawable-xxhdpi drawable-xxxhdpi; do
             mkdir -p "$RES/$dir"
             convert -size 1080x1920 xc:"#111318" \( "$LOGO" -resize 300x300 \) -gravity center -composite "$RES/$dir/splash.png"
@@ -1007,17 +984,18 @@ jobs:
           convert -size 1080x1920 xc:"#111318" \( "$LOGO" -resize 300x300 \) -gravity center -composite "$RES/drawable-night/splash.png"
           convert -size 1080x1920 xc:"#F1F3F4" \( "$LOGO" -resize 300x300 \) -gravity center -composite "$RES/drawable/splash.png"
 
-          # ── Patch Capacitor's styles.xml: make AppTheme NoActionBar ─────────
-          # Capacitor generates styles.xml with AppTheme — patch it in-place, don't create a new file
+          # ── Patch styles.xml — single sed call, anchored to parent=" to prevent cascading corruption ──
           STYLES="$RES/values/styles.xml"
-          if [ -f "$STYLES" ]; then
-            sed -i 's/Theme\.AppCompat\.Light\.NoActionBar/Theme.AppCompat.DayNight.NoActionBar/g' "$STYLES"
-            sed -i 's/Theme\.AppCompat\.Light/Theme.AppCompat.DayNight.NoActionBar/g' "$STYLES"
-            sed -i 's/Theme\.AppCompat\.NoActionBar/Theme.AppCompat.DayNight.NoActionBar/g' "$STYLES"
-            sed -i 's/Theme\.AppCompat\b/Theme.AppCompat.DayNight.NoActionBar/g' "$STYLES"
-          fi
+          [ -f "$STYLES" ] && sed -i \
+            -e 's|parent="Theme\.AppCompat\.Light\.NoActionBar"|parent="Theme.AppCompat.DayNight.NoActionBar"|g' \
+            -e 's|parent="Theme\.AppCompat\.DayNight\.DarkActionBar"|parent="Theme.AppCompat.DayNight.NoActionBar"|g' \
+            -e 's|parent="Theme\.AppCompat\.Light\.DarkActionBar"|parent="Theme.AppCompat.DayNight.NoActionBar"|g' \
+            -e 's|parent="Theme\.AppCompat\.DarkActionBar"|parent="Theme.AppCompat.DayNight.NoActionBar"|g' \
+            -e 's|parent="Theme\.AppCompat\.Light"|parent="Theme.AppCompat.DayNight.NoActionBar"|g' \
+            -e 's|parent="Theme\.AppCompat\.NoActionBar"|parent="Theme.AppCompat.DayNight.NoActionBar"|g' \
+            "$STYLES"
 
-          # ── Splash themes — light (values/) and dark (values-night/), API 31 variants ──
+          # ── Splash themes (light / dark / API 31 variants) ───────────────────
           for qualifier in "values" "values-v31" "values-night" "values-night-v31"; do
             mkdir -p "$RES/$qualifier"
             [[ "$qualifier" == *night* ]] && BG="#111318" || BG="#F1F3F4"
@@ -1034,12 +1012,12 @@ jobs:
           </resources>
           XMLEOF
           done
+
       - name: Patch AndroidManifest
         run: |
           python3 << 'PYEOF'
           import xml.etree.ElementTree as ET
 
-          # Preserve namespace so output is valid XML
           ET.register_namespace('android', 'http://schemas.android.com/apk/res/android')
           ET.register_namespace('tools',   'http://schemas.android.com/tools')
 
@@ -1050,36 +1028,23 @@ jobs:
           tree = ET.parse(path)
           root = tree.getroot()
 
-          manifest_ns = root.get('xmlns:android', '')
-
           # ── Permissions ──────────────────────────────────────────────────────
           existing = {el.get(a('name')) for el in root.findall('uses-permission')}
 
-          simple_perms = [
-              'android.permission.INTERNET',
-              'android.permission.ACCESS_NETWORK_STATE',
-              'android.permission.READ_MEDIA_IMAGES',
-              'android.permission.POST_NOTIFICATIONS',
-              'android.permission.SET_WALLPAPER',
-              'android.permission.SET_WALLPAPER_HINTS',
-              'android.permission.SCHEDULE_EXACT_ALARM',
-              'android.permission.USE_EXACT_ALARM',
+          for perm in [
+              'android.permission.INTERNET', 'android.permission.ACCESS_NETWORK_STATE',
+              'android.permission.READ_MEDIA_IMAGES', 'android.permission.POST_NOTIFICATIONS',
+              'android.permission.SET_WALLPAPER', 'android.permission.SET_WALLPAPER_HINTS',
+              'android.permission.SCHEDULE_EXACT_ALARM', 'android.permission.USE_EXACT_ALARM',
               'android.permission.RECEIVE_BOOT_COMPLETED',
-          ]
-          for perm in simple_perms:
+          ]:
               if perm not in existing:
-                  el = ET.SubElement(root, 'uses-permission')
-                  el.set(a('name'), perm)
+                  ET.SubElement(root, 'uses-permission').set(a('name'), perm)
 
-          maxsdk_perms = [
-              ('android.permission.WRITE_EXTERNAL_STORAGE', '28'),
-              ('android.permission.READ_EXTERNAL_STORAGE',  '32'),
-          ]
-          for perm, sdk in maxsdk_perms:
+          for perm, sdk in [('android.permission.WRITE_EXTERNAL_STORAGE', '28'), ('android.permission.READ_EXTERNAL_STORAGE', '32')]:
               if perm not in existing:
                   el = ET.SubElement(root, 'uses-permission')
-                  el.set(a('name'), perm)
-                  el.set(a('maxSdkVersion'), sdk)
+                  el.set(a('name'), perm); el.set(a('maxSdkVersion'), sdk)
 
           # ── Application attributes ────────────────────────────────────────────
           app = root.find('application')
@@ -1089,41 +1054,23 @@ jobs:
           app.set(a('hardwareAccelerated'),  'true')
 
           # ── MainActivity ─────────────────────────────────────────────────────
-          activity = None
-          for act in app.findall('activity'):
-              name = act.get(a('name'), '')
-              if 'MainActivity' in name:
-                  activity = act
-                  break
-
+          activity = next((act for act in app.findall('activity') if 'MainActivity' in act.get(a('name'), '')), None)
           if activity is not None:
-              # Safe set — won't duplicate
               activity.set(a('exported'), 'true')
               activity.set(a('theme'), '@style/Theme.App.SplashScreen')
               activity.set(a('configChanges'), 'uiMode|orientation|screenSize|keyboardHidden')
-
-              # Deep-link intent filter
-              existing_hosts = [
-                  d.get(a('host'), '')
-                  for f in activity.findall('intent-filter')
-                  for d in f.findall('data')
-              ]
+              existing_hosts = [d.get(a('host'), '') for f in activity.findall('intent-filter') for d in f.findall('data')]
               if 'walls.ovrica.name.ng' not in existing_hosts:
                   filt = ET.SubElement(activity, 'intent-filter')
                   filt.set(a('autoVerify'), 'true')
-                  action = ET.SubElement(filt, 'action')
-                  action.set(a('name'), 'android.intent.action.VIEW')
-                  cat1 = ET.SubElement(filt, 'category')
-                  cat1.set(a('name'), 'android.intent.category.DEFAULT')
-                  cat2 = ET.SubElement(filt, 'category')
-                  cat2.set(a('name'), 'android.intent.category.BROWSABLE')
+                  ET.SubElement(filt, 'action').set(a('name'), 'android.intent.action.VIEW')
+                  ET.SubElement(filt, 'category').set(a('name'), 'android.intent.category.DEFAULT')
+                  ET.SubElement(filt, 'category').set(a('name'), 'android.intent.category.BROWSABLE')
                   data = ET.SubElement(filt, 'data')
-                  data.set(a('scheme'), 'https')
-                  data.set(a('host'),   'walls.ovrica.name.ng')
+                  data.set(a('scheme'), 'https'); data.set(a('host'), 'walls.ovrica.name.ng')
 
           # ── FileProvider ──────────────────────────────────────────────────────
-          providers = [p.get(a('authorities'), '') for p in app.findall('provider')]
-          if 'ng.name.ovrica.walls.fileprovider' not in providers:
+          if 'ng.name.ovrica.walls.fileprovider' not in [p.get(a('authorities'), '') for p in app.findall('provider')]:
               prov = ET.SubElement(app, 'provider')
               prov.set(a('name'),               'androidx.core.content.FileProvider')
               prov.set(a('authorities'),         'ng.name.ovrica.walls.fileprovider')
@@ -1135,31 +1082,21 @@ jobs:
 
           # ── Receivers ─────────────────────────────────────────────────────────
           receiver_names = [r.get(a('name'), '') for r in app.findall('receiver')]
-
           if '.WallpaperReminderReceiver' not in receiver_names:
-              rec = ET.SubElement(app, 'receiver')
-              rec.set(a('name'),     '.WallpaperReminderReceiver')
-              rec.set(a('exported'), 'false')
-
+              ET.SubElement(app, 'receiver').set(a('name'), '.WallpaperReminderReceiver')
           if '.BootReceiver' not in receiver_names:
               rec = ET.SubElement(app, 'receiver')
-              rec.set(a('name'),     '.BootReceiver')
-              rec.set(a('exported'), 'true')
+              rec.set(a('name'), '.BootReceiver'); rec.set(a('exported'), 'true')
               filt = ET.SubElement(rec, 'intent-filter')
-              a1 = ET.SubElement(filt, 'action')
-              a1.set(a('name'), 'android.intent.action.BOOT_COMPLETED')
-              a2 = ET.SubElement(filt, 'action')
-              a2.set(a('name'), 'android.intent.action.QUICKBOOT_POWERON')
+              ET.SubElement(filt, 'action').set(a('name'), 'android.intent.action.BOOT_COMPLETED')
+              ET.SubElement(filt, 'action').set(a('name'), 'android.intent.action.QUICKBOOT_POWERON')
 
-          # ── Write back ────────────────────────────────────────────────────────
           tree.write(path, encoding='utf-8', xml_declaration=True)
-          print("Manifest patched OK")
-
-          # Verify it parses cleanly
           ET.parse(path)
-          print("Manifest XML valid OK")
+          print("Manifest patched and validated OK")
           PYEOF
 
+          # Force consistent Kotlin stdlib version across all subprojects
           cat >> android/build.gradle << 'EOF'
           subprojects { configurations.all { resolutionStrategy {
             force "org.jetbrains.kotlin:kotlin-stdlib:1.9.0"
@@ -1168,14 +1105,9 @@ jobs:
           } } }
           EOF
 
-      # ── Add androidx.core:core-splashscreen dependency ────────────────────────
-      - name: Add splashscreen dependency
+      - name: Add splashscreen dependency & generate keystore
         run: |
-          # Inject core-splashscreen into app/build.gradle dependencies block
           sed -i '/dependencies {/a\    implementation "androidx.core:core-splashscreen:1.0.1"' android/app/build.gradle
-
-      - name: Generate keystore
-        run: |
           keytool -genkeypair -v -keystore walls.keystore \
             -alias walls -keyalg RSA -keysize 2048 -validity 10000 \
             -storepass ${{ secrets.KEYSTORE_PASSWORD }} -keypass ${{ secrets.KEYSTORE_PASSWORD }} \
