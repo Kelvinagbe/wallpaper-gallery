@@ -819,12 +819,16 @@ jobs:
                       List<String> titles = new ArrayList<>(), imgUrls = new ArrayList<>();
                       try {
                           String raw = sb.toString().trim();
-                          JSONArray arr = raw.startsWith("[") ? new JSONArray(raw) : (() -> {
+                          JSONArray arr;
+                          if (raw.startsWith("[")) {
+                              arr = new JSONArray(raw);
+                          } else {
                               JSONObject root = new JSONObject(raw);
-                              return root.has("data") ? root.getJSONArray("data") :
-                                     root.has("wallpapers") ? root.getJSONArray("wallpapers") :
-                                     root.has("results") ? root.getJSONArray("results") : new JSONArray();
-                          }).call();
+                              if (root.has("data"))            arr = root.getJSONArray("data");
+                              else if (root.has("wallpapers")) arr = root.getJSONArray("wallpapers");
+                              else if (root.has("results"))    arr = root.getJSONArray("results");
+                              else                             arr = new JSONArray();
+                          }
                           for (int i = 0; i < arr.length() && titles.size() < 5; i++) {
                               JSONObject obj = arr.getJSONObject(i);
                               String t = obj.optString("title", obj.optString("name", ""));
