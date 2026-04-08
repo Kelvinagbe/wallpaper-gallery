@@ -1064,11 +1064,14 @@ jobs:
                       .setContentIntent(pi).setAutoCancel(true);
 
                   // BigPicture style if image_url is present
-                  if (imgUrl != null) {
+                  // Copy to final vars so lambda can capture them
+                  final String finalTitle = title;
+                  final String finalImgUrl = imgUrl;
+                  if (finalImgUrl != null) {
                       new Thread(() -> {
                           try {
                               java.net.HttpURLConnection conn =
-                                  (java.net.HttpURLConnection) new java.net.URL(imgUrl).openConnection();
+                                  (java.net.HttpURLConnection) new java.net.URL(finalImgUrl).openConnection();
                               conn.setConnectTimeout(6000); conn.setReadTimeout(6000);
                               if (conn.getResponseCode() == 200) {
                                   Bitmap bmp = BitmapFactory.decodeStream(conn.getInputStream());
@@ -1076,7 +1079,7 @@ jobs:
                                       nb.setLargeIcon(bmp);
                                       nb.setStyle(new NotificationCompat.BigPictureStyle()
                                           .bigPicture(bmp).bigLargeIcon((Bitmap) null)
-                                          .setBigContentTitle(title));
+                                          .setBigContentTitle(finalTitle));
                                   }
                               }
                           } catch (Exception ignored) {}
