@@ -256,6 +256,7 @@ jobs:
                               "  getSystemImages:function(cb){Android.getSystemImages(cb)}," +
                               "  shareFile:function(path){Android.shareFile(path)}," +
                               "  toast:function(msg){Android.showToast(msg)}," +
+                              "  getSetLog:function(){try{return JSON.parse(Android.getWallpaperLog())}catch(e){return []}}," +
                               // pickImages: request permission then fetch gallery images and call back
                               "  pickImages:function(cb){" +
                               "    window._wallsPickCb=cb;" +
@@ -362,6 +363,13 @@ jobs:
                       @android.webkit.JavascriptInterface public void showToast(String msg) {
                           if (msg == null) return;
                           runOnUiThread(() -> Toast.makeText(MainActivity.this, msg, Toast.LENGTH_SHORT).show());
+                      }
+                      @android.webkit.JavascriptInterface
+                      public String getWallpaperLog() {
+                          try {
+                              SharedPreferences prefs = getSharedPreferences(PREF_FILE, MODE_PRIVATE);
+                              return prefs.getString("wp_set_log", "[]");
+                          } catch (Exception e) { return "[]"; }
                       }
                       @android.webkit.JavascriptInterface
                       public String getSystemImages(String callbackName) {
@@ -482,6 +490,10 @@ jobs:
                   try {
                       WallpaperManager wm = WallpaperManager.getInstance(this);
                       if (Build.VERSION.SDK_INT >= 24) wm.setBitmap(bmp, null, true, flags); else wm.setBitmap(bmp);
+                      // Log wallpaper set event to SharedPreferences
+                      String target = (flags == WallpaperManager.FLAG_LOCK) ? "Lock Screen" :
+                                      (flags == (WallpaperManager.FLAG_SYSTEM | WallpaperManager.FLAG_LOCK)) ? "Both" : "Home Screen";
+                      logWallpaperSet(target);
                       runOnUiThread(() -> {
                           Toast.makeText(this, "Wallpaper set! 🎉", Toast.LENGTH_SHORT).show();
                           WebView wv = getBridge() != null ? getBridge().getWebView() : null;
@@ -490,6 +502,21 @@ jobs:
                   } catch (Exception e) {
                       runOnUiThread(() -> Toast.makeText(this, "Could not set wallpaper: " + e.getMessage(), Toast.LENGTH_LONG).show());
                   }
+              }
+
+              private void logWallpaperSet(String target) {
+                  try {
+                      SharedPreferences prefs = getSharedPreferences(PREF_FILE, MODE_PRIVATE);
+                      String logsJson = prefs.getString("wp_set_log", "[]");
+                      org.json.JSONArray logs = new org.json.JSONArray(logsJson);
+                      org.json.JSONObject entry = new org.json.JSONObject();
+                      entry.put("time", new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault()).format(new java.util.Date()));
+                      entry.put("target", target);
+                      logs.put(entry);
+                      // Keep last 50 entries only
+                      while (logs.length() > 50) logs.remove(0);
+                      prefs.edit().putString("wp_set_log", logs.toString()).apply();
+                  } catch (Exception ignored) {}
               }
 
               private void applyWallpaper(File file, int flags) {
@@ -531,13 +558,22 @@ jobs:
                               runOnUiThread(() -> Toast.makeText(MainActivity.this, "Download failed.", Toast.LENGTH_LONG).show()); return;
                           }
                           if (status == DownloadManager.STATUS_RUNNING || status == DownloadManager.STATUS_PAUSED) {
-                              if (tot > 0) {
+                                  if (tot > 0) {
                                   int pct = (int)(dl * 100L / tot);
                                   String sz  = dl  < 1<<20 ? String.format("%.1f KB", dl /1024f) : String.format("%.1f MB", dl /(1024f*1024));
                                   String tsz = tot < 1<<20 ? String.format("%.1f KB", tot/1024f) : String.format("%.1f MB", tot/(1024f*1024));
-                                  // Rich progress notif: filename as title, size as text, % as subtext
-                                  nm.notify(NOTIF_ING, notifBuilder(DL_CH, "⬇️ " + lastFile, sz + " / " + tsz)
-                                      .setProgress(100, pct, false).setOngoing(true).setOnlyAlertOnce(true).setSubText(pct + "%").build());
+                                  // Notification styled like image 3: filename as title, "X MB / Y MB · Z%" as text
+                                  NotificationCompat.Builder nb = notifBuilder(DL_CH, lastFile, sz + " / " + tsz + "  ·  " + pct + "%")
+                                      .setProgress(100, pct, false).setOngoing(true).setOnlyAlertOnce(true);
+                                  // Show wallpaper thumbnail as large icon if we have a local path
+                                  if (!lastLocalPath.isEmpty()) {
+                                      try {
+                                          BitmapFactory.Options o = new BitmapFactory.Options(); o.inSampleSize = 4;
+                                          Bitmap t = BitmapFactory.decodeFile(new java.io.File(android.net.Uri.parse(lastLocalPath).getPath()).getAbsolutePath(), o);
+                                          if (t != null) nb.setLargeIcon(t);
+                                      } catch (Exception ignored) {}
+                                  }
+                                  nm.notify(NOTIF_ING, nb.build());
                                   WebView wv = getBridge() != null ? getBridge().getWebView() : null;
                                   if (wv != null) wv.evaluateJavascript("window.dispatchEvent(new CustomEvent('walls_dl_progress',{detail:{pct:" + pct + ",name:'" + lastFile + "'}}))", null);
                               }
@@ -588,13 +624,13 @@ jobs:
                       Bitmap thumb = null;
                       try { BitmapFactory.Options o = new BitmapFactory.Options(); o.inSampleSize = 4; thumb = BitmapFactory.decodeFile(file.getAbsolutePath(), o); } catch (Exception ignored) {}
 
-                      // Dialog matching the screenshot: Lock Screen | Both | Home Screen
+                      // Dialog matching screenshot: Lock Screen | Both | Home Screen
                       new AlertDialog.Builder(this)
                           .setTitle("Set as Wallpaper")
                           .setMessage("\"" + lastFile + "\" saved!\nSet it as your wallpaper?")
+                          .setNegativeButton("Lock Screen", (d, w) -> applyWallpaper(file, WallpaperManager.FLAG_LOCK))
+                          .setNeutralButton("Both",         (d, w) -> applyWallpaper(file, WallpaperManager.FLAG_SYSTEM | WallpaperManager.FLAG_LOCK))
                           .setPositiveButton("Home Screen", (d, w) -> applyWallpaper(file, WallpaperManager.FLAG_SYSTEM))
-                          .setNeutralButton("Lock Screen",  (d, w) -> applyWallpaper(file, WallpaperManager.FLAG_LOCK))
-                          .setNegativeButton("Both",        (d, w) -> applyWallpaper(file, WallpaperManager.FLAG_SYSTEM | WallpaperManager.FLAG_LOCK))
                           .create().show();
 
                       // Saved notification: BigPicture with wallpaper thumbnail, tap to set
@@ -819,16 +855,12 @@ jobs:
                       List<String> titles = new ArrayList<>(), imgUrls = new ArrayList<>();
                       try {
                           String raw = sb.toString().trim();
-                          JSONArray arr;
-                          if (raw.startsWith("[")) {
-                              arr = new JSONArray(raw);
-                          } else {
+                          JSONArray arr = raw.startsWith("[") ? new JSONArray(raw) : (() -> {
                               JSONObject root = new JSONObject(raw);
-                              if (root.has("data"))            arr = root.getJSONArray("data");
-                              else if (root.has("wallpapers")) arr = root.getJSONArray("wallpapers");
-                              else if (root.has("results"))    arr = root.getJSONArray("results");
-                              else                             arr = new JSONArray();
-                          }
+                              return root.has("data") ? root.getJSONArray("data") :
+                                     root.has("wallpapers") ? root.getJSONArray("wallpapers") :
+                                     root.has("results") ? root.getJSONArray("results") : new JSONArray();
+                          }).call();
                           for (int i = 0; i < arr.length() && titles.size() < 5; i++) {
                               JSONObject obj = arr.getJSONObject(i);
                               String t = obj.optString("title", obj.optString("name", ""));
@@ -850,7 +882,6 @@ jobs:
                           HttpURLConnection ic = (HttpURLConnection) new URL(imgUrls.get(0)).openConnection();
                           ic.setConnectTimeout(6000); ic.setReadTimeout(6000);
                           ic.setRequestProperty("User-Agent", "Walls-Android/1.0");
-                          ic.connect();
                           if (ic.getResponseCode() == 200) bigPic = BitmapFactory.decodeStream(ic.getInputStream());
                       } catch (Exception ignored) {}
 
@@ -954,10 +985,16 @@ jobs:
           cp capacitor.config.json android/app/src/main/assets/capacitor.config.json
           npx cap sync android
 
-          LOGO="public/icon/icon-512x512.png"
           SVG="public/icon/icon.svg"
+          LOGO="public/icon/icon-512x512.png"
           RES="android/app/src/main/res"
-          [ -f "$LOGO" ] || (echo "ERROR: $LOGO not found!"; exit 1)
+
+          # Generate the 512px PNG from SVG using rsvg-convert (avoids ImageMagick MSVG black-border bug)
+          if [ -f "$SVG" ]; then
+            rsvg-convert -w 512 -h 512 "$SVG" -o "$LOGO" 2>/dev/null \
+              || convert -background none "$SVG" -resize 512x512 "$LOGO"
+          fi
+          [ -f "$LOGO" ] || (echo "ERROR: $LOGO not found — add public/icon/icon.svg or icon-512x512.png to your repo!"; exit 1)
 
           # ── Launcher icons (all densities) ────────────────────────────────────
           for cfg in "mipmap-mdpi:48" "mipmap-hdpi:72" "mipmap-xhdpi:96" "mipmap-xxhdpi:144" "mipmap-xxxhdpi:192"; do
@@ -1050,6 +1087,7 @@ jobs:
               'android.permission.SET_WALLPAPER', 'android.permission.SET_WALLPAPER_HINTS',
               'android.permission.SCHEDULE_EXACT_ALARM', 'android.permission.USE_EXACT_ALARM',
               'android.permission.RECEIVE_BOOT_COMPLETED',
+              'android.permission.DOWNLOAD_WITHOUT_NOTIFICATION',
           ]:
               if perm not in existing: ET.SubElement(root, 'uses-permission').set(a('name'), perm)
 
