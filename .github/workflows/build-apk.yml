@@ -41,6 +41,26 @@ jobs:
             > capacitor.config.json
           npx cap add android
 
+          # ── Use custom icon from public/icon/icon-512x512.png ──────────────────
+          ICON_SRC="public/icon/icon-512x512.png"
+          if [ -f "$ICON_SRC" ]; then
+            pip install pillow --break-system-packages -q
+            python3 - "$ICON_SRC" "$RES" << 'ICONEOF'
+          import sys, os
+          from PIL import Image
+          src, res = sys.argv[1], sys.argv[2]
+          img = Image.open(src).convert("RGBA")
+          sizes = {"mipmap-mdpi":48,"mipmap-hdpi":72,"mipmap-xhdpi":96,"mipmap-xxhdpi":144,"mipmap-xxxhdpi":192}
+          for folder, px in sizes.items():
+            d = os.path.join(res, folder); os.makedirs(d, exist_ok=True)
+            img.resize((px,px), Image.LANCZOS).save(os.path.join(d,"ic_launcher.png"))
+            img.resize((px,px), Image.LANCZOS).save(os.path.join(d,"ic_launcher_round.png"))
+          print("Icons generated from", src)
+          ICONEOF
+          else
+            echo "WARNING: $ICON_SRC not found — using Capacitor default icon"
+          fi
+
       - name: Copy google-services.json
         run: cp public/google-services.json android/app/google-services.json
 
@@ -188,7 +208,6 @@ jobs:
                   registerDlReceiver(); scheduleReminder();
                   handleDeepLink(getIntent()); handleNotifUrl(getIntent());
                   showWelcome(); checkForUpdate();
-                  promptBatteryOptimization();
               }
 
               @Override public void onNewIntent(Intent i) { super.onNewIntent(i); handleDeepLink(i); handleNotifUrl(i); }
@@ -202,6 +221,10 @@ jobs:
                   if (newBg != lastBgColor) { lastBgColor = newBg; getWindow().setBackgroundDrawable(new ColorDrawable(newBg)); wv.setBackgroundColor(newBg); }
                   String url = wv.getUrl();
                   if (url == null || url.equals("about:blank")) wv.loadUrl(BASE_URL);
+                  // If user returns from Settings while onboarding step 1 is showing, refresh badges
+                  wv.evaluateJavascript(
+                      "(function(){return document.getElementById('walls-ob')!=null})()",
+                      val -> { if ("true".equals(val)) runOnUiThread(() -> showOnboardingStep(1)); });
               }
 
               @Override public void onConfigurationChanged(Configuration c) { super.onConfigurationChanged(c); applySystemTheme(); }
@@ -221,23 +244,6 @@ jobs:
                   if (dlReceiver != null) try { unregisterReceiver(dlReceiver); } catch (Exception ignored) {}
               }
 
-              private void promptBatteryOptimization() {
-                  if (Build.VERSION.SDK_INT < 23) return;
-                  SharedPreferences prefs = getSharedPreferences(PREF_FILE, MODE_PRIVATE);
-                  if (prefs.getBoolean("battery_opt_asked", false)) return;
-                  prefs.edit().putBoolean("battery_opt_asked", true).apply();
-                  android.os.PowerManager pm = (android.os.PowerManager) getSystemService(POWER_SERVICE);
-                  if (pm.isIgnoringBatteryOptimizations(getPackageName())) return;
-                  new AlertDialog.Builder(this)
-                      .setTitle("Stay Connected")
-                      .setMessage("Disable battery optimization so Walls can deliver notifications even when the app is in the background.")
-                      .setPositiveButton("Disable", (d, w) -> {
-                          try { startActivity(new Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
-                              .setData(Uri.parse("package:" + getPackageName()))); } catch (Exception ignored) {}
-                      })
-                      .setNegativeButton("Not Now", null).show();
-              }
-
               private boolean isDarkTheme() {
                   return (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
               }
@@ -247,7 +253,7 @@ jobs:
                   int bg = Color.parseColor(dark ? "#111318" : "#F1F3F4");
                   lastBgColor = bg; getWindow().setBackgroundDrawable(new ColorDrawable(bg));
                   WebView wv = getBridge() != null ? getBridge().getWebView() : null;
-                  if (wv != null) { wv.setBackgroundColor(bg); wv.evaluateJavascript("window.dispatchEvent(new CustomEvent('walls_theme',{detail:{dark:" + dark + "}}))", null); }
+                  if (wv != null) { wv.setBackgroundColor(bg); wv.evaluateJavascript("window.dispatchEvent(new CustomEvent('walls_theme',{detail:{dark:"+dark+"}}))", null); }
                   if (Build.VERSION.SDK_INT >= 21) { getWindow().setStatusBarColor(bg); getWindow().setNavigationBarColor(bg); }
                   if (Build.VERSION.SDK_INT >= 26) {
                       View decor = getWindow().getDecorView(); int flags = decor.getSystemUiVisibility();
@@ -419,7 +425,7 @@ jobs:
                       }
                       @android.webkit.JavascriptInterface public void    requestStoragePermission() { runOnUiThread(() -> MainActivity.this.requestStoragePermission()); }
                       @android.webkit.JavascriptInterface public void onboardingNext(int step) { runOnUiThread(() -> MainActivity.this.handleOnboardingStep(step)); }
-                      @android.webkit.JavascriptInterface public void onboardingSkip() { runOnUiThread(() -> MainActivity.this.dismissOnboarding()); }
+                      @android.webkit.JavascriptInterface public void onboardingOpenSettings() { runOnUiThread(() -> MainActivity.this.openAppSettings()); }
                       @android.webkit.JavascriptInterface public boolean hasStorage()   { return hasStoragePermission(); }
                       @android.webkit.JavascriptInterface public boolean isAndroid()    { return true; }
                       @android.webkit.JavascriptInterface public String  getVersion()   { return MainActivity.this.getVersion(); }
@@ -744,8 +750,7 @@ jobs:
                   if (Build.VERSION.SDK_INT < 26) return;
                   NotificationChannel ch = new NotificationChannel(id, name, NotificationManager.IMPORTANCE_HIGH);
                   ch.setDescription(desc); ch.enableVibration(true); ch.setVibrationPattern(new long[]{0,250,100,250});
-                  ch.setSound(android.provider.Settings.System.DEFAULT_NOTIFICATION_URI,
-                      new android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION).build());
+                  ch.setSound(android.provider.Settings.System.DEFAULT_NOTIFICATION_URI, new android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION).build());
                   nm.createNotificationChannel(ch);
               }
 
@@ -804,30 +809,19 @@ jobs:
                   boolean first = prefs.getBoolean("first_launch", true);
                   if (first) {
                       prefs.edit().putBoolean("first_launch", false).apply();
-                      // First launch — plain title, show onboarding after
-                      nm.notify(NOTIF_WELCOME, notifBuilder(PROMO_CH,
-                          "Welcome to Walls 🖼️",
-                          "Discover stunning wallpapers curated just for you.")
+                      nm.notify(NOTIF_WELCOME, notifBuilder(PROMO_CH, "Welcome to Walls 🖼️", "Discover stunning wallpapers curated just for you.")
                           .setContentIntent(launchIntent()).setAutoCancel(true).build());
                       showOnboarding();
                   } else {
-                      // Returning user — bold title
-                      android.text.SpannableString boldTitle = new android.text.SpannableString("Welcome back to Walls 👋");
-                      boldTitle.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, boldTitle.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                      NotificationCompat.Builder nb = notifBuilder(PROMO_CH,
-                          "Welcome back to Walls 👋",
-                          "Your next favorite wallpaper is waiting.");
-                      // Apply bold via BigTextStyle which respects spans via contentTitle
-                      nb.setContentTitle(boldTitle)
-                        .setStyle(new NotificationCompat.BigTextStyle()
-                            .bigText("Your next favorite wallpaper is waiting.")
-                            .setBigContentTitle(boldTitle))
-                        .setContentIntent(launchIntent()).setAutoCancel(true);
-                      nm.notify(NOTIF_WELCOME, nb.build());
+                      android.text.SpannableString bold = new android.text.SpannableString("Welcome back to Walls 👋");
+                      bold.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, bold.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                      nm.notify(NOTIF_WELCOME, notifBuilder(PROMO_CH, "Welcome back to Walls 👋", "Your next favorite wallpaper is waiting.")
+                          .setContentTitle(bold).setStyle(new NotificationCompat.BigTextStyle().bigText("Your next favorite wallpaper is waiting.").setBigContentTitle(bold))
+                          .setContentIntent(launchIntent()).setAutoCancel(true).build());
                   }
               }
 
-              // ── Onboarding (3-step: Welcome → HD Wallpapers → Permissions) ───────
+              // ── Onboarding (2-step: Welcome → Permissions) — blocks app until done ─
               private void showOnboarding() {
                   SharedPreferences prefs = getSharedPreferences(PREF_FILE, MODE_PRIVATE);
                   if (!prefs.getBoolean("first_launch_onboarding", true)) return;
@@ -837,79 +831,135 @@ jobs:
 
               private void showOnboardingStep(int step) {
                   if (isFinishing() || isDestroyed()) return;
-                  boolean dark = isDarkTheme();
-                  String bg    = dark ? "#0d0d12" : "#F1F3F4";
-                  String fg    = dark ? "#ffffff" : "#111318";
-                  String muted = dark ? "rgba(255,255,255,0.55)" : "rgba(0,0,0,0.5)";
-                  String accent = "#6c63ff";
+                  boolean dark   = isDarkTheme();
+                  String bg      = dark ? "#0d0d12"                : "#F8F8FF";
+                  String fg      = dark ? "#ffffff"                : "#111318";
+                  String muted   = dark ? "rgba(255,255,255,0.5)"  : "rgba(0,0,0,0.45)";
+                  String card    = dark ? "rgba(255,255,255,0.05)" : "rgba(108,99,255,0.06)";
+                  String accent  = "#6c63ff";
 
-                  // Step data
-                  String[] emojis = {"🖼️", "🌄", "🔐"};
-                  String[] titles = {
-                      "Welcome to Walls",
-                      "Browse HD Wallpapers",
-                      "Allow Permissions"
-                  };
-                  String[] descs = {
-                      "Discover thousands of stunning HD wallpapers curated just for you. Set them on your home screen, lock screen, or both — with a single tap.",
-                      "Explore trending, nature, abstract, and city wallpapers in crystal-clear HD quality. New wallpapers added daily.",
-                      "Walls needs Storage access to save wallpapers and Notification access to alert you about fresh picks."
-                  };
-                  String[] btnLabels = {"Next", "Next", "Allow & Continue"};
-
-                  String emoji = emojis[step], title = titles[step], desc = descs[step], btn = btnLabels[step];
-
-                  // Dots HTML
+                  // ── dot indicators ──────────────────────────────────────────────────
                   StringBuilder dots = new StringBuilder();
-                  for (int i = 0; i < 3; i++) {
-                      String col = (i == step) ? accent : (dark ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.2)");
-                      String size = (i == step) ? "10px" : "7px";
-                      dots.append("<div style='width:").append(size).append(";height:").append(size)
-                          .append(";border-radius:50%;background:").append(col).append(";margin:0 4px'></div>");
+                  for (int i = 0; i < 2; i++) {
+                      String w = (i == step) ? "22px" : "7px";
+                      String c = (i == step) ? accent : (dark ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.15)");
+                      dots.append("<div style='width:").append(w)
+                          .append(";height:7px;border-radius:4px;background:").append(c)
+                          .append(";margin:0 3px;transition:all .3s'></div>");
                   }
 
-                  // Image placeholder for step 1 (HD Wallpaper step) — loads a sample image
-                  String imgSection = "";
-                  if (step == 1) {
-                      // Show a sample HD wallpaper image from the app base URL
-                      imgSection = "<img src=\\\"" + BASE_URL + "/assets/sample_hd.jpg\\\" " +
-                          "onerror=\\\"this.style.display='none'\\\" " +
-                          "style=\\\"width:100%;max-width:320px;height:180px;object-fit:cover;" +
-                          "border-radius:16px;margin-bottom:20px;box-shadow:0 8px 32px rgba(0,0,0,0.35)\\\"/>";
-                  } else if (step == 0) {
-                      // App icon for welcome
-                      imgSection = "<img src=\\\"file:///android_res/mipmap/ic_launcher.png\\\" " +
-                          "onerror=\\\"this.style.display='none'\\\" " +
-                          "style=\\\"width:88px;height:88px;border-radius:24px;margin-bottom:20px;" +
-                          "box-shadow:0 4px 24px rgba(108,99,255,0.4)\\\"/>";
+                  String js;
+
+                  if (step == 0) {
+                      // ── STEP 0: Welcome ─────────────────────────────────────────────
+                      js = "(function(){" +
+                          "var old=document.getElementById('walls-ob');if(old)old.remove();" +
+                          "var o=document.createElement('div');o.id='walls-ob';" +
+                          "o.style.cssText='position:fixed;inset:0;background:" + bg + ";z-index:2147483647;" +
+                              "display:flex;flex-direction:column;align-items:center;justify-content:center;" +
+                              "font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:28px 32px;" +
+                              "box-sizing:border-box;text-align:center;overflow:hidden';" +
+                          "o.innerHTML='" +
+                              // hero image card
+                              "<div style=\\\"width:100%;max-width:320px;height:220px;border-radius:24px;overflow:hidden;" +
+                                  "margin-bottom:28px;position:relative;box-shadow:0 12px 48px rgba(108,99,255,0.25)\\\">" +
+                                  "<img src=\\\"" + BASE_URL + "/assets/sample_hd.jpg\\\" " +
+                                      "onerror=\\\"this.parentNode.style.background=\\'linear-gradient(135deg,#6c63ff,#a78bfa)\\';this.remove()\\\" " +
+                                      "style=\\\"width:100%;height:100%;object-fit:cover\\\"/>" +
+                                  "<div style=\\\"position:absolute;inset:0;background:linear-gradient(to bottom,transparent 40%,rgba(0,0,0,0.55))\\\">" +
+                                  "<img src=\\\"file:///android_res/mipmap/ic_launcher.png\\\" " +
+                                      "onerror=\\\"this.style.display=\\'none\\'\\\" " +
+                                      "style=\\\"position:absolute;bottom:14px;left:14px;width:44px;height:44px;" +
+                                      "border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,0.4)\\\"/>" +
+                                  "</div>" +
+                              "</div>" +
+                              // text
+                              "<h1 style=\\\"font-size:28px;font-weight:800;color:" + fg + ";margin:0 0 10px;line-height:1.2\\\">Welcome to Walls 🖼️</h1>" +
+                              "<p style=\\\"font-size:15px;color:" + muted + ";margin:0 0 32px;line-height:1.65;max-width:290px\\\">" +
+                                  "Thousands of stunning HD wallpapers curated just for you. Set any on your Home Screen, Lock Screen, or both — with one tap." +
+                              "</p>" +
+                              // dots
+                              "<div style=\\\"display:flex;align-items:center;justify-content:center;margin-bottom:28px\\\">" + dots + "</div>" +
+                              // CTA
+                              "<button id=ob-next style=\\\"width:100%;max-width:320px;padding:16px;background:" + accent + ";" +
+                                  "border:none;border-radius:16px;color:#fff;font-size:16px;font-weight:700;cursor:pointer;" +
+                                  "letter-spacing:.2px\\\">Get Started →</button>" +
+                          "';" +
+                          "document.body.appendChild(o);" +
+                          "document.getElementById('ob-next').onclick=function(){Android.onboardingNext(0)};" +
+                      "})();";
+
                   } else {
-                      // Lock / permissions icon
-                      imgSection = "<div style=\\\"font-size:72px;margin-bottom:16px\\\">🔐</div>";
+                      // ── STEP 1: Permissions ──────────────────────────────────────────
+                      boolean storageOk = hasStoragePermission();
+                      boolean notifOk   = Build.VERSION.SDK_INT < 33 ||
+                          ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
+                      String sIcon = storageOk ? "✅" : "📁";
+                      String nIcon = notifOk   ? "✅" : "🔔";
+                      String sBadge = storageOk
+                          ? "<span style=\\\"font-size:11px;font-weight:700;color:#22c55e;background:rgba(34,197,94,0.12);padding:3px 9px;border-radius:20px\\\">Allowed</span>"
+                          : "<span style=\\\"font-size:11px;font-weight:700;color:#f97316;background:rgba(249,115,22,0.12);padding:3px 9px;border-radius:20px\\\">Required</span>";
+                      String nBadge = notifOk
+                          ? "<span style=\\\"font-size:11px;font-weight:700;color:#22c55e;background:rgba(34,197,94,0.12);padding:3px 9px;border-radius:20px\\\">Allowed</span>"
+                          : "<span style=\\\"font-size:11px;font-weight:700;color:#f97316;background:rgba(249,115,22,0.12);padding:3px 9px;border-radius:20px\\\">Required</span>";
+                      String btnLabel = (storageOk && notifOk) ? "Continue to App ✓" : "Allow & Continue";
+
+                      js = "(function(){" +
+                          "var old=document.getElementById('walls-ob');if(old)old.remove();" +
+                          "var o=document.createElement('div');o.id='walls-ob';" +
+                          "o.style.cssText='position:fixed;inset:0;background:" + bg + ";z-index:2147483647;" +
+                              "display:flex;flex-direction:column;align-items:center;justify-content:center;" +
+                              "font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:28px 32px;" +
+                              "box-sizing:border-box;text-align:center';" +
+                          "o.innerHTML='" +
+                              // icon
+                              "<img src=\\\"file:///android_res/mipmap/ic_launcher.png\\\" " +
+                                  "onerror=\\\"this.style.display=\\'none\\'\\\" " +
+                                  "style=\\\"width:72px;height:72px;border-radius:20px;margin-bottom:20px;" +
+                                  "box-shadow:0 4px 24px rgba(108,99,255,0.35)\\\"/>" +
+                              "<h1 style=\\\"font-size:24px;font-weight:800;color:" + fg + ";margin:0 0 8px\\\">Allow Permissions</h1>" +
+                              "<p style=\\\"font-size:14px;color:" + muted + ";margin:0 0 28px;line-height:1.6;max-width:280px\\\">" +
+                                  "Walls needs a couple of permissions to work its magic." +
+                              "</p>" +
+                              // storage row
+                              "<div style=\\\"width:100%;max-width:320px;background:" + card + ";border-radius:16px;padding:16px 18px;" +
+                                  "margin-bottom:12px;display:flex;align-items:center;text-align:left;box-sizing:border-box\\\">" +
+                                  "<span style=\\\"font-size:28px;margin-right:14px\\\">" + sIcon + "</span>" +
+                                  "<div style=\\\"flex:1\\\">" +
+                                      "<div style=\\\"font-size:15px;font-weight:700;color:" + fg + ";margin-bottom:3px\\\">Storage</div>" +
+                                      "<div style=\\\"font-size:12px;color:" + muted + "\\\">Save wallpapers to your gallery</div>" +
+                                  "</div>" +
+                                  sBadge +
+                              "</div>" +
+                              // notification row
+                              "<div style=\\\"width:100%;max-width:320px;background:" + card + ";border-radius:16px;padding:16px 18px;" +
+                                  "margin-bottom:32px;display:flex;align-items:center;text-align:left;box-sizing:border-box\\\">" +
+                                  "<span style=\\\"font-size:28px;margin-right:14px\\\">" + nIcon + "</span>" +
+                                  "<div style=\\\"flex:1\\\">" +
+                                      "<div style=\\\"font-size:15px;font-weight:700;color:" + fg + ";margin-bottom:3px\\\">Notifications</div>" +
+                                      "<div style=\\\"font-size:12px;color:" + muted + "\\\">Get alerts for fresh wallpapers</div>" +
+                                  "</div>" +
+                                  nBadge +
+                              "</div>" +
+                              // dots
+                              "<div style=\\\"display:flex;align-items:center;justify-content:center;margin-bottom:24px\\\">" + dots + "</div>" +
+                              // allow button
+                              "<button id=ob-allow style=\\\"width:100%;max-width:320px;padding:16px;background:" + accent + ";" +
+                                  "border:none;border-radius:16px;color:#fff;font-size:16px;font-weight:700;" +
+                                  "cursor:pointer;letter-spacing:.2px;margin-bottom:10px\\\">" + btnLabel + "</button>" +
+                              // settings link (shown only if any denied)
+                              (!storageOk || !notifOk
+                                  ? "<button id=ob-settings style=\\\"background:transparent;border:none;color:" + accent + ";" +
+                                      "font-size:13px;cursor:pointer;font-family:inherit;padding:6px\\\">Open App Settings instead</button>"
+                                  : "") +
+                          "';" +
+                          "document.body.appendChild(o);" +
+                          "document.getElementById('ob-allow').onclick=function(){Android.onboardingNext(1)};" +
+                          (!storageOk || !notifOk
+                              ? "var s=document.getElementById('ob-settings');if(s)s.onclick=function(){Android.onboardingOpenSettings()};"
+                              : "") +
+                      "})();";
                   }
-
-                  final int nextStep = step + 1;
-                  // JS callback name passed so we can invoke from button
-                  String overlayId = "walls-onboard-overlay";
-
-                  String js = "(function(){" +
-                      "var old=document.getElementById('" + overlayId + "');if(old)old.remove();" +
-                      "var o=document.createElement('div');o.id='" + overlayId + "';" +
-                      "o.style.cssText='position:fixed;inset:0;background:" + bg + ";z-index:2147483647;" +
-                          "display:flex;flex-direction:column;align-items:center;justify-content:center;" +
-                          "font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:32px;box-sizing:border-box;text-align:center';" +
-                      "o.innerHTML='" +
-                          imgSection +
-                          "<h1 style=\"font-size:26px;font-weight:800;color:" + fg + ";margin:0 0 12px\">" + title + "</h1>" +
-                          "<p style=\"font-size:15px;color:" + muted + ";margin:0 0 32px;line-height:1.6;max-width:300px\">" + desc + "</p>" +
-                          "<div style=\"display:flex;align-items:center;justify-content:center;margin-bottom:28px\">" + dots + "</div>" +
-                          "<button id=walls-ob-btn style=\"width:100%;max-width:320px;padding:16px;background:" + accent + ";border:none;" +
-                              "border-radius:16px;color:#fff;font-size:16px;font-weight:700;cursor:pointer\">" + btn + "</button>" +
-                          (step > 0 ? "<button id=walls-ob-skip style=\"margin-top:12px;background:transparent;border:none;color:" + muted + ";font-size:14px;cursor:pointer\">Skip</button>" : "") +
-                      "';" +
-                      "document.body.appendChild(o);" +
-                      "document.getElementById('walls-ob-btn').onclick=function(){Android.onboardingNext(" + step + ")};" +
-                      (step > 0 ? "var sk=document.getElementById('walls-ob-skip');if(sk)sk.onclick=function(){Android.onboardingSkip();};" : "") +
-                  "})();";
 
                   WebView wv = getBridge() != null ? getBridge().getWebView() : null;
                   if (wv != null) wv.post(() -> wv.evaluateJavascript(js, null));
@@ -918,89 +968,39 @@ jobs:
               private void dismissOnboarding() {
                   WebView wv = getBridge() != null ? getBridge().getWebView() : null;
                   if (wv != null) wv.post(() -> wv.evaluateJavascript(
-                      "(function(){var o=document.getElementById('walls-onboard-overlay');if(o)o.remove();})()", null));
+                      "(function(){var o=document.getElementById('walls-ob');if(o)o.remove();})()", null));
               }
 
-              // Called from JS when user taps Next / Allow
+              // Called from JS button taps
               private void handleOnboardingStep(int currentStep) {
-                  int next = currentStep + 1;
-                  if (next >= 3) {
-                      // Final step — request permissions then dismiss
-                      requestOnboardingPermissions();
+                  if (currentStep == 0) {
+                      runOnUiThread(() -> showOnboardingStep(1));
                   } else {
-                      runOnUiThread(() -> showOnboardingStep(next));
+                      // step 1 — request any missing permissions
+                      boolean storageOk = hasStoragePermission();
+                      boolean notifOk   = Build.VERSION.SDK_INT < 33 ||
+                          ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
+                      if (storageOk && notifOk) { dismissOnboarding(); return; }
+                      if (!storageOk) requestStoragePermission();
+                      else if (Build.VERSION.SDK_INT >= 33)
+                          ActivityCompat.requestPermissions(this, new String[]{ Manifest.permission.POST_NOTIFICATIONS }, REQ_NOTIF);
                   }
               }
 
-              private void requestOnboardingPermissions() {
-                  // Check + request notification permission (Android 13+)
-                  boolean notifGranted = true;
-                  if (Build.VERSION.SDK_INT >= 33) {
-                      notifGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
-                  }
-                  // Check storage permission
-                  boolean storageGranted = hasStoragePermission();
-
-                  if (!notifGranted || !storageGranted) {
-                      // Show permission rationale dialog before requesting
-                      showPermissionRationaleDialog(notifGranted, storageGranted);
-                  } else {
-                      dismissOnboarding();
+              // Open app settings — called from "Open App Settings instead" link
+              private void openAppSettings() {
+                  try {
+                      startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                          .setData(Uri.parse("package:" + getPackageName())));
+                  } catch (Exception e) {
+                      try { startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_SETTINGS)); } catch (Exception ignored) {}
                   }
               }
 
-              private void showPermissionRationaleDialog(boolean notifGranted, boolean storageGranted) {
-                  StringBuilder msg = new StringBuilder("Walls needs the following permissions:\n\n");
-                  if (!storageGranted) msg.append("📁 Storage — to save wallpapers to your gallery\n\n");
-                  if (!notifGranted)   msg.append("🔔 Notifications — to alert you about fresh wallpapers\n\n");
-                  msg.append("Please allow them on the next screen.");
-
-                  new AlertDialog.Builder(this)
-                      .setTitle("Permissions Needed")
-                      .setMessage(msg.toString())
-                      .setPositiveButton("Allow", (d, w) -> {
-                          // Request storage first, then notification
-                          if (!storageGranted) {
-                              requestStoragePermission();
-                          } else if (!notifGranted && Build.VERSION.SDK_INT >= 33) {
-                              ActivityCompat.requestPermissions(this, new String[]{ Manifest.permission.POST_NOTIFICATIONS }, REQ_NOTIF);
-                          } else {
-                              dismissOnboarding();
-                          }
-                      })
-                      .setNegativeButton("Maybe Later", (d, w) -> dismissOnboarding())
-                      .show();
-              }
-
-              // Handles result after onboarding permission request — redirects to Settings if denied
+              // Called after returning from system permission dialog or Settings
               private void handleOnboardingPermissionResult() {
-                  boolean notifGranted = Build.VERSION.SDK_INT < 33 ||
-                      ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
-                  boolean storageGranted = hasStoragePermission();
-
-                  if (!notifGranted || !storageGranted) {
-                      StringBuilder denied = new StringBuilder();
-                      if (!storageGranted) denied.append("Storage");
-                      if (!storageGranted && !notifGranted) denied.append(" & ");
-                      if (!notifGranted) denied.append("Notifications");
-
-                      new AlertDialog.Builder(this)
-                          .setTitle("Permission Denied")
-                          .setMessage(denied + " permission was denied.\n\nYou can enable it anytime in Settings → Apps → Walls → Permissions.")
-                          .setPositiveButton("Open Settings", (d, w) -> {
-                              try {
-                                  Intent i = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-                                      .setData(Uri.parse("package:" + getPackageName()));
-                                  startActivity(i);
-                              } catch (Exception ex) {
-                                  try { startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_SETTINGS)); } catch (Exception ignored) {}
-                              }
-                          })
-                          .setNegativeButton("Continue Anyway", (d, w) -> dismissOnboarding())
-                          .show();
-                  } else {
-                      dismissOnboarding();
-                  }
+                  // Refresh step 1 so badges update to reflect current state
+                  runOnUiThread(() -> showOnboardingStep(1));
               }
 
               private void checkForUpdate() {
@@ -1025,43 +1025,61 @@ jobs:
               }
 
               private boolean isNewer(String a, String b) {
-                  try {
-                      String[] av = a.split("\\."), bv = b.split("\\.");
-                      for (int i = 0; i < Math.max(av.length,bv.length); i++) {
-                          int ai = i < av.length ? Integer.parseInt(av[i].trim()) : 0;
-                          int bi = i < bv.length ? Integer.parseInt(bv[i].trim()) : 0;
-                          if (ai != bi) return ai > bi;
-                      }
-                  } catch (Exception ignored) {} return false;
+                  try { String[] av=a.split("\\."),bv=b.split("\\.");
+                      for(int i=0;i<Math.max(av.length,bv.length);i++){int ai=i<av.length?Integer.parseInt(av[i].trim()):0,bi=i<bv.length?Integer.parseInt(bv[i].trim()):0;if(ai!=bi)return ai>bi;}
+                  } catch(Exception ignored){} return false;
               }
 
               private void showUpdateUI(String current, String latest, boolean forced) {
                   WebView wv = getBridge() != null ? getBridge().getWebView() : null; if (wv == null) return;
                   boolean dark = isDarkTheme();
-                  String bg=dark?"#0d0d12":"#F1F3F4", fg=dark?"#ffffff":"#111318";
-                  String muted=dark?"rgba(255,255,255,0.5)":"rgba(0,0,0,0.45)", bdr=dark?"rgba(255,255,255,0.08)":"rgba(0,0,0,0.1)";
-                  String label=forced?"Update Required":"Update Available";
-                  String sub="v"+current+" → v"+latest+(forced?" — Required to continue":"");
-                  String dlUrl=BASE_URL+"/download";
-                  String js="(function(){if(document.getElementById('walls-upd-overlay'))return;" +
+                  String bg    = dark ? "#0d0d12"                  : "#F1F3F4";
+                  String fg    = dark ? "#ffffff"                  : "#111318";
+                  String muted = dark ? "rgba(255,255,255,0.5)"    : "rgba(0,0,0,0.45)";
+                  String bdr   = dark ? "rgba(255,255,255,0.08)"   : "rgba(0,0,0,0.1)";
+                  String card  = dark ? "rgba(255,255,255,0.04)"   : "rgba(0,0,0,0.04)";
+                  String label = forced ? "Update Required" : "Update Available";
+                  String badge = forced
+                      ? "<span style=\\\"display:inline-block;padding:4px 12px;background:#ff4d4f;border-radius:20px;font-size:12px;font-weight:700;color:#fff;letter-spacing:.5px;margin-bottom:16px\\\">REQUIRED</span>"
+                      : "<span style=\\\"display:inline-block;padding:4px 12px;background:rgba(108,99,255,0.18);border-radius:20px;font-size:12px;font-weight:700;color:#6c63ff;letter-spacing:.5px;margin-bottom:16px\\\">NEW VERSION</span>";
+                  String maybeBtn = forced ? "" :
+                      "<button onclick=\\\"document.getElementById('walls-upd-overlay').remove()\\\" " +
+                      "style=\\\"margin-top:10px;width:100%;max-width:320px;padding:13px;background:transparent;" +
+                      "border:1px solid " + bdr + ";border-radius:14px;color:" + muted + ";font-size:14px;" +
+                      "cursor:pointer;font-family:inherit\\\">Maybe Later</button>";
+                  String js = "(function(){" +
+                      "if(document.getElementById('walls-upd-overlay'))return;" +
                       "var o=document.createElement('div');o.id='walls-upd-overlay';" +
-                      "o.style.cssText='position:fixed;inset:0;background:"+bg+";z-index:2147483647;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:32px;box-sizing:border-box;text-align:center';" +
-                      "var img=document.createElement('img');img.src='file:///android_res/mipmap/ic_launcher.png';img.style.cssText='width:80px;height:80px;border-radius:20px;margin-bottom:24px;box-shadow:0 4px 32px rgba(108,99,255,0.35)';img.onerror=function(){this.style.display='none'};o.appendChild(img);" +
-                      "var h=document.createElement('div');h.textContent='"+label+"';h.style.cssText='font-size:24px;font-weight:800;color:"+fg+";margin-bottom:8px';o.appendChild(h);" +
-                      "var s=document.createElement('div');s.textContent='"+sub+"';s.style.cssText='font-size:14px;color:"+muted+";margin-bottom:40px';o.appendChild(s);" +
-                      "var w=document.createElement('div');w.style.cssText='width:100%;max-width:340px';" +
-                      "var btn=document.createElement('button');btn.textContent='Update Now';btn.style.cssText='width:100%;padding:16px;background:#6c63ff;border:none;border-radius:16px;color:#fff;font-size:16px;font-weight:700;cursor:pointer';" +
-                      "btn.onclick=function(){window.Android&&Android.openUrl('"+dlUrl+"')};w.appendChild(btn);" +
-                      (forced?"":"var later=document.createElement('button');later.textContent='Maybe Later';later.style.cssText='margin-top:10px;width:100%;padding:13px;background:transparent;border:1px solid "+bdr+";border-radius:14px;color:"+muted+";font-size:14px;cursor:pointer;font-family:inherit';later.onclick=function(){document.getElementById('walls-upd-overlay').remove()};w.appendChild(later);") +
-                      "o.appendChild(w);document.body.appendChild(o);})();";
+                      "o.style.cssText='position:fixed;inset:0;background:" + bg + ";z-index:2147483647;" +
+                          "display:flex;flex-direction:column;align-items:center;justify-content:center;" +
+                          "font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:32px;box-sizing:border-box;text-align:center';" +
+                      "o.innerHTML='" +
+                          "<img src=\\\"file:///android_res/mipmap/ic_launcher.png\\\" " +
+                              "onerror=\\\"this.style.display=\\'none\\'\\\" " +
+                              "style=\\\"width:88px;height:88px;border-radius:22px;margin-bottom:20px;" +
+                              "box-shadow:0 4px 32px rgba(108,99,255,0.35)\\\"/>" +
+                          badge +
+                          "<h2 style=\\\"font-size:24px;font-weight:800;color:" + fg + ";margin:0 0 6px\\\">" + label + "</h2>" +
+                          "<p style=\\\"font-size:13px;color:" + muted + ";margin:0 0 8px\\\">v" + current + " &rarr; v" + latest + (forced ? " &nbsp;&bull;&nbsp; Required to continue" : "") + "</p>" +
+                          "<div style=\\\"width:100%;max-width:340px;background:" + card + ";border-radius:16px;padding:16px;margin:24px 0 0;box-sizing:border-box\\\">" +
+                              "<p style=\\\"font-size:13px;color:" + muted + ";margin:0 0 16px;line-height:1.5\\\">A new version of Walls is available with improvements and bug fixes.</p>" +
+                              "<button onclick=\\\"window.Android&&Android.openUrl('" + BASE_URL + "/download')\\\" " +
+                                  "style=\\\"width:100%;padding:15px;background:#6c63ff;border:none;border-radius:14px;" +
+                                  "color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit\\\">⬆ Update Now</button>" +
+                          "</div>" +
+                          maybeBtn +
+                      "';" +
+                      "document.body.appendChild(o);" +
+                  "})();";
                   wv.post(() -> wv.evaluateJavascript(js, null));
               }
 
               private void scheduleReminder() {
                   AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
                   PendingIntent pi = PendingIntent.getBroadcast(this, 0, new Intent(this, WallpaperReminderReceiver.class), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-                  if (Build.VERSION.SDK_INT >= 23) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + TimeUnit.HOURS.toMillis(6), pi);
-                  else am.setRepeating(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + TimeUnit.HOURS.toMillis(6), TimeUnit.HOURS.toMillis(6), pi);
+                  long next = System.currentTimeMillis() + TimeUnit.HOURS.toMillis(6);
+                  if (Build.VERSION.SDK_INT >= 23) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next, pi);
+                  else am.setRepeating(AlarmManager.RTC_WAKEUP, next, TimeUnit.HOURS.toMillis(6), pi);
               }
           }
           EOF
@@ -1319,7 +1337,6 @@ jobs:
               'android.permission.SCHEDULE_EXACT_ALARM','android.permission.VIBRATE',
               'android.permission.POST_NOTIFICATIONS','android.permission.READ_MEDIA_IMAGES','android.permission.USE_EXACT_ALARM',
               'android.permission.READ_MEDIA_VISUAL_USER_SELECTED',
-              'android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS',
           ]
           for perm in perms:
               if perm not in existing: ET.SubElement(root,'uses-permission').set(a('name'),perm)
