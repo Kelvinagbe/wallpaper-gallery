@@ -8,6 +8,11 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      SDK: /usr/local/lib/android/sdk
+      JAVA_DIR: android/app/src/main/java/ng/name/ovrica/walls
+      RES: android/app/src/main/res
+
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -20,7 +25,6 @@ jobs:
 
       - name: Setup Android SDK
         run: |
-          SDK=/usr/local/lib/android/sdk
           echo "ANDROID_SDK_ROOT=$SDK" >> $GITHUB_ENV
           echo "ANDROID_HOME=$SDK"     >> $GITHUB_ENV
           mkdir -p $SDK/licenses
@@ -42,7 +46,6 @@ jobs:
 
       - name: Write resource files
         run: |
-          RES=android/app/src/main/res
           mkdir -p "$RES/xml" "$RES/values"
 
           cat > "$RES/xml/file_paths.xml" << 'EOF'
@@ -58,12 +61,24 @@ jobs:
           printf '<?xml version="1.0" encoding="utf-8"?>\n<resources><color name="ic_launcher_background">#000000</color></resources>' \
             > "$RES/values/ic_launcher_background.xml"
 
-      # ─── MainActivity.java ────────────────────────────────────────────────────
+          cat > "$RES/values/styles.xml" << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+            <style name="Theme.App.SplashScreen" parent="Theme.SplashScreen">
+              <item name="windowSplashScreenBackground">#000000</item>
+              <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+              <item name="postSplashScreenTheme">@style/Theme.App.AfterSplash</item>
+            </style>
+            <style name="Theme.App.AfterSplash" parent="Theme.AppCompat.NoActionBar">
+              <item name="android:windowBackground">#000000</item>
+            </style>
+          </resources>
+          EOF
+
       - name: Write MainActivity.java
         run: |
-          MAIN=android/app/src/main/java/ng/name/ovrica/walls/MainActivity.java
-          mkdir -p $(dirname $MAIN)
-          cat > $MAIN << 'EOF'
+          mkdir -p "$JAVA_DIR"
+          cat > "$JAVA_DIR/MainActivity.java" << 'EOF'
           package ng.name.ovrica.walls;
 
           import android.app.*;
@@ -107,7 +122,6 @@ jobs:
               private static final String AUTHORITY = "ng.name.ovrica.walls.fileprovider";
               private static final String WALLS_FOLDER = "Walls";
 
-              // Multiple concurrent downloads: key = DownloadManager ID
               private final HashMap<Long, DownloadInfo> activeDownloads = new HashMap<>();
               private static int nextNotifId = 3000;
 
@@ -196,7 +210,6 @@ jobs:
                   if (dlReceiver != null) try { unregisterReceiver(dlReceiver); } catch (Exception ignored) {}
               }
 
-              // ── Battery optimization prompt (once on first launch) ─────────────
               private void promptBatteryOptimization() {
                   if (Build.VERSION.SDK_INT < 23) return;
                   SharedPreferences prefs = getSharedPreferences(PREF_FILE, MODE_PRIVATE);
@@ -211,8 +224,7 @@ jobs:
                           try { startActivity(new Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
                               .setData(Uri.parse("package:" + getPackageName()))); } catch (Exception ignored) {}
                       })
-                      .setNegativeButton("Not Now", null)
-                      .show();
+                      .setNegativeButton("Not Now", null).show();
               }
 
               private boolean isDarkTheme() {
@@ -401,7 +413,7 @@ jobs:
                       @android.webkit.JavascriptInterface public String  getTheme()     { return isDarkTheme() ? "dark" : "light"; }
                       @android.webkit.JavascriptInterface public String  getFcmToken()  { return getSharedPreferences(PREF_FILE, MODE_PRIVATE).getString("fcm_token", ""); }
                       @android.webkit.JavascriptInterface public void    showToast(String m) { if (m != null) runOnUiThread(() -> Toast.makeText(MainActivity.this, m, Toast.LENGTH_SHORT).show()); }
-                      @android.webkit.JavascriptInterface public void    vibrate() {
+                      @android.webkit.JavascriptInterface public void vibrate() {
                           android.os.Vibrator v = (android.os.Vibrator) getSystemService(VIBRATOR_SERVICE);
                           if (v == null) return;
                           if (Build.VERSION.SDK_INT >= 26) v.vibrate(android.os.VibrationEffect.createOneShot(40, android.os.VibrationEffect.DEFAULT_AMPLITUDE));
@@ -541,7 +553,6 @@ jobs:
                                       (flags == (WallpaperManager.FLAG_SYSTEM | WallpaperManager.FLAG_LOCK)) ? "Both" : "Home Screen";
                       logWallpaperSet(target);
                       runOnUiThread(() -> {
-                          // Haptic feedback on wallpaper set
                           android.os.Vibrator v = (android.os.Vibrator) getSystemService(VIBRATOR_SERVICE);
                           if (v != null) {
                               if (Build.VERSION.SDK_INT >= 26) v.vibrate(android.os.VibrationEffect.createOneShot(60, android.os.VibrationEffect.DEFAULT_AMPLITUDE));
@@ -579,7 +590,6 @@ jobs:
               private void scanFile(File file) { sendBroadcast(new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE).setData(Uri.fromFile(file))); }
               String getVersion() { try { return getPackageManager().getPackageInfo(getPackageName(), 0).versionName; } catch (Exception e) { return "1.0.0"; } }
 
-              // ── Multi-download progress polling ───────────────────────────────
               private void startProgressPolling() {
                   if (progressRunnable != null) return;
                   DownloadManager dm = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
@@ -750,7 +760,6 @@ jobs:
               private void checkForUpdate() {
                   final String cv = getVersion();
                   SharedPreferences prefs = getSharedPreferences(PREF_FILE, MODE_PRIVATE);
-                  // Use cached minVersion for instant check, then refresh in background
                   String cachedMin = prefs.getString("cached_min_version", "");
                   if (!cachedMin.isEmpty() && isNewer(cachedMin, cv)) { runOnUiThread(() -> showUpdateUI(cv, cachedMin, true)); return; }
                   new Thread(() -> {
@@ -825,9 +834,7 @@ jobs:
       # for onMessageReceived to fire when app is in background.
       - name: Write WallsFirebaseMessagingService.java
         run: |
-          FILE=android/app/src/main/java/ng/name/ovrica/walls/WallsFirebaseMessagingService.java
-          mkdir -p $(dirname $FILE)
-          cat > $FILE << 'EOF'
+          cat > "$JAVA_DIR/WallsFirebaseMessagingService.java" << 'EOF'
           package ng.name.ovrica.walls;
 
           import android.app.*;
@@ -866,7 +873,6 @@ jobs:
                   int total = 0;
                   try { total = Integer.parseInt(data.getOrDefault("total", "0")); } catch (Exception ignored) {}
 
-                  // Channel fallback URL: walls_trending → /trending, others → url or /
                   final String tapUrl = (url != null && !url.isEmpty()) ? url :
                                         MainActivity.TREND_CH.equals(channel) ? "/trending" : "/";
 
@@ -881,7 +887,6 @@ jobs:
                       .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
                   final PendingIntent pi = PendingIntent.getActivity(this, 0, tapIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
-                  // "View All" action button
                   Intent actionIntent = new Intent(this, MainActivity.class)
                       .putExtra("open_url", tapUrl)
                       .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
@@ -901,7 +906,6 @@ jobs:
                           .addAction(R.drawable.ic_notification, "View All", actionPi);
 
                       if (fImages != null && !fImages.isEmpty()) {
-                          // ── Stitch 6 images into composite grid bitmap ────────
                           String[] urls = fImages.split(",");
                           Bitmap[] bitmaps = new Bitmap[6];
                           int loaded = 0;
@@ -947,9 +951,7 @@ jobs:
                                   .bigPicture(grid).bigLargeIcon((Bitmap) null)
                                   .setBigContentTitle(fTitle).setSummaryText(fBody));
                           }
-
                       } else if (fImgUrl != null && !fImgUrl.isEmpty()) {
-                          // ── Single BigPicture style ────────────────────────────
                           try {
                               HttpURLConnection c = (HttpURLConnection) new URL(fImgUrl).openConnection();
                               c.setConnectTimeout(6000); c.setReadTimeout(6000);
@@ -970,12 +972,9 @@ jobs:
           }
           EOF
 
-      # ─── WallpaperReminderReceiver.java ───────────────────────────────────────
-      - name: Write WallpaperReminderReceiver.java
+      - name: Write WallpaperReminderReceiver.java & BootReceiver.java
         run: |
-          FILE=android/app/src/main/java/ng/name/ovrica/walls/WallpaperReminderReceiver.java
-          mkdir -p $(dirname $FILE)
-          cat > $FILE << 'EOF'
+          cat > "$JAVA_DIR/WallpaperReminderReceiver.java" << 'EOF'
           package ng.name.ovrica.walls;
 
           import android.app.*; import android.content.*; import android.graphics.*;
@@ -1019,12 +1018,7 @@ jobs:
           }
           EOF
 
-      # ─── BootReceiver.java ────────────────────────────────────────────────────
-      - name: Write BootReceiver.java
-        run: |
-          FILE=android/app/src/main/java/ng/name/ovrica/walls/BootReceiver.java
-          mkdir -p $(dirname $FILE)
-          cat > $FILE << 'EOF'
+          cat > "$JAVA_DIR/BootReceiver.java" << 'EOF'
           package ng.name.ovrica.walls;
           import android.app.*; import android.content.*; import android.os.Build;
           import java.util.concurrent.TimeUnit;
@@ -1042,7 +1036,6 @@ jobs:
           }
           EOF
 
-      # ─── Patch AndroidManifest + build.gradle ────────────────────────────────
       - name: Patch AndroidManifest & build files
         run: |
           python3 << 'PYEOF'
