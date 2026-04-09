@@ -12,6 +12,7 @@ jobs:
       SDK: /usr/local/lib/android/sdk
       JAVA_DIR: android/app/src/main/java/ng/name/ovrica/walls
       RES: android/app/src/main/res
+      KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
 
     steps:
       - uses: actions/checkout@v4
@@ -41,28 +42,23 @@ jobs:
             > capacitor.config.json
           npx cap add android
 
-          # ── Copy & rename icon to resources/ so @capacitor/assets can find it ──
+          # ── Copy icon to resources/ ──────────────────────────────────────────
           mkdir -p resources
           ICON_SRC="public/icon/icon-512x512.png"
           if [ -f "$ICON_SRC" ]; then
-            cp "$ICON_SRC" resources/icon.png
-            echo "Icon copied to resources/icon.png"
+            cp "$ICON_SRC" resources/icon.png && echo "Icon copied"
           else
             echo "WARNING: $ICON_SRC not found — using Capacitor default icon"
           fi
 
-          # ── Generate all mipmap sizes with @capacitor/assets ─────────────────
+          # ── Generate mipmap sizes with @capacitor/assets then Pillow ─────────
           if [ -f "resources/icon.png" ]; then
             npx @capacitor/assets generate --android \
               --iconBackgroundColor '#000000' \
               --iconBackgroundColorDark '#000000' 2>&1 || true
-            echo "Capacitor assets generated"
-          fi
 
-          # ── Fallback: also write PNGs directly with Pillow ───────────────────
-          if [ -f "resources/icon.png" ]; then
             pip install pillow --break-system-packages -q
-            python3 - "resources/icon.png" "$RES" << 'ICONEOF'
+            python3 - "resources/icon.png" "$RES" <<'ICONEOF'
 import sys, os
 from PIL import Image
 src, res = sys.argv[1], sys.argv[2]
@@ -70,8 +66,9 @@ img = Image.open(src).convert("RGBA")
 sizes = {"mipmap-mdpi":48,"mipmap-hdpi":72,"mipmap-xhdpi":96,"mipmap-xxhdpi":144,"mipmap-xxxhdpi":192}
 for folder, px in sizes.items():
     d = os.path.join(res, folder); os.makedirs(d, exist_ok=True)
-    img.resize((px,px), Image.LANCZOS).save(os.path.join(d,"ic_launcher.png"))
-    img.resize((px,px), Image.LANCZOS).save(os.path.join(d,"ic_launcher_round.png"))
+    out = img.resize((px,px), Image.LANCZOS)
+    out.save(os.path.join(d,"ic_launcher.png"))
+    out.save(os.path.join(d,"ic_launcher_round.png"))
 print("Icons generated from", src)
 ICONEOF
           fi
@@ -81,9 +78,9 @@ ICONEOF
 
       - name: Write resource files
         run: |
-          mkdir -p "$RES/xml" "$RES/values"
+          mkdir -p "$RES/xml" "$RES/values" "$RES/drawable"
 
-          cat > "$RES/xml/file_paths.xml" << 'EOF'
+          cat > "$RES/xml/file_paths.xml" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <paths>
             <external-path name="walls_downloads" path="Pictures/Walls/" />
@@ -91,12 +88,12 @@ ICONEOF
             <external-files-path name="external_files_path" path="." />
             <cache-path name="cache" path="." />
           </paths>
-          EOF
+EOF
 
           printf '<?xml version="1.0" encoding="utf-8"?>\n<resources><color name="ic_launcher_background">#000000</color></resources>' \
             > "$RES/values/ic_launcher_background.xml"
 
-          cat > "$RES/values/styles.xml" << 'EOF'
+          cat > "$RES/values/styles.xml" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
             <style name="AppTheme" parent="Theme.AppCompat.NoActionBar">
@@ -111,10 +108,9 @@ ICONEOF
               <item name="postSplashScreenTheme">@style/AppTheme</item>
             </style>
           </resources>
-          EOF
+EOF
 
-          mkdir -p "$RES/drawable"
-          cat > "$RES/drawable/ic_notification.xml" << 'EOF'
+          cat > "$RES/drawable/ic_notification.xml" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <vector xmlns:android="http://schemas.android.com/apk/res/android"
               android:width="24dp" android:height="24dp"
@@ -122,12 +118,12 @@ ICONEOF
             <path android:fillColor="#FFFFFF"
                 android:pathData="M12,2C8.13,2 5,5.13 5,9v6l-2,2v1h18v-1l-2,-2V9C19,5.13 15.87,2 12,2zM12,22c1.1,0 2,-0.9 2,-2h-4C10,21.1 10.9,22 12,22z"/>
           </vector>
-          EOF
+EOF
 
       - name: Write MainActivity.java
         run: |
           mkdir -p "$JAVA_DIR"
-          cat > "$JAVA_DIR/MainActivity.java" << 'EOF'
+          cat > "$JAVA_DIR/MainActivity.java" <<'EOF'
           package ng.name.ovrica.walls;
 
           import android.app.*;
@@ -270,15 +266,12 @@ ICONEOF
                   boolean dark = isDarkTheme();
                   int bg = Color.parseColor(dark ? "#111318" : "#F1F3F4");
                   lastBgColor = bg; getWindow().setBackgroundDrawable(new ColorDrawable(bg));
-                  WebView wv = getBridge() != null ? getBridge().getWebView() : null;
-                  if (wv != null) { wv.setBackgroundColor(bg); wv.evaluateJavascript("window.dispatchEvent(new CustomEvent('walls_theme',{detail:{dark:"+dark+"}}))", null); }
-                  if (Build.VERSION.SDK_INT >= 21) { getWindow().setStatusBarColor(bg); getWindow().setNavigationBarColor(bg); }
-                  if (Build.VERSION.SDK_INT >= 26) {
-                      View decor = getWindow().getDecorView(); int flags = decor.getSystemUiVisibility();
-                      if (!dark) flags |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
-                      else       flags &= ~(View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
-                      decor.setSystemUiVisibility(flags);
-                  }
+                  getWindow().setStatusBarColor(bg); getWindow().setNavigationBarColor(bg);
+                  View decor = getWindow().getDecorView();
+                  int flags = decor.getSystemUiVisibility();
+                  if (!dark) flags |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+                  else       flags &= ~(View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
+                  decor.setSystemUiVisibility(flags);
               }
 
               private String offlineHtml() {
@@ -995,9 +988,7 @@ ICONEOF
                   }
               }
 
-              private void handleOnboardingPermissionResult() {
-                  runOnUiThread(() -> showOnboardingStep(1));
-              }
+              private void handleOnboardingPermissionResult() { runOnUiThread(() -> showOnboardingStep(1)); }
 
               // ── Version check — inline HTML overlay (not AlertDialog) ─────────────
               private void checkForUpdate() {
@@ -1079,11 +1070,11 @@ ICONEOF
                   else am.setRepeating(AlarmManager.RTC_WAKEUP, next, TimeUnit.HOURS.toMillis(6), pi);
               }
           }
-          EOF
+EOF
 
       - name: Write WallsFirebaseMessagingService.java
         run: |
-          cat > "$JAVA_DIR/WallsFirebaseMessagingService.java" << 'EOF'
+          cat > "$JAVA_DIR/WallsFirebaseMessagingService.java" <<'EOF'
           package ng.name.ovrica.walls;
 
           import android.app.*;
@@ -1136,10 +1127,10 @@ ICONEOF
                       .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
                   final PendingIntent pi = PendingIntent.getActivity(this, 0, tapIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
-                  Intent actionIntent = new Intent(this, MainActivity.class)
-                      .putExtra("open_url", tapUrl)
-                      .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-                  PendingIntent actionPi = PendingIntent.getActivity(this, 1, actionIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+                  PendingIntent actionPi = PendingIntent.getActivity(this, 1,
+                      new Intent(this, MainActivity.class).putExtra("open_url", tapUrl)
+                          .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP),
+                      PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
                   final String fTitle = title, fBody = body, fChannel = channel, fImgUrl = imgUrl, fImages = images;
                   final int fTotal = total;
@@ -1227,11 +1218,11 @@ ICONEOF
                   String v = d.get(key); return (v != null && !v.isEmpty()) ? v : fallback;
               }
           }
-          EOF
+EOF
 
       - name: Write WallpaperReminderReceiver.java & BootReceiver.java
         run: |
-          cat > "$JAVA_DIR/WallpaperReminderReceiver.java" << 'EOF'
+          cat > "$JAVA_DIR/WallpaperReminderReceiver.java" <<'EOF'
           package ng.name.ovrica.walls;
 
           import android.app.*; import android.content.*; import android.graphics.*;
@@ -1273,9 +1264,9 @@ ICONEOF
                   else am.set(AlarmManager.RTC_WAKEUP, next, pi);
               }
           }
-          EOF
+EOF
 
-          cat > "$JAVA_DIR/BootReceiver.java" << 'EOF'
+          cat > "$JAVA_DIR/BootReceiver.java" <<'EOF'
           package ng.name.ovrica.walls;
           import android.app.*; import android.content.*; import android.os.Build;
           import java.util.concurrent.TimeUnit;
@@ -1291,11 +1282,11 @@ ICONEOF
                   else am.set(AlarmManager.RTC_WAKEUP, next, pi);
               }
           }
-          EOF
+EOF
 
       - name: Patch AndroidManifest & build files
         run: |
-          python3 << 'PYEOF'
+          python3 <<'PYEOF'
           import xml.etree.ElementTree as ET
           ET.register_namespace('android','http://schemas.android.com/apk/res/android')
           ET.register_namespace('tools','http://schemas.android.com/tools')
@@ -1361,61 +1352,68 @@ ICONEOF
               ET.SubElement(filt,'action').set(a('name'),'android.intent.action.QUICKBOOT_POWERON')
 
           tree.write(path,encoding='utf-8',xml_declaration=True); ET.parse(path); print("Manifest patched OK")
-          PYEOF
+PYEOF
 
-          cat >> android/build.gradle << 'EOF'
+          cat >> android/build.gradle <<'EOF'
           subprojects { configurations.all { resolutionStrategy {
             force "org.jetbrains.kotlin:kotlin-stdlib:1.9.0"
             force "org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.9.0"
             force "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.0"
           } } }
-          EOF
+EOF
 
-      - name: Add dependencies & generate keystore
+      - name: Add dependencies, generate keystore & build
         run: |
+          # Patch build.gradle dependencies
           sed -i '/dependencies {/a\    implementation "androidx.core:core-splashscreen:1.0.1"' android/app/build.gradle
           sed -i '/dependencies {/a\    implementation "com.google.firebase:firebase-messaging"' android/app/build.gradle
           sed -i '/dependencies {/a\    implementation platform("com.google.firebase:firebase-bom:34.11.0")' android/app/build.gradle
           sed -i "/^plugins {/a\\    id 'com.google.gms.google-services'" android/app/build.gradle
           sed -i "/^        classpath 'com.android.tools.build:gradle/a\\        classpath 'com.google.gms:google-services:4.4.4'" android/build.gradle
+
+          # Generate keystore
           keytool -genkeypair -v -keystore walls.keystore \
             -alias walls -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass ${{ secrets.KEYSTORE_PASSWORD }} -keypass ${{ secrets.KEYSTORE_PASSWORD }} \
+            -storepass "$KS_PASS" -keypass "$KS_PASS" \
             -dname "CN=Walls, OU=App, O=Walls, L=Lagos, S=Lagos, C=NG"
 
-      - name: Build APK + AAB
-        working-directory: android
-        run: |
-          chmod +x gradlew
-          ./gradlew assembleRelease
-          ./gradlew bundleRelease
+          # Build APK + AAB
+          chmod +x android/gradlew
+          cd android && ./gradlew assembleRelease bundleRelease
 
       - name: Sign and package
         run: |
           BT=$ANDROID_SDK_ROOT/build-tools/34.0.0
           UNSIGNED=$(find android -name "app-release-unsigned.apk" | head -1)
           [ -z "$UNSIGNED" ] && echo "ERROR: No unsigned APK!" && exit 1
+
           $BT/zipalign -v -p 4 "$UNSIGNED" app-aligned.apk
           $BT/apksigner sign --ks walls.keystore --ks-key-alias walls \
-            --ks-pass pass:${{ secrets.KEYSTORE_PASSWORD }} --key-pass pass:${{ secrets.KEYSTORE_PASSWORD }} \
+            --ks-pass pass:"$KS_PASS" --key-pass pass:"$KS_PASS" \
             --out app-release-signed.apk app-aligned.apk
           $BT/apksigner verify --verbose app-release-signed.apk
+
           AAB_UNSIGNED=$(find android -name "app-release.aab" | head -1)
           if [ -n "$AAB_UNSIGNED" ]; then
             jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
-              -keystore walls.keystore -storepass ${{ secrets.KEYSTORE_PASSWORD }} -keypass ${{ secrets.KEYSTORE_PASSWORD }} \
+              -keystore walls.keystore -storepass "$KS_PASS" -keypass "$KS_PASS" \
               "$AAB_UNSIGNED" walls
             cp "$AAB_UNSIGNED" app-release-signed.aab
           fi
-          mkdir -p release; cp app-release-signed.apk release/
+
+          mkdir -p release
+          cp app-release-signed.apk release/
           [ -f app-release-signed.aab ] && cp app-release-signed.aab release/
+
           keytool -list -v -keystore walls.keystore -alias walls \
-            -storepass ${{ secrets.KEYSTORE_PASSWORD }} | grep "SHA256" > release/sha256.txt
+            -storepass "$KS_PASS" | grep "SHA256" > release/sha256.txt
           SHA256=$(sed 's/.*SHA256: //' release/sha256.txt)
+
           # Generate assetlinks.json — MUST be hosted at:
           # https://walls.ovrica.name.ng/.well-known/assetlinks.json
           echo '[{"relation":["delegate_permission/common.handle_all_urls"],"target":{"namespace":"android_app","package_name":"ng.name.ovrica.walls","sha256_cert_fingerprints":["'"$SHA256"'"]}}]' \
             > release/assetlinks.json
+
           zip -j release/walls-release.zip release/app-release-signed.apk release/sha256.txt release/assetlinks.json
           [ -f release/app-release-signed.aab ] && zip -j release/walls-release-aab.zip release/app-release-signed.aab
 
