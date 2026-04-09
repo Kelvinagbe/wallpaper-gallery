@@ -41,24 +41,39 @@ jobs:
             > capacitor.config.json
           npx cap add android
 
-          # ── Use custom icon from public/icon/icon-512x512.png ──────────────────
+          # ── Copy & rename icon to resources/ so @capacitor/assets can find it ──
+          mkdir -p resources
           ICON_SRC="public/icon/icon-512x512.png"
           if [ -f "$ICON_SRC" ]; then
-            pip install pillow --break-system-packages -q
-            python3 - "$ICON_SRC" "$RES" << 'ICONEOF'
-          import sys, os
-          from PIL import Image
-          src, res = sys.argv[1], sys.argv[2]
-          img = Image.open(src).convert("RGBA")
-          sizes = {"mipmap-mdpi":48,"mipmap-hdpi":72,"mipmap-xhdpi":96,"mipmap-xxhdpi":144,"mipmap-xxxhdpi":192}
-          for folder, px in sizes.items():
-            d = os.path.join(res, folder); os.makedirs(d, exist_ok=True)
-            img.resize((px,px), Image.LANCZOS).save(os.path.join(d,"ic_launcher.png"))
-            img.resize((px,px), Image.LANCZOS).save(os.path.join(d,"ic_launcher_round.png"))
-          print("Icons generated from", src)
-          ICONEOF
+            cp "$ICON_SRC" resources/icon.png
+            echo "Icon copied to resources/icon.png"
           else
             echo "WARNING: $ICON_SRC not found — using Capacitor default icon"
+          fi
+
+          # ── Generate all mipmap sizes with @capacitor/assets ─────────────────
+          if [ -f "resources/icon.png" ]; then
+            npx @capacitor/assets generate --android \
+              --iconBackgroundColor '#000000' \
+              --iconBackgroundColorDark '#000000' 2>&1 || true
+            echo "Capacitor assets generated"
+          fi
+
+          # ── Fallback: also write PNGs directly with Pillow ───────────────────
+          if [ -f "resources/icon.png" ]; then
+            pip install pillow --break-system-packages -q
+            python3 - "resources/icon.png" "$RES" << 'ICONEOF'
+import sys, os
+from PIL import Image
+src, res = sys.argv[1], sys.argv[2]
+img = Image.open(src).convert("RGBA")
+sizes = {"mipmap-mdpi":48,"mipmap-hdpi":72,"mipmap-xhdpi":96,"mipmap-xxhdpi":144,"mipmap-xxxhdpi":192}
+for folder, px in sizes.items():
+    d = os.path.join(res, folder); os.makedirs(d, exist_ok=True)
+    img.resize((px,px), Image.LANCZOS).save(os.path.join(d,"ic_launcher.png"))
+    img.resize((px,px), Image.LANCZOS).save(os.path.join(d,"ic_launcher_round.png"))
+print("Icons generated from", src)
+ICONEOF
           fi
 
       - name: Copy google-services.json
@@ -167,6 +182,8 @@ jobs:
               private long backPressedTime = 0;
               private boolean webLoaded = false, splashDone = false;
               private int lastBgColor = 0;
+              // Tracks whether onboarding has been shown this session
+              private boolean onboardingShownThisSession = false;
 
               static class DownloadInfo {
                   String filename, localPath;
@@ -207,10 +224,11 @@ jobs:
                   }
                   registerDlReceiver(); scheduleReminder();
                   handleDeepLink(getIntent()); handleNotifUrl(getIntent());
-                  showWelcome(); checkForUpdate();
+                  showWelcome();
+                  // checkForUpdate is now called from onPageFinished after WebView loads
               }
 
-              @Override public void onNewIntent(Intent i) { super.onNewIntent(i); handleDeepLink(i); handleNotifUrl(i); }
+              @Override public void onNewIntent(Intent i) { super.onNewIntent(i); setIntent(i); handleDeepLink(i); handleNotifUrl(i); }
 
               @Override
               public void onResume() {
@@ -348,6 +366,17 @@ jobs:
                               "window.dispatchEvent(new CustomEvent('walls_native_ready',{detail:{" +
                               "  hasStorage:" + hasStoragePermission() + ",dark:" + dark + ",platform:'android',fcmToken:'" + fcmToken + "'}}));" +
                               "window.dispatchEvent(new CustomEvent('walls_theme',{detail:{dark:" + dark + "}}));", null);
+                          // Run update check AFTER page is loaded so UI can show
+                          runOnUiThread(() -> checkForUpdate());
+                          // Show onboarding overlay after page loaded (first-launch)
+                          if (!onboardingShownThisSession) {
+                              SharedPreferences prefs = getSharedPreferences(PREF_FILE, MODE_PRIVATE);
+                              if (prefs.getBoolean("first_launch_onboarding", true)) {
+                                  onboardingShownThisSession = true;
+                                  // Small delay so the page renders before overlay appears
+                                  new Handler(Looper.getMainLooper()).postDelayed(() -> showOnboarding(), 600);
+                              }
+                          }
                       }
 
                       @Override public void onReceivedError(WebView v, WebResourceRequest req, WebResourceError err) {
@@ -511,6 +540,7 @@ jobs:
                       ActivityCompat.requestPermissions(this, new String[]{ Manifest.permission.READ_MEDIA_IMAGES }, REQ_STORAGE);
                   else if (Build.VERSION.SDK_INT < 29)
                       ActivityCompat.requestPermissions(this, new String[]{ Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.READ_EXTERNAL_STORAGE }, REQ_STORAGE);
+                  // Android 29-32: no runtime permission needed for Downloads/Pictures
               }
 
               @Override
@@ -522,14 +552,7 @@ jobs:
                   if (code == REQ_STORAGE) {
                       if (wv != null) wv.evaluateJavascript("window.dispatchEvent(new CustomEvent('walls_perm_" + (granted ? "granted" : "denied") + "'))", null);
                       if (!granted) {
-                          // Check if we're in onboarding flow
-                          SharedPreferences prefs = getSharedPreferences(PREF_FILE, MODE_PRIVATE);
-                          if (!prefs.getBoolean("first_launch_onboarding", true)) {
-                              // Onboarding is done but storage denied — offer Settings
-                              handleOnboardingPermissionResult();
-                          } else {
-                              Toast.makeText(this, "Storage permission denied.", Toast.LENGTH_LONG).show();
-                          }
+                          handleOnboardingPermissionResult();
                           return;
                       }
                       // Storage granted — now request notification if still needed (Android 13+)
@@ -537,7 +560,6 @@ jobs:
                           ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                           ActivityCompat.requestPermissions(this, new String[]{ Manifest.permission.POST_NOTIFICATIONS }, REQ_NOTIF);
                       } else {
-                          // All good — dismiss onboarding if still showing
                           dismissOnboarding();
                       }
                       if (pendingDlUrl != null) { final String u = pendingDlUrl, n = pendingDlName; pendingDlUrl = null; pendingDlName = null; runOnUiThread(() -> triggerDownload(u, n)); }
@@ -545,7 +567,6 @@ jobs:
 
                   } else if (code == REQ_NOTIF) {
                       if (!granted && Build.VERSION.SDK_INT >= 33) {
-                          // Notification denied — offer Settings redirect
                           new AlertDialog.Builder(this)
                               .setTitle("Notifications Disabled")
                               .setMessage("Enable notifications in Settings so Walls can alert you about fresh wallpapers.")
@@ -767,41 +788,32 @@ jobs:
                       PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
               }
 
+              // ── Deep Link: opens the exact URL path in WebView ──────────────────────
+              // FIX: uses launchMode=singleTask so Android 12+ re-uses existing instance.
+              // The assetlinks.json generated at build time must be hosted at:
+              //   https://walls.ovrica.name.ng/.well-known/assetlinks.json
               private void handleDeepLink(Intent intent) {
-                  if (intent == null || getBridge() == null) return;
+                  if (intent == null) return;
                   Uri data = intent.getData(); if (data == null) return;
+                  // Only handle our domain — ignore capacitor:// and localhost
+                  String host = data.getHost();
+                  if (host == null || !host.contains("walls.ovrica.name.ng")) return;
                   String url = data.toString();
-                  WebView wv = getBridge().getWebView(); if (wv == null) return;
-                  runOnUiThread(() -> {
-                      showLoadingOverlay(wv);
-                      final Handler dlH = new Handler(Looper.getMainLooper());
-                      final Runnable[] dlT = {null};
-                      wv.setWebViewClient(new WebViewClient() {
-                          @Override public void onPageStarted(WebView v, String u, Bitmap f) {
-                              runOnUiThread(() -> showLoadingOverlay(v));
-                              if (dlT[0] != null) dlH.removeCallbacks(dlT[0]);
-                              dlT[0] = () -> { splashDone = true; runOnUiThread(() -> { hideLoadingOverlay(v); v.loadData(offlineHtml(), "text/html", "UTF-8"); }); };
-                              dlH.postDelayed(dlT[0], 15000);
-                          }
-                          @Override public void onPageFinished(WebView v, String u) {
-                              if (dlT[0] != null) { dlH.removeCallbacks(dlT[0]); dlT[0] = null; }
-                              splashDone = true; runOnUiThread(() -> hideLoadingOverlay(v));
-                          }
-                          @Override public void onReceivedError(WebView v, WebResourceRequest req, WebResourceError err) {
-                              if (!req.isForMainFrame()) return;
-                              if (dlT[0] != null) { dlH.removeCallbacks(dlT[0]); dlT[0] = null; }
-                              splashDone = true; runOnUiThread(() -> { hideLoadingOverlay(v); v.loadData(offlineHtml(), "text/html", "UTF-8"); });
-                          }
-                          @Override public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest req) {
-                              String u = req.getUrl().toString();
-                              if (u.startsWith(BASE_URL) || u.startsWith("https://localhost") || u.startsWith("http://localhost") || u.startsWith("capacitor://")) return false;
-                              try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(u))); } catch (Exception ignored) {}
-                              return true;
-                          }
-                      });
-                      wv.loadUrl(url);
-                      wv.evaluateJavascript("window.dispatchEvent(new CustomEvent('walls_deeplink',{detail:{url:'" + url + "'}}))", null);
-                  });
+                  // If path is empty or "/", load index
+                  String path = data.getPath();
+                  if (path == null || path.isEmpty() || path.equals("/")) url = BASE_URL + "/";
+                  final String finalUrl = url;
+                  WebView wv = getBridge() != null ? getBridge().getWebView() : null;
+                  if (wv == null) {
+                      // WebView not ready yet — load after a short delay
+                      final String u = finalUrl;
+                      new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                          WebView wv2 = getBridge() != null ? getBridge().getWebView() : null;
+                          if (wv2 != null) { showLoadingOverlay(wv2); wv2.loadUrl(u); }
+                      }, 500);
+                      return;
+                  }
+                  runOnUiThread(() -> { showLoadingOverlay(wv); wv.loadUrl(finalUrl); });
               }
 
               private void showWelcome() {
@@ -811,7 +823,7 @@ jobs:
                       prefs.edit().putBoolean("first_launch", false).apply();
                       nm.notify(NOTIF_WELCOME, notifBuilder(PROMO_CH, "Welcome to Walls 🖼️", "Discover stunning wallpapers curated just for you.")
                           .setContentIntent(launchIntent()).setAutoCancel(true).build());
-                      showOnboarding();
+                      // Onboarding overlay is shown from onPageFinished, not here
                   } else {
                       android.text.SpannableString bold = new android.text.SpannableString("Welcome back to Walls 👋");
                       bold.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, bold.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
@@ -821,7 +833,7 @@ jobs:
                   }
               }
 
-              // ── Onboarding (2-step: Welcome → Permissions) — blocks app until done ─
+              // ── Onboarding (2-step: Welcome → Permissions) — shown after WebView loads ─
               private void showOnboarding() {
                   SharedPreferences prefs = getSharedPreferences(PREF_FILE, MODE_PRIVATE);
                   if (!prefs.getBoolean("first_launch_onboarding", true)) return;
@@ -831,6 +843,8 @@ jobs:
 
               private void showOnboardingStep(int step) {
                   if (isFinishing() || isDestroyed()) return;
+                  WebView wv = getBridge() != null ? getBridge().getWebView() : null;
+                  if (wv == null) return;
                   boolean dark   = isDarkTheme();
                   String bg      = dark ? "#0d0d12"                : "#F8F8FF";
                   String fg      = dark ? "#ffffff"                : "#111318";
@@ -838,7 +852,6 @@ jobs:
                   String card    = dark ? "rgba(255,255,255,0.05)" : "rgba(108,99,255,0.06)";
                   String accent  = "#6c63ff";
 
-                  // ── dot indicators ──────────────────────────────────────────────────
                   StringBuilder dots = new StringBuilder();
                   for (int i = 0; i < 2; i++) {
                       String w = (i == step) ? "22px" : "7px";
@@ -860,7 +873,6 @@ jobs:
                               "font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:28px 32px;" +
                               "box-sizing:border-box;text-align:center;overflow:hidden';" +
                           "o.innerHTML='" +
-                              // hero image card
                               "<div style=\\\"width:100%;max-width:320px;height:220px;border-radius:24px;overflow:hidden;" +
                                   "margin-bottom:28px;position:relative;box-shadow:0 12px 48px rgba(108,99,255,0.25)\\\">" +
                                   "<img src=\\\"" + BASE_URL + "/assets/sample_hd.jpg\\\" " +
@@ -873,14 +885,11 @@ jobs:
                                       "border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,0.4)\\\"/>" +
                                   "</div>" +
                               "</div>" +
-                              // text
                               "<h1 style=\\\"font-size:28px;font-weight:800;color:" + fg + ";margin:0 0 10px;line-height:1.2\\\">Welcome to Walls 🖼️</h1>" +
                               "<p style=\\\"font-size:15px;color:" + muted + ";margin:0 0 32px;line-height:1.65;max-width:290px\\\">" +
                                   "Thousands of stunning HD wallpapers curated just for you. Set any on your Home Screen, Lock Screen, or both — with one tap." +
                               "</p>" +
-                              // dots
                               "<div style=\\\"display:flex;align-items:center;justify-content:center;margin-bottom:28px\\\">" + dots + "</div>" +
-                              // CTA
                               "<button id=ob-next style=\\\"width:100%;max-width:320px;padding:16px;background:" + accent + ";" +
                                   "border:none;border-radius:16px;color:#fff;font-size:16px;font-weight:700;cursor:pointer;" +
                                   "letter-spacing:.2px\\\">Get Started →</button>" +
@@ -903,7 +912,6 @@ jobs:
                           ? "<span style=\\\"font-size:11px;font-weight:700;color:#22c55e;background:rgba(34,197,94,0.12);padding:3px 9px;border-radius:20px\\\">Allowed</span>"
                           : "<span style=\\\"font-size:11px;font-weight:700;color:#f97316;background:rgba(249,115,22,0.12);padding:3px 9px;border-radius:20px\\\">Required</span>";
                       String btnLabel = (storageOk && notifOk) ? "Continue to App ✓" : "Allow & Continue";
-
                       js = "(function(){" +
                           "var old=document.getElementById('walls-ob');if(old)old.remove();" +
                           "var o=document.createElement('div');o.id='walls-ob';" +
@@ -912,7 +920,6 @@ jobs:
                               "font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:28px 32px;" +
                               "box-sizing:border-box;text-align:center';" +
                           "o.innerHTML='" +
-                              // icon
                               "<img src=\\\"file:///android_res/mipmap/ic_launcher.png\\\" " +
                                   "onerror=\\\"this.style.display=\\'none\\'\\\" " +
                                   "style=\\\"width:72px;height:72px;border-radius:20px;margin-bottom:20px;" +
@@ -921,7 +928,6 @@ jobs:
                               "<p style=\\\"font-size:14px;color:" + muted + ";margin:0 0 28px;line-height:1.6;max-width:280px\\\">" +
                                   "Walls needs a couple of permissions to work its magic." +
                               "</p>" +
-                              // storage row
                               "<div style=\\\"width:100%;max-width:320px;background:" + card + ";border-radius:16px;padding:16px 18px;" +
                                   "margin-bottom:12px;display:flex;align-items:center;text-align:left;box-sizing:border-box\\\">" +
                                   "<span style=\\\"font-size:28px;margin-right:14px\\\">" + sIcon + "</span>" +
@@ -931,7 +937,6 @@ jobs:
                                   "</div>" +
                                   sBadge +
                               "</div>" +
-                              // notification row
                               "<div style=\\\"width:100%;max-width:320px;background:" + card + ";border-radius:16px;padding:16px 18px;" +
                                   "margin-bottom:32px;display:flex;align-items:center;text-align:left;box-sizing:border-box\\\">" +
                                   "<span style=\\\"font-size:28px;margin-right:14px\\\">" + nIcon + "</span>" +
@@ -941,13 +946,10 @@ jobs:
                                   "</div>" +
                                   nBadge +
                               "</div>" +
-                              // dots
                               "<div style=\\\"display:flex;align-items:center;justify-content:center;margin-bottom:24px\\\">" + dots + "</div>" +
-                              // allow button
                               "<button id=ob-allow style=\\\"width:100%;max-width:320px;padding:16px;background:" + accent + ";" +
                                   "border:none;border-radius:16px;color:#fff;font-size:16px;font-weight:700;" +
                                   "cursor:pointer;letter-spacing:.2px;margin-bottom:10px\\\">" + btnLabel + "</button>" +
-                              // settings link (shown only if any denied)
                               (!storageOk || !notifOk
                                   ? "<button id=ob-settings style=\\\"background:transparent;border:none;color:" + accent + ";" +
                                       "font-size:13px;cursor:pointer;font-family:inherit;padding:6px\\\">Open App Settings instead</button>"
@@ -961,22 +963,19 @@ jobs:
                       "})();";
                   }
 
-                  WebView wv = getBridge() != null ? getBridge().getWebView() : null;
-                  if (wv != null) wv.post(() -> wv.evaluateJavascript(js, null));
+                  wv.post(() -> wv.evaluateJavascript(js, null));
               }
 
               private void dismissOnboarding() {
                   WebView wv = getBridge() != null ? getBridge().getWebView() : null;
                   if (wv != null) wv.post(() -> wv.evaluateJavascript(
-                      "(function(){var o=document.getElementById('walls-ob');if(o)o.remove();})()", null));
+                      "(function(){var o=document.getElementById('walls-ob');if(o){o.style.transition='opacity .3s';o.style.opacity='0';setTimeout(function(){o.remove()},320);};})()", null));
               }
 
-              // Called from JS button taps
               private void handleOnboardingStep(int currentStep) {
                   if (currentStep == 0) {
                       runOnUiThread(() -> showOnboardingStep(1));
                   } else {
-                      // step 1 — request any missing permissions
                       boolean storageOk = hasStoragePermission();
                       boolean notifOk   = Build.VERSION.SDK_INT < 33 ||
                           ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
@@ -987,7 +986,6 @@ jobs:
                   }
               }
 
-              // Open app settings — called from "Open App Settings instead" link
               private void openAppSettings() {
                   try {
                       startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
@@ -997,12 +995,11 @@ jobs:
                   }
               }
 
-              // Called after returning from system permission dialog or Settings
               private void handleOnboardingPermissionResult() {
-                  // Refresh step 1 so badges update to reflect current state
                   runOnUiThread(() -> showOnboardingStep(1));
               }
 
+              // ── Version check — inline HTML overlay (not AlertDialog) ─────────────
               private void checkForUpdate() {
                   final String cv = getVersion();
                   SharedPreferences prefs = getSharedPreferences(PREF_FILE, MODE_PRIVATE);
@@ -1020,7 +1017,7 @@ jobs:
                           String latest = vObj.optString("latest",""), minVer = vObj.optString("minVersion","");
                           if (!minVer.isEmpty()) prefs.edit().putString("cached_min_version", minVer).apply();
                           if (!latest.isEmpty() && isNewer(latest, cv)) { boolean forced = !minVer.isEmpty() && isNewer(minVer,cv); runOnUiThread(() -> showUpdateUI(cv,latest,forced)); }
-                      } catch (Exception e) { android.util.Log.e("WallsUpdate", e.getMessage()); }
+                      } catch (Exception e) { android.util.Log.e("WallsUpdate", "Version check failed: " + e.getMessage()); }
                   }).start();
               }
 
@@ -1084,18 +1081,6 @@ jobs:
           }
           EOF
 
-      # ─── WallsFirebaseMessagingService.java ──────────────────────────────────
-      # Firebase Console → Custom data keys:
-      #   title      → notification title
-      #   body       → notification body text
-      #   url        → open URL in WebView on tap (e.g. /trending, /category/nature)
-      #   image_url  → single image BigPicture style
-      #   images     → comma-separated URLs for 6-image stitched grid
-      #   total      → total count → shows "+N More" on last grid cell
-      #   channel    → target channel: walls_trending | walls_promo | walls_downloads
-      #
-      # IMPORTANT: Send as pure data message (no notification key) via FCM HTTP API
-      # for onMessageReceived to fire when app is in background.
       - name: Write WallsFirebaseMessagingService.java
         run: |
           cat > "$JAVA_DIR/WallsFirebaseMessagingService.java" << 'EOF'
@@ -1160,7 +1145,6 @@ jobs:
                   final int fTotal = total;
 
                   new Thread(() -> {
-                      // Bold title using SpannableString
                       android.text.SpannableString boldTitle = new android.text.SpannableString(fTitle);
                       boldTitle.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, boldTitle.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
 
@@ -1170,9 +1154,7 @@ jobs:
                           .setPriority(NotificationCompat.PRIORITY_HIGH)
                           .setDefaults(NotificationCompat.DEFAULT_ALL)
                           .setVibrate(new long[]{0,250,100,250})
-                          .setStyle(new NotificationCompat.BigTextStyle()
-                              .bigText(fBody)
-                              .setBigContentTitle(boldTitle))
+                          .setStyle(new NotificationCompat.BigTextStyle().bigText(fBody).setBigContentTitle(boldTitle))
                           .setContentIntent(pi).setAutoCancel(true)
                           .addAction(R.drawable.ic_notification, "View All", actionPi);
 
@@ -1220,8 +1202,7 @@ jobs:
                               nb.setLargeIcon(bitmaps[0] != null ? bitmaps[0] : grid);
                               nb.setStyle(new NotificationCompat.BigPictureStyle()
                                   .bigPicture(grid).bigLargeIcon((Bitmap) null)
-                                  .setBigContentTitle(boldTitle)
-                                  .setSummaryText(fBody));  // ← ensures body text shows below image grid
+                                  .setBigContentTitle(boldTitle).setSummaryText(fBody));
                           }
                       } else if (fImgUrl != null && !fImgUrl.isEmpty()) {
                           try {
@@ -1232,11 +1213,7 @@ jobs:
                                   Bitmap bmp = BitmapFactory.decodeStream(c.getInputStream(), null, bmpOpts);
                                   if (bmp != null) {
                                       nb.setLargeIcon(bmp);
-                                      nb.setStyle(new NotificationCompat.BigPictureStyle()
-                                          .bigPicture(bmp)
-                                          .bigLargeIcon((Bitmap) null)
-                                          .setBigContentTitle(boldTitle)
-                                          .setSummaryText(fBody));  // ← ensures body shows with image
+                                      nb.setStyle(new NotificationCompat.BigPictureStyle().bigPicture(bmp).bigLargeIcon((Bitmap) null).setBigContentTitle(boldTitle).setSummaryText(fBody));
                                   }
                               }
                           } catch (Exception e) { android.util.Log.w("FCM", "BigPicture load failed: " + e.getMessage()); }
@@ -1352,12 +1329,16 @@ jobs:
           if activity is not None:
               activity.set(a('exported'),'true'); activity.set(a('theme'),'@style/Theme.App.SplashScreen')
               activity.set(a('configChanges'),'uiMode|orientation|screenSize|keyboardHidden')
+              # CRITICAL: singleTask ensures deep links re-use the existing activity
+              # on Android 12+ instead of spawning a new one that loses WebView state
+              activity.set(a('launchMode'),'singleTask')
               existing_hosts=[d.get(a('host'),'') for f in activity.findall('intent-filter') for d in f.findall('data')]
               if 'walls.ovrica.name.ng' not in existing_hosts:
                   filt=ET.SubElement(activity,'intent-filter'); filt.set(a('autoVerify'),'true')
                   ET.SubElement(filt,'action').set(a('name'),'android.intent.action.VIEW')
                   ET.SubElement(filt,'category').set(a('name'),'android.intent.category.DEFAULT')
                   ET.SubElement(filt,'category').set(a('name'),'android.intent.category.BROWSABLE')
+                  # Match both root and any path so walls.ovrica.name.ng/ opens index
                   data=ET.SubElement(filt,'data'); data.set(a('scheme'),'https'); data.set(a('host'),'walls.ovrica.name.ng')
 
           if 'ng.name.ovrica.walls.fileprovider' not in [p.get(a('authorities'),'') for p in app.findall('provider')]:
@@ -1431,6 +1412,8 @@ jobs:
           keytool -list -v -keystore walls.keystore -alias walls \
             -storepass ${{ secrets.KEYSTORE_PASSWORD }} | grep "SHA256" > release/sha256.txt
           SHA256=$(sed 's/.*SHA256: //' release/sha256.txt)
+          # Generate assetlinks.json — MUST be hosted at:
+          # https://walls.ovrica.name.ng/.well-known/assetlinks.json
           echo '[{"relation":["delegate_permission/common.handle_all_urls"],"target":{"namespace":"android_app","package_name":"ng.name.ovrica.walls","sha256_cert_fingerprints":["'"$SHA256"'"]}}]' \
             > release/assetlinks.json
           zip -j release/walls-release.zip release/app-release-signed.apk release/sha256.txt release/assetlinks.json
