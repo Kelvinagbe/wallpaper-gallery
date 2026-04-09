@@ -182,9 +182,6 @@ jobs:
                   mkChannel(DL_CH,    "Walls Downloads",     "Wallpaper download notifications");
                   mkChannel(PROMO_CH, "Wallpaper Reminders", "Periodic reminders");
                   mkChannel(TREND_CH, "Trending Wallpapers", "Hot & trending wallpaper picks");
-                  if (Build.VERSION.SDK_INT >= 33 &&
-                      ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
-                      ActivityCompat.requestPermissions(this, new String[]{ Manifest.permission.POST_NOTIFICATIONS }, REQ_NOTIF);
                   if (getBridge() != null && getBridge().getWebView() != null && !webLoaded) {
                       setupWebView(); setupJsBridge(); webLoaded = true;
                   }
@@ -421,6 +418,8 @@ jobs:
                           else { pendingWpUrl = url; pendingWpTarget = target; requestStoragePermission(); }
                       }
                       @android.webkit.JavascriptInterface public void    requestStoragePermission() { runOnUiThread(() -> MainActivity.this.requestStoragePermission()); }
+                      @android.webkit.JavascriptInterface public void onboardingNext(int step) { runOnUiThread(() -> MainActivity.this.handleOnboardingStep(step)); }
+                      @android.webkit.JavascriptInterface public void onboardingSkip() { runOnUiThread(() -> MainActivity.this.dismissOnboarding()); }
                       @android.webkit.JavascriptInterface public boolean hasStorage()   { return hasStoragePermission(); }
                       @android.webkit.JavascriptInterface public boolean isAndroid()    { return true; }
                       @android.webkit.JavascriptInterface public String  getVersion()   { return MainActivity.this.getVersion(); }
@@ -511,13 +510,52 @@ jobs:
               @Override
               public void onRequestPermissionsResult(int code, @NonNull String[] perms, @NonNull int[] results) {
                   super.onRequestPermissionsResult(code, perms, results);
-                  if (code != REQ_STORAGE) return;
                   boolean granted = results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED;
                   WebView wv = getBridge() != null ? getBridge().getWebView() : null;
-                  if (wv != null) wv.evaluateJavascript("window.dispatchEvent(new CustomEvent('walls_perm_" + (granted ? "granted" : "denied") + "'))", null);
-                  if (!granted) { Toast.makeText(this, "Storage permission denied.", Toast.LENGTH_LONG).show(); return; }
-                  if (pendingDlUrl != null) { final String u = pendingDlUrl, n = pendingDlName; pendingDlUrl = null; pendingDlName = null; runOnUiThread(() -> triggerDownload(u, n)); }
-                  if (pendingWpUrl != null) { final String u = pendingWpUrl, t = pendingWpTarget; pendingWpUrl = null; pendingWpTarget = null; runOnUiThread(() -> downloadForWallpaper(u, t)); }
+
+                  if (code == REQ_STORAGE) {
+                      if (wv != null) wv.evaluateJavascript("window.dispatchEvent(new CustomEvent('walls_perm_" + (granted ? "granted" : "denied") + "'))", null);
+                      if (!granted) {
+                          // Check if we're in onboarding flow
+                          SharedPreferences prefs = getSharedPreferences(PREF_FILE, MODE_PRIVATE);
+                          if (!prefs.getBoolean("first_launch_onboarding", true)) {
+                              // Onboarding is done but storage denied — offer Settings
+                              handleOnboardingPermissionResult();
+                          } else {
+                              Toast.makeText(this, "Storage permission denied.", Toast.LENGTH_LONG).show();
+                          }
+                          return;
+                      }
+                      // Storage granted — now request notification if still needed (Android 13+)
+                      if (Build.VERSION.SDK_INT >= 33 &&
+                          ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                          ActivityCompat.requestPermissions(this, new String[]{ Manifest.permission.POST_NOTIFICATIONS }, REQ_NOTIF);
+                      } else {
+                          // All good — dismiss onboarding if still showing
+                          dismissOnboarding();
+                      }
+                      if (pendingDlUrl != null) { final String u = pendingDlUrl, n = pendingDlName; pendingDlUrl = null; pendingDlName = null; runOnUiThread(() -> triggerDownload(u, n)); }
+                      if (pendingWpUrl != null) { final String u = pendingWpUrl, t = pendingWpTarget; pendingWpUrl = null; pendingWpTarget = null; runOnUiThread(() -> downloadForWallpaper(u, t)); }
+
+                  } else if (code == REQ_NOTIF) {
+                      if (!granted && Build.VERSION.SDK_INT >= 33) {
+                          // Notification denied — offer Settings redirect
+                          new AlertDialog.Builder(this)
+                              .setTitle("Notifications Disabled")
+                              .setMessage("Enable notifications in Settings so Walls can alert you about fresh wallpapers.")
+                              .setPositiveButton("Open Settings", (d, w) -> {
+                                  try {
+                                      Intent i = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                                          .setData(Uri.parse("package:" + getPackageName()));
+                                      startActivity(i);
+                                  } catch (Exception ex) { try { startActivity(new Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, getPackageName())); } catch (Exception ignored) {} }
+                              })
+                              .setNegativeButton("Continue", (d, w2) -> dismissOnboarding())
+                              .show();
+                      } else {
+                          dismissOnboarding();
+                      }
+                  }
               }
 
               private void triggerDownload(String url, String filename) {
@@ -764,11 +802,205 @@ jobs:
               private void showWelcome() {
                   SharedPreferences prefs = getSharedPreferences(PREF_FILE, MODE_PRIVATE);
                   boolean first = prefs.getBoolean("first_launch", true);
-                  if (first) prefs.edit().putBoolean("first_launch", false).apply();
-                  nm.notify(NOTIF_WELCOME, notifBuilder(PROMO_CH,
-                      first ? "Welcome to Walls 🖼️" : "Welcome back to Walls 👋",
-                      first ? "Discover stunning wallpapers curated just for you." : "Your next favorite wallpaper is waiting.")
-                      .setContentIntent(launchIntent()).setAutoCancel(true).build());
+                  if (first) {
+                      prefs.edit().putBoolean("first_launch", false).apply();
+                      // First launch — plain title, show onboarding after
+                      nm.notify(NOTIF_WELCOME, notifBuilder(PROMO_CH,
+                          "Welcome to Walls 🖼️",
+                          "Discover stunning wallpapers curated just for you.")
+                          .setContentIntent(launchIntent()).setAutoCancel(true).build());
+                      showOnboarding();
+                  } else {
+                      // Returning user — bold title
+                      android.text.SpannableString boldTitle = new android.text.SpannableString("Welcome back to Walls 👋");
+                      boldTitle.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, boldTitle.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                      NotificationCompat.Builder nb = notifBuilder(PROMO_CH,
+                          "Welcome back to Walls 👋",
+                          "Your next favorite wallpaper is waiting.");
+                      // Apply bold via BigTextStyle which respects spans via contentTitle
+                      nb.setContentTitle(boldTitle)
+                        .setStyle(new NotificationCompat.BigTextStyle()
+                            .bigText("Your next favorite wallpaper is waiting.")
+                            .setBigContentTitle(boldTitle))
+                        .setContentIntent(launchIntent()).setAutoCancel(true);
+                      nm.notify(NOTIF_WELCOME, nb.build());
+                  }
+              }
+
+              // ── Onboarding (3-step: Welcome → HD Wallpapers → Permissions) ───────
+              private void showOnboarding() {
+                  SharedPreferences prefs = getSharedPreferences(PREF_FILE, MODE_PRIVATE);
+                  if (!prefs.getBoolean("first_launch_onboarding", true)) return;
+                  prefs.edit().putBoolean("first_launch_onboarding", false).apply();
+                  runOnUiThread(() -> showOnboardingStep(0));
+              }
+
+              private void showOnboardingStep(int step) {
+                  if (isFinishing() || isDestroyed()) return;
+                  boolean dark = isDarkTheme();
+                  String bg    = dark ? "#0d0d12" : "#F1F3F4";
+                  String fg    = dark ? "#ffffff" : "#111318";
+                  String muted = dark ? "rgba(255,255,255,0.55)" : "rgba(0,0,0,0.5)";
+                  String accent = "#6c63ff";
+
+                  // Step data
+                  String[] emojis = {"🖼️", "🌄", "🔐"};
+                  String[] titles = {
+                      "Welcome to Walls",
+                      "Browse HD Wallpapers",
+                      "Allow Permissions"
+                  };
+                  String[] descs = {
+                      "Discover thousands of stunning HD wallpapers curated just for you. Set them on your home screen, lock screen, or both — with a single tap.",
+                      "Explore trending, nature, abstract, and city wallpapers in crystal-clear HD quality. New wallpapers added daily.",
+                      "Walls needs Storage access to save wallpapers and Notification access to alert you about fresh picks."
+                  };
+                  String[] btnLabels = {"Next", "Next", "Allow & Continue"};
+
+                  String emoji = emojis[step], title = titles[step], desc = descs[step], btn = btnLabels[step];
+
+                  // Dots HTML
+                  StringBuilder dots = new StringBuilder();
+                  for (int i = 0; i < 3; i++) {
+                      String col = (i == step) ? accent : (dark ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.2)");
+                      String size = (i == step) ? "10px" : "7px";
+                      dots.append("<div style='width:").append(size).append(";height:").append(size)
+                          .append(";border-radius:50%;background:").append(col).append(";margin:0 4px'></div>");
+                  }
+
+                  // Image placeholder for step 1 (HD Wallpaper step) — loads a sample image
+                  String imgSection = "";
+                  if (step == 1) {
+                      // Show a sample HD wallpaper image from the app base URL
+                      imgSection = "<img src=\\\"" + BASE_URL + "/assets/sample_hd.jpg\\\" " +
+                          "onerror=\\\"this.style.display='none'\\\" " +
+                          "style=\\\"width:100%;max-width:320px;height:180px;object-fit:cover;" +
+                          "border-radius:16px;margin-bottom:20px;box-shadow:0 8px 32px rgba(0,0,0,0.35)\\\"/>";
+                  } else if (step == 0) {
+                      // App icon for welcome
+                      imgSection = "<img src=\\\"file:///android_res/mipmap/ic_launcher.png\\\" " +
+                          "onerror=\\\"this.style.display='none'\\\" " +
+                          "style=\\\"width:88px;height:88px;border-radius:24px;margin-bottom:20px;" +
+                          "box-shadow:0 4px 24px rgba(108,99,255,0.4)\\\"/>";
+                  } else {
+                      // Lock / permissions icon
+                      imgSection = "<div style=\\\"font-size:72px;margin-bottom:16px\\\">🔐</div>";
+                  }
+
+                  final int nextStep = step + 1;
+                  // JS callback name passed so we can invoke from button
+                  String overlayId = "walls-onboard-overlay";
+
+                  String js = "(function(){" +
+                      "var old=document.getElementById('" + overlayId + "');if(old)old.remove();" +
+                      "var o=document.createElement('div');o.id='" + overlayId + "';" +
+                      "o.style.cssText='position:fixed;inset:0;background:" + bg + ";z-index:2147483647;" +
+                          "display:flex;flex-direction:column;align-items:center;justify-content:center;" +
+                          "font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:32px;box-sizing:border-box;text-align:center';" +
+                      "o.innerHTML='" +
+                          imgSection +
+                          "<h1 style=\"font-size:26px;font-weight:800;color:" + fg + ";margin:0 0 12px\">" + title + "</h1>" +
+                          "<p style=\"font-size:15px;color:" + muted + ";margin:0 0 32px;line-height:1.6;max-width:300px\">" + desc + "</p>" +
+                          "<div style=\"display:flex;align-items:center;justify-content:center;margin-bottom:28px\">" + dots + "</div>" +
+                          "<button id=walls-ob-btn style=\"width:100%;max-width:320px;padding:16px;background:" + accent + ";border:none;" +
+                              "border-radius:16px;color:#fff;font-size:16px;font-weight:700;cursor:pointer\">" + btn + "</button>" +
+                          (step > 0 ? "<button id=walls-ob-skip style=\"margin-top:12px;background:transparent;border:none;color:" + muted + ";font-size:14px;cursor:pointer\">Skip</button>" : "") +
+                      "';" +
+                      "document.body.appendChild(o);" +
+                      "document.getElementById('walls-ob-btn').onclick=function(){Android.onboardingNext(" + step + ")};" +
+                      (step > 0 ? "var sk=document.getElementById('walls-ob-skip');if(sk)sk.onclick=function(){Android.onboardingSkip();};" : "") +
+                  "})();";
+
+                  WebView wv = getBridge() != null ? getBridge().getWebView() : null;
+                  if (wv != null) wv.post(() -> wv.evaluateJavascript(js, null));
+              }
+
+              private void dismissOnboarding() {
+                  WebView wv = getBridge() != null ? getBridge().getWebView() : null;
+                  if (wv != null) wv.post(() -> wv.evaluateJavascript(
+                      "(function(){var o=document.getElementById('walls-onboard-overlay');if(o)o.remove();})()", null));
+              }
+
+              // Called from JS when user taps Next / Allow
+              private void handleOnboardingStep(int currentStep) {
+                  int next = currentStep + 1;
+                  if (next >= 3) {
+                      // Final step — request permissions then dismiss
+                      requestOnboardingPermissions();
+                  } else {
+                      runOnUiThread(() -> showOnboardingStep(next));
+                  }
+              }
+
+              private void requestOnboardingPermissions() {
+                  // Check + request notification permission (Android 13+)
+                  boolean notifGranted = true;
+                  if (Build.VERSION.SDK_INT >= 33) {
+                      notifGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
+                  }
+                  // Check storage permission
+                  boolean storageGranted = hasStoragePermission();
+
+                  if (!notifGranted || !storageGranted) {
+                      // Show permission rationale dialog before requesting
+                      showPermissionRationaleDialog(notifGranted, storageGranted);
+                  } else {
+                      dismissOnboarding();
+                  }
+              }
+
+              private void showPermissionRationaleDialog(boolean notifGranted, boolean storageGranted) {
+                  StringBuilder msg = new StringBuilder("Walls needs the following permissions:\n\n");
+                  if (!storageGranted) msg.append("📁 Storage — to save wallpapers to your gallery\n\n");
+                  if (!notifGranted)   msg.append("🔔 Notifications — to alert you about fresh wallpapers\n\n");
+                  msg.append("Please allow them on the next screen.");
+
+                  new AlertDialog.Builder(this)
+                      .setTitle("Permissions Needed")
+                      .setMessage(msg.toString())
+                      .setPositiveButton("Allow", (d, w) -> {
+                          // Request storage first, then notification
+                          if (!storageGranted) {
+                              requestStoragePermission();
+                          } else if (!notifGranted && Build.VERSION.SDK_INT >= 33) {
+                              ActivityCompat.requestPermissions(this, new String[]{ Manifest.permission.POST_NOTIFICATIONS }, REQ_NOTIF);
+                          } else {
+                              dismissOnboarding();
+                          }
+                      })
+                      .setNegativeButton("Maybe Later", (d, w) -> dismissOnboarding())
+                      .show();
+              }
+
+              // Handles result after onboarding permission request — redirects to Settings if denied
+              private void handleOnboardingPermissionResult() {
+                  boolean notifGranted = Build.VERSION.SDK_INT < 33 ||
+                      ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
+                  boolean storageGranted = hasStoragePermission();
+
+                  if (!notifGranted || !storageGranted) {
+                      StringBuilder denied = new StringBuilder();
+                      if (!storageGranted) denied.append("Storage");
+                      if (!storageGranted && !notifGranted) denied.append(" & ");
+                      if (!notifGranted) denied.append("Notifications");
+
+                      new AlertDialog.Builder(this)
+                          .setTitle("Permission Denied")
+                          .setMessage(denied + " permission was denied.\n\nYou can enable it anytime in Settings → Apps → Walls → Permissions.")
+                          .setPositiveButton("Open Settings", (d, w) -> {
+                              try {
+                                  Intent i = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                                      .setData(Uri.parse("package:" + getPackageName()));
+                                  startActivity(i);
+                              } catch (Exception ex) {
+                                  try { startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_SETTINGS)); } catch (Exception ignored) {}
+                              }
+                          })
+                          .setNegativeButton("Continue Anyway", (d, w) -> dismissOnboarding())
+                          .show();
+                  } else {
+                      dismissOnboarding();
+                  }
               }
 
               private void checkForUpdate() {
@@ -910,12 +1142,19 @@ jobs:
                   final int fTotal = total;
 
                   new Thread(() -> {
+                      // Bold title using SpannableString
+                      android.text.SpannableString boldTitle = new android.text.SpannableString(fTitle);
+                      boldTitle.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, boldTitle.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+
                       NotificationCompat.Builder nb = new NotificationCompat.Builder(this, fChannel)
                           .setSmallIcon(R.drawable.ic_notification)
-                          .setContentTitle(fTitle).setContentText(fBody)
+                          .setContentTitle(boldTitle).setContentText(fBody)
                           .setPriority(NotificationCompat.PRIORITY_HIGH)
                           .setDefaults(NotificationCompat.DEFAULT_ALL)
                           .setVibrate(new long[]{0,250,100,250})
+                          .setStyle(new NotificationCompat.BigTextStyle()
+                              .bigText(fBody)
+                              .setBigContentTitle(boldTitle))
                           .setContentIntent(pi).setAutoCancel(true)
                           .addAction(R.drawable.ic_notification, "View All", actionPi);
 
@@ -963,15 +1202,24 @@ jobs:
                               nb.setLargeIcon(bitmaps[0] != null ? bitmaps[0] : grid);
                               nb.setStyle(new NotificationCompat.BigPictureStyle()
                                   .bigPicture(grid).bigLargeIcon((Bitmap) null)
-                                  .setBigContentTitle(fTitle).setSummaryText(fBody));
+                                  .setBigContentTitle(boldTitle)
+                                  .setSummaryText(fBody));  // ← ensures body text shows below image grid
                           }
                       } else if (fImgUrl != null && !fImgUrl.isEmpty()) {
                           try {
                               HttpURLConnection c = (HttpURLConnection) new URL(fImgUrl).openConnection();
                               c.setConnectTimeout(6000); c.setReadTimeout(6000);
                               if (c.getResponseCode() == 200) {
-                                  Bitmap bmp = BitmapFactory.decodeStream(c.getInputStream());
-                                  if (bmp != null) { nb.setLargeIcon(bmp); nb.setStyle(new NotificationCompat.BigPictureStyle().bigPicture(bmp).bigLargeIcon((Bitmap)null).setBigContentTitle(fTitle)); }
+                                  BitmapFactory.Options bmpOpts = new BitmapFactory.Options(); bmpOpts.inSampleSize = 2;
+                                  Bitmap bmp = BitmapFactory.decodeStream(c.getInputStream(), null, bmpOpts);
+                                  if (bmp != null) {
+                                      nb.setLargeIcon(bmp);
+                                      nb.setStyle(new NotificationCompat.BigPictureStyle()
+                                          .bigPicture(bmp)
+                                          .bigLargeIcon((Bitmap) null)
+                                          .setBigContentTitle(boldTitle)
+                                          .setSummaryText(fBody));  // ← ensures body shows with image
+                                  }
                               }
                           } catch (Exception e) { android.util.Log.w("FCM", "BigPicture load failed: " + e.getMessage()); }
                       }
