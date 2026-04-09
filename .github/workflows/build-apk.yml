@@ -58,19 +58,19 @@ jobs:
               --iconBackgroundColorDark '#000000' 2>&1 || true
 
             pip install pillow --break-system-packages -q
-            python3 - "resources/icon.png" "$RES" <<'ICONEOF'
+            python3 -c "
 import sys, os
 from PIL import Image
-src, res = sys.argv[1], sys.argv[2]
-img = Image.open(src).convert("RGBA")
-sizes = {"mipmap-mdpi":48,"mipmap-hdpi":72,"mipmap-xhdpi":96,"mipmap-xxhdpi":144,"mipmap-xxxhdpi":192}
+src, res = '$RES', 'resources/icon.png'
+img = Image.open(res).convert('RGBA')
+sizes = {'mipmap-mdpi':48,'mipmap-hdpi':72,'mipmap-xhdpi':96,'mipmap-xxhdpi':144,'mipmap-xxxhdpi':192}
 for folder, px in sizes.items():
-    d = os.path.join(res, folder); os.makedirs(d, exist_ok=True)
+    d = os.path.join(src, folder); os.makedirs(d, exist_ok=True)
     out = img.resize((px,px), Image.LANCZOS)
-    out.save(os.path.join(d,"ic_launcher.png"))
-    out.save(os.path.join(d,"ic_launcher_round.png"))
-print("Icons generated from", src)
-ICONEOF
+    out.save(os.path.join(d,'ic_launcher.png'))
+    out.save(os.path.join(d,'ic_launcher_round.png'))
+print('Icons generated')
+"
           fi
 
       - name: Copy google-services.json
