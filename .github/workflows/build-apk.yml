@@ -68,45 +68,17 @@ jobs:
         run: |
           mkdir -p "$RES/xml" "$RES/values" "$RES/drawable"
 
-          cat > "$RES/xml/file_paths.xml" <<'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <paths>
-            <external-path name="walls_downloads" path="Pictures/Walls/" />
-            <external-path name="external_files" path="." />
-            <external-files-path name="external_files_path" path="." />
-            <cache-path name="cache" path="." />
-          </paths>
-EOF
+          printf '<?xml version="1.0" encoding="utf-8"?>\n<paths>\n  <external-path name="walls_downloads" path="Pictures/Walls/" />\n  <external-path name="external_files" path="." />\n  <external-files-path name="external_files_path" path="." />\n  <cache-path name="cache" path="." />\n</paths>\n' \
+            > "$RES/xml/file_paths.xml"
 
-          printf '<?xml version="1.0" encoding="utf-8"?>\n<resources><color name="ic_launcher_background">#000000</color></resources>' \
+          printf '<?xml version="1.0" encoding="utf-8"?>\n<resources><color name="ic_launcher_background">#000000</color></resources>\n' \
             > "$RES/values/ic_launcher_background.xml"
 
-          cat > "$RES/values/styles.xml" <<'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <resources>
-            <style name="AppTheme" parent="Theme.AppCompat.NoActionBar">
-              <item name="android:windowBackground">#000000</item>
-              <item name="colorPrimary">#6c63ff</item>
-              <item name="colorPrimaryDark">#000000</item>
-              <item name="colorAccent">#6c63ff</item>
-            </style>
-            <style name="Theme.App.SplashScreen" parent="Theme.SplashScreen">
-              <item name="windowSplashScreenBackground">#000000</item>
-              <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
-              <item name="postSplashScreenTheme">@style/AppTheme</item>
-            </style>
-          </resources>
-EOF
+          printf '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n  <style name="AppTheme" parent="Theme.AppCompat.NoActionBar">\n    <item name="android:windowBackground">#000000</item>\n    <item name="colorPrimary">#6c63ff</item>\n    <item name="colorPrimaryDark">#000000</item>\n    <item name="colorAccent">#6c63ff</item>\n  </style>\n  <style name="Theme.App.SplashScreen" parent="Theme.SplashScreen">\n    <item name="windowSplashScreenBackground">#000000</item>\n    <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>\n    <item name="postSplashScreenTheme">@style/AppTheme</item>\n  </style>\n</resources>\n' \
+            > "$RES/values/styles.xml"
 
-          cat > "$RES/drawable/ic_notification.xml" <<'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <vector xmlns:android="http://schemas.android.com/apk/res/android"
-              android:width="24dp" android:height="24dp"
-              android:viewportWidth="24" android:viewportHeight="24">
-            <path android:fillColor="#FFFFFF"
-                android:pathData="M12,2C8.13,2 5,5.13 5,9v6l-2,2v1h18v-1l-2,-2V9C19,5.13 15.87,2 12,2zM12,22c1.1,0 2,-0.9 2,-2h-4C10,21.1 10.9,22 12,22z"/>
-          </vector>
-EOF
+          printf '<?xml version="1.0" encoding="utf-8"?>\n<vector xmlns:android="http://schemas.android.com/apk/res/android"\n    android:width="24dp" android:height="24dp"\n    android:viewportWidth="24" android:viewportHeight="24">\n  <path android:fillColor="#FFFFFF"\n      android:pathData="M12,2C8.13,2 5,5.13 5,9v6l-2,2v1h18v-1l-2,-2V9C19,5.13 15.87,2 12,2zM12,22c1.1,0 2,-0.9 2,-2h-4C10,21.1 10.9,22 12,22z"/>\n</vector>\n' \
+            > "$RES/drawable/ic_notification.xml"
 
       - name: Write MainActivity.java
         run: |
