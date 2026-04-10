@@ -58,7 +58,7 @@ jobs:
           printf '<?xml version="1.0" encoding="utf-8"?>\n<resources><color name="ic_launcher_background">#000000</color></resources>' \
             > "$RES/values/ic_launcher_background.xml"
 
-          # Grid notification layout — 6-image 2x3 grid (like MovieWay)
+          # Grid notification layout — 6-image 2x3 grid
           cat > "$RES/layout/notification_grid.xml" << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
@@ -123,10 +123,6 @@ jobs:
 
           public class MainActivity extends BridgeActivity {
 
-              // ── Channel IDs (used in Firebase Console → Android Notification Channel field)
-              // walls_downloads : progress bar + BigPicture thumbnail on download complete
-              // walls_promo     : welcome message / general promotions
-              // walls_trending  : FCM push (grid / BigPicture) + periodic local reminders
               static final String DL_CH    = "walls_downloads";
               static final String PROMO_CH = "walls_promo";
               static final String TREND_CH = "walls_trending";
@@ -197,8 +193,11 @@ jobs:
                   super.onResume();
                   WebView wv = getBridge() != null ? getBridge().getWebView() : null;
                   if (wv == null) return;
+                  // FIX: always apply bg immediately on resume to prevent white/flicker flash
                   int newBg = Color.parseColor(isDarkTheme() ? "#111318" : "#F1F3F4");
-                  if (newBg != lastBgColor) { lastBgColor = newBg; getWindow().setBackgroundDrawable(new ColorDrawable(newBg)); wv.setBackgroundColor(newBg); }
+                  lastBgColor = newBg;
+                  getWindow().setBackgroundDrawable(new ColorDrawable(newBg));
+                  wv.setBackgroundColor(newBg);
                   String url = wv.getUrl();
                   if (url == null || url.equals("about:blank")) wv.loadUrl(BASE_URL);
               }
@@ -254,7 +253,6 @@ jobs:
                       "</body></html>";
               }
 
-              // Opens URL sent via FCM custom data key "url"
               void handleNotifUrl(Intent intent) {
                   if (intent == null) return;
                   String url = intent.getStringExtra("open_url");
@@ -303,7 +301,9 @@ jobs:
                               "  getVersion:      function(){return Android.getVersion()}," +
                               "  openUrl:         function(u){Android.openUrl(u)}," +
                               "  getTheme:        function(){return Android.getTheme()}," +
-                              "  getSystemImages: function(cb){Android.getSystemImages(cb)}," +
+                              // FIX: getSystemImages now uses Promise pattern so JS can await it
+                              "  getSystemImages: function(){return new Promise(function(res){var cb='_wCb'+Date.now();window[cb]=function(d){delete window[cb];res(d)};Android.getSystemImages(cb);})}," +
+                              "  getWallsFolder:  function(){return new Promise(function(res){var cb='_wCb'+Date.now();window[cb]=function(d){delete window[cb];res(d)};Android.getWallsFolder(cb);})}," +
                               "  shareFile:       function(p){Android.shareFile(p)}," +
                               "  toast:           function(m){Android.showToast(m)}," +
                               "  getSetLog:       function(){try{return JSON.parse(Android.getWallpaperLog())}catch(e){return []}}," +
@@ -412,33 +412,116 @@ jobs:
                       @android.webkit.JavascriptInterface public String getWallpaperLog() {
                           try { return getSharedPreferences(PREF_FILE, MODE_PRIVATE).getString("wp_set_log", "[]"); } catch (Exception e) { return "[]"; }
                       }
+
+                      // FIX: reads ALL images (scoped storage for API 29+, file path for <29)
+                      // Also reads Pictures/Walls/ folder specifically for local wallpapers
                       @android.webkit.JavascriptInterface
                       public String getSystemImages(String callbackName) {
                           new Thread(() -> {
                               try {
-                                  String[] proj = { MediaStore.Images.Media.DATA, MediaStore.Images.Media.DISPLAY_NAME, MediaStore.Images.Media.SIZE };
-                                  Cursor cur = getContentResolver().query(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, proj, null, null, MediaStore.Images.Media.DATE_ADDED + " DESC");
                                   JSONArray arr = new JSONArray();
-                                  if (cur != null) {
-                                      int di = cur.getColumnIndexOrThrow(MediaStore.Images.Media.DATA);
-                                      int ni = cur.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME);
-                                      int si = cur.getColumnIndexOrThrow(MediaStore.Images.Media.SIZE);
-                                      while (cur.moveToNext())
-                                          arr.put(new JSONObject().put("path", cur.getString(di)).put("name", cur.getString(ni)).put("size", cur.getLong(si)).put("uri", "file://" + cur.getString(di)));
-                                      cur.close();
+                                  if (Build.VERSION.SDK_INT >= 29) {
+                                      // Android 10+ (API 29+): use MediaStore content URIs (no file path needed)
+                                      String[] proj = { MediaStore.Images.Media._ID, MediaStore.Images.Media.DISPLAY_NAME, MediaStore.Images.Media.SIZE, MediaStore.Images.Media.RELATIVE_PATH };
+                                      Cursor cur = getContentResolver().query(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, proj, null, null, MediaStore.Images.Media.DATE_ADDED + " DESC");
+                                      if (cur != null) {
+                                          int idIdx   = cur.getColumnIndexOrThrow(MediaStore.Images.Media._ID);
+                                          int nameIdx = cur.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME);
+                                          int sizeIdx = cur.getColumnIndexOrThrow(MediaStore.Images.Media.SIZE);
+                                          int relIdx  = cur.getColumnIndexOrThrow(MediaStore.Images.Media.RELATIVE_PATH);
+                                          while (cur.moveToNext()) {
+                                              long id = cur.getLong(idIdx);
+                                              Uri contentUri = Uri.withAppendedPath(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, String.valueOf(id));
+                                              String relPath = cur.getString(relIdx);
+                                              boolean isWallsFolder = relPath != null && relPath.contains("Walls");
+                                              arr.put(new JSONObject()
+                                                  .put("uri", contentUri.toString())
+                                                  .put("name", cur.getString(nameIdx))
+                                                  .put("size", cur.getLong(sizeIdx))
+                                                  .put("path", contentUri.toString())  // same as uri on API 29+
+                                                  .put("isLocal", isWallsFolder));
+                                          }
+                                          cur.close();
+                                      }
+                                  } else {
+                                      // Android 9 and below (API <29): use DATA file path
+                                      String[] proj = { MediaStore.Images.Media.DATA, MediaStore.Images.Media.DISPLAY_NAME, MediaStore.Images.Media.SIZE };
+                                      Cursor cur = getContentResolver().query(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, proj, null, null, MediaStore.Images.Media.DATE_ADDED + " DESC");
+                                      if (cur != null) {
+                                          int di = cur.getColumnIndexOrThrow(MediaStore.Images.Media.DATA);
+                                          int ni = cur.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME);
+                                          int si = cur.getColumnIndexOrThrow(MediaStore.Images.Media.SIZE);
+                                          while (cur.moveToNext()) {
+                                              String filePath = cur.getString(di);
+                                              boolean isWallsFolder = filePath != null && filePath.contains("/Walls/");
+                                              arr.put(new JSONObject()
+                                                  .put("uri", "file://" + filePath)
+                                                  .put("path", filePath)
+                                                  .put("name", cur.getString(ni))
+                                                  .put("size", cur.getLong(si))
+                                                  .put("isLocal", isWallsFolder));
+                                          }
+                                          cur.close();
+                                      }
                                   }
                                   final String json = arr.toString();
                                   WebView wv = getBridge() != null ? getBridge().getWebView() : null;
                                   if (wv != null && callbackName != null && !callbackName.isEmpty())
-                                      runOnUiThread(() -> wv.evaluateJavascript("if(typeof " + callbackName + "==='function')" + callbackName + "(" + json + ");", null));
+                                      runOnUiThread(() -> wv.evaluateJavascript("if(typeof window['" + callbackName + "']==='function')window['" + callbackName + "'](" + json + ");", null));
                               } catch (Exception e) {
+                                  android.util.Log.e("WallsStorage", "getSystemImages error: " + e.getMessage());
                                   WebView wv = getBridge() != null ? getBridge().getWebView() : null;
                                   if (wv != null && callbackName != null && !callbackName.isEmpty())
-                                      runOnUiThread(() -> wv.evaluateJavascript("if(typeof " + callbackName + "==='function')" + callbackName + "([]);", null));
+                                      runOnUiThread(() -> wv.evaluateJavascript("if(typeof window['" + callbackName + "']==='function')window['" + callbackName + "']([]);", null));
                               }
                           }).start();
                           return "pending";
                       }
+
+                      // FIX: dedicated method to read only Pictures/Walls/ downloaded wallpapers
+                      @android.webkit.JavascriptInterface
+                      public String getWallsFolder(String callbackName) {
+                          new Thread(() -> {
+                              try {
+                                  JSONArray arr = new JSONArray();
+                                  if (Build.VERSION.SDK_INT >= 29) {
+                                      String selection = MediaStore.Images.Media.RELATIVE_PATH + " LIKE ?";
+                                      String[] selArgs = { "%Walls/%" };
+                                      String[] proj = { MediaStore.Images.Media._ID, MediaStore.Images.Media.DISPLAY_NAME, MediaStore.Images.Media.SIZE };
+                                      Cursor cur = getContentResolver().query(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, proj, selection, selArgs, MediaStore.Images.Media.DATE_ADDED + " DESC");
+                                      if (cur != null) {
+                                          int idIdx   = cur.getColumnIndexOrThrow(MediaStore.Images.Media._ID);
+                                          int nameIdx = cur.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME);
+                                          int sizeIdx = cur.getColumnIndexOrThrow(MediaStore.Images.Media.SIZE);
+                                          while (cur.moveToNext()) {
+                                              long id = cur.getLong(idIdx);
+                                              Uri contentUri = Uri.withAppendedPath(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, String.valueOf(id));
+                                              arr.put(new JSONObject().put("uri", contentUri.toString()).put("name", cur.getString(nameIdx)).put("size", cur.getLong(sizeIdx)).put("isLocal", true));
+                                          }
+                                          cur.close();
+                                      }
+                                  } else {
+                                      File wallsDir = new File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_PICTURES), "Walls");
+                                      if (wallsDir.exists()) {
+                                          File[] files = wallsDir.listFiles((d, name) -> name.toLowerCase().matches(".*\\.(jpg|jpeg|png|webp)"));
+                                          if (files != null) for (File f : files)
+                                              arr.put(new JSONObject().put("uri", "file://" + f.getAbsolutePath()).put("path", f.getAbsolutePath()).put("name", f.getName()).put("size", f.length()).put("isLocal", true));
+                                      }
+                                  }
+                                  final String json = arr.toString();
+                                  WebView wv = getBridge() != null ? getBridge().getWebView() : null;
+                                  if (wv != null && callbackName != null && !callbackName.isEmpty())
+                                      runOnUiThread(() -> wv.evaluateJavascript("if(typeof window['" + callbackName + "']==='function')window['" + callbackName + "'](" + json + ");", null));
+                              } catch (Exception e) {
+                                  android.util.Log.e("WallsStorage", "getWallsFolder error: " + e.getMessage());
+                                  WebView wv = getBridge() != null ? getBridge().getWebView() : null;
+                                  if (wv != null && callbackName != null && !callbackName.isEmpty())
+                                      runOnUiThread(() -> wv.evaluateJavascript("if(typeof window['" + callbackName + "']==='function')window['" + callbackName + "']([]);", null));
+                              }
+                          }).start();
+                          return "pending";
+                      }
+
                       @android.webkit.JavascriptInterface
                       public void shareFile(String path) {
                           if (path == null || path.isEmpty()) return;
@@ -459,7 +542,7 @@ jobs:
                       return ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED
                           || ContextCompat.checkSelfPermission(this, "android.permission.READ_MEDIA_VISUAL_USER_SELECTED") == PackageManager.PERMISSION_GRANTED;
                   if (Build.VERSION.SDK_INT >= 33) return ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED;
-                  if (Build.VERSION.SDK_INT >= 29) return true;
+                  if (Build.VERSION.SDK_INT >= 29) return true; // scoped storage — no permission needed to read own files
                   return ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
               }
 
@@ -470,6 +553,7 @@ jobs:
                       ActivityCompat.requestPermissions(this, new String[]{ Manifest.permission.READ_MEDIA_IMAGES }, REQ_STORAGE);
                   else if (Build.VERSION.SDK_INT < 29)
                       ActivityCompat.requestPermissions(this, new String[]{ Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.READ_EXTERNAL_STORAGE }, REQ_STORAGE);
+                  // API 29-32: no runtime permission needed for scoped storage
               }
 
               @Override
@@ -638,6 +722,7 @@ jobs:
                   else registerReceiver(dlReceiver, f);
               }
 
+              // FIX: removed "Set as Wallpaper" dialog after download — just show notification
               private void onDownloadSuccess(Context ctx, String localUri) {
                   try {
                       File file = new File(Uri.parse(localUri).getPath()); scanFile(file);
@@ -645,12 +730,6 @@ jobs:
                       if (wv != null) wv.evaluateJavascript("window.dispatchEvent(new CustomEvent('walls_dl_done',{detail:{name:'" + lastFile + "'}}))", null);
                       Bitmap thumb = null;
                       try { BitmapFactory.Options o = new BitmapFactory.Options(); o.inSampleSize = 4; thumb = BitmapFactory.decodeFile(file.getAbsolutePath(), o); } catch (Exception ignored) {}
-                      new AlertDialog.Builder(this).setTitle("Set as Wallpaper")
-                          .setMessage("\"" + lastFile + "\" saved!\nSet it as your wallpaper?")
-                          .setNegativeButton("Lock Screen", (d,w) -> applyWallpaper(file, WallpaperManager.FLAG_LOCK))
-                          .setNeutralButton("Both",         (d,w) -> applyWallpaper(file, WallpaperManager.FLAG_SYSTEM | WallpaperManager.FLAG_LOCK))
-                          .setPositiveButton("Home Screen", (d,w) -> applyWallpaper(file, WallpaperManager.FLAG_SYSTEM))
-                          .create().show();
                       Uri safeUri = FileProvider.getUriForFile(ctx, AUTHORITY, file);
                       Intent setIntent = Intent.createChooser(new Intent(Intent.ACTION_ATTACH_DATA).setDataAndType(safeUri, "image/*")
                           .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION).putExtra("mimeType", "image/*"), "Set as wallpaper");
@@ -796,16 +875,15 @@ jobs:
       # Firebase Console → Custom data keys:
       #   title      → notification title
       #   body       → notification body text
-      #   url        → open URL in WebView on tap (e.g. /trending, /category/nature)
+      #   url        → open URL in WebView on tap
       #   image_url  → single image BigPicture style
-      #   images     → comma-separated URLs for 6-image grid (url1,url2,url3,url4,url5,url6)
+      #   images     → comma-separated URLs for 6-image grid
       #   total      → total count → shows "+N More" on last grid cell
-      #   channel    → target channel: walls_trending | walls_promo | walls_downloads
+      #   channel    → walls_trending | walls_promo | walls_downloads
       #
-      # Firebase Console → Android Notification Channel:
-      #   walls_trending   (default for push)
-      #   walls_promo
-      #   walls_downloads
+      # IMPORTANT: To show image in Firebase notification you MUST send as
+      # data-only message (no "notification" key in payload), only "data" key.
+      # Firebase Console: use "Additional options > Custom data" for image_url.
       - name: Write WallsFirebaseMessagingService.java
         run: |
           FILE=android/app/src/main/java/ng/name/ovrica/walls/WallsFirebaseMessagingService.java
@@ -821,6 +899,7 @@ jobs:
           import androidx.core.app.NotificationCompat;
           import com.google.firebase.messaging.FirebaseMessagingService;
           import com.google.firebase.messaging.RemoteMessage;
+          import java.io.InputStream;
           import java.net.HttpURLConnection;
           import java.net.URL;
           import java.util.Map;
@@ -832,7 +911,7 @@ jobs:
               public void onNewToken(String token) {
                   super.onNewToken(token);
                   getSharedPreferences(MainActivity.PREF_FILE, MODE_PRIVATE).edit().putString("fcm_token", token).apply();
-                  android.util.Log.d("FCM", "Token: " + token);
+                  android.util.Log.d("FCM", "New token: " + token);
               }
 
               @Override
@@ -841,12 +920,14 @@ jobs:
                   NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
                   Map<String, String> data = message.getData();
 
-                  // Read all supported custom data keys
                   String title   = get(data, "title",   message.getNotification() != null ? message.getNotification().getTitle() : null);
                   String body    = get(data, "body",    message.getNotification() != null ? message.getNotification().getBody()  : null);
-                  String url     = get(data, "url",     null);     // action URL → opens in WebView on tap
-                  String imgUrl  = get(data, "image_url", null);   // single BigPicture image
-                  String images  = get(data, "images",  null);     // comma-sep for 6-grid
+                  String url     = get(data, "url",     null);
+                  String imgUrl  = get(data, "image_url", null);
+                  // FIX: also check FCM notification object's imageUrl field (set via Firebase Console "Image" field)
+                  if (imgUrl == null && message.getNotification() != null && message.getNotification().getImageUrl() != null)
+                      imgUrl = message.getNotification().getImageUrl().toString();
+                  String images  = get(data, "images",  null);
                   String channel = get(data, "channel", MainActivity.TREND_CH);
                   int    total   = 0;
                   try { total = Integer.parseInt(data.getOrDefault("total", "0")); } catch (Exception ignored) {}
@@ -859,7 +940,6 @@ jobs:
                       nm.createNotificationChannel(ch);
                   }
 
-                  // Tap intent — opens url in WebView if provided, else launches app
                   Intent tapIntent = getPackageManager().getLaunchIntentForPackage(getPackageName());
                   if (url != null && !url.isEmpty()) {
                       tapIntent = new Intent(this, MainActivity.class);
@@ -882,18 +962,11 @@ jobs:
                           .setContentIntent(pi).setAutoCancel(true);
 
                       if (fImages != null && !fImages.isEmpty()) {
-                          // ── 6-image grid style (like MovieWay) ────────────────
+                          // 6-image grid style
                           String[] urls = fImages.split(",");
                           Bitmap[] bitmaps = new Bitmap[6];
                           for (int i = 0; i < Math.min(urls.length, 6); i++) {
-                              try {
-                                  HttpURLConnection c = (HttpURLConnection) new URL(urls[i].trim()).openConnection();
-                                  c.setConnectTimeout(5000); c.setReadTimeout(5000);
-                                  if (c.getResponseCode() == 200) {
-                                      BitmapFactory.Options o = new BitmapFactory.Options(); o.inSampleSize = 2;
-                                      bitmaps[i] = BitmapFactory.decodeStream(c.getInputStream(), null, o);
-                                  }
-                              } catch (Exception ignored) {}
+                              bitmaps[i] = fetchBitmap(urls[i].trim(), 2);
                           }
                           RemoteViews rv = new RemoteViews(getPackageName(), R.layout.notification_grid);
                           rv.setTextViewText(R.id.notif_title, fTitle);
@@ -907,18 +980,42 @@ jobs:
                           nb.setCustomBigContentView(rv).setStyle(new NotificationCompat.DecoratedCustomViewStyle());
 
                       } else if (fImgUrl != null && !fImgUrl.isEmpty()) {
-                          // ── Single BigPicture style ────────────────────────────
-                          try {
-                              HttpURLConnection c = (HttpURLConnection) new URL(fImgUrl).openConnection();
-                              c.setConnectTimeout(6000); c.setReadTimeout(6000);
-                              if (c.getResponseCode() == 200) {
-                                  Bitmap bmp = BitmapFactory.decodeStream(c.getInputStream());
-                                  if (bmp != null) { nb.setLargeIcon(bmp); nb.setStyle(new NotificationCompat.BigPictureStyle().bigPicture(bmp).bigLargeIcon((Bitmap)null).setBigContentTitle(fTitle)); }
-                              }
-                          } catch (Exception ignored) {}
+                          // Single BigPicture — FIX: higher res fetch (inSampleSize=1) + setLargeIcon
+                          Bitmap bmp = fetchBitmap(fImgUrl, 1);
+                          if (bmp != null) {
+                              nb.setLargeIcon(bmp);
+                              nb.setStyle(new NotificationCompat.BigPictureStyle()
+                                  .bigPicture(bmp)
+                                  .bigLargeIcon((Bitmap) null)
+                                  .setBigContentTitle(fTitle)
+                                  .setSummaryText(fBody));
+                          }
                       }
                       nm.notify(NOTIF_ID, nb.build());
                   }).start();
+              }
+
+              // FIX: shared helper for downloading bitmaps with retry + proper stream close
+              private Bitmap fetchBitmap(String imageUrl, int sampleSize) {
+                  HttpURLConnection c = null;
+                  try {
+                      c = (HttpURLConnection) new URL(imageUrl).openConnection();
+                      c.setConnectTimeout(8000); c.setReadTimeout(10000);
+                      c.setRequestProperty("User-Agent", "Walls-Android/1.0");
+                      c.connect();
+                      if (c.getResponseCode() != 200) return null;
+                      BitmapFactory.Options o = new BitmapFactory.Options();
+                      o.inSampleSize = sampleSize;
+                      InputStream is = c.getInputStream();
+                      Bitmap bmp = BitmapFactory.decodeStream(is, null, o);
+                      is.close();
+                      return bmp;
+                  } catch (Exception e) {
+                      android.util.Log.e("FCM", "fetchBitmap failed: " + imageUrl + " — " + e.getMessage());
+                      return null;
+                  } finally {
+                      if (c != null) c.disconnect();
+                  }
               }
 
               private String get(Map<String,String> d, String key, String fallback) {
@@ -1088,19 +1185,13 @@ jobs:
           existing={el.get(a('name')) for el in root.findall('uses-permission')}
 
           perms=[
-              # Core
               'android.permission.INTERNET','android.permission.ACCESS_NETWORK_STATE',
               'android.permission.SET_WALLPAPER','android.permission.SET_WALLPAPER_HINTS',
               'android.permission.RECEIVE_BOOT_COMPLETED','android.permission.DOWNLOAD_WITHOUT_NOTIFICATION',
               'android.permission.FOREGROUND_SERVICE','android.permission.FOREGROUND_SERVICE_DATA_SYNC','android.permission.WAKE_LOCK',
-              # Android 12 (API 31-32)
-              'android.permission.SCHEDULE_EXACT_ALARM','android.permission.CHANGE_NETWORK_STATE',
-              # Android 13 (API 33)
+              'android.permission.SCHEDULE_EXACT_ALARM',
               'android.permission.POST_NOTIFICATIONS','android.permission.READ_MEDIA_IMAGES','android.permission.USE_EXACT_ALARM',
-              # Android 14 (API 34)
-              'android.permission.READ_MEDIA_VISUAL_USER_SELECTED','android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION',
-              # Android 15 (API 35)
-              'android.permission.USE_FULL_SCREEN_INTENT',
+              'android.permission.READ_MEDIA_VISUAL_USER_SELECTED',
           ]
           for perm in perms:
               if perm not in existing: ET.SubElement(root,'uses-permission').set(a('name'),perm)
@@ -1158,6 +1249,7 @@ jobs:
         run: |
           sed -i '/dependencies {/a\    implementation "androidx.core:core-splashscreen:1.0.1"' android/app/build.gradle
           sed -i '/dependencies {/a\    implementation "com.google.firebase:firebase-messaging"' android/app/build.gradle
+          sed -i '/dependencies {/a\    implementation "com.google.firebase:firebase-inappmessaging-display"' android/app/build.gradle
           sed -i '/dependencies {/a\    implementation platform("com.google.firebase:firebase-bom:34.11.0")' android/app/build.gradle
           sed -i "/^plugins {/a\\    id 'com.google.gms.google-services'" android/app/build.gradle
           sed -i "/^        classpath 'com.android.tools.build:gradle/a\\        classpath 'com.google.gms:google-services:4.4.4'" android/build.gradle
@@ -1185,9 +1277,6 @@ jobs:
           $BT/apksigner verify --verbose app-release-signed.apk
           AAB_UNSIGNED=$(find android -name "app-release.aab" | head -1)
           if [ -n "$AAB_UNSIGNED" ]; then
-            jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
-              -keystore walls.keystore -storepass ${{ secrets.KEYSTORE_PASSWORD }} -keypass ${{ secrets.KEYSTORE_PASSWORD }} \
-              "$AAB_UNSIGNED" walls
             cp "$AAB_UNSIGNED" app-release-signed.aab
           fi
           mkdir -p release; cp app-release-signed.apk release/
@@ -1197,7 +1286,9 @@ jobs:
           SHA256=$(sed 's/.*SHA256: //' release/sha256.txt)
           echo '[{"relation":["delegate_permission/common.handle_all_urls"],"target":{"namespace":"android_app","package_name":"ng.name.ovrica.walls","sha256_cert_fingerprints":["'"$SHA256"'"]}}]' \
             > release/assetlinks.json
-          zip -j release/walls-release.zip release/app-release-signed.apk release/sha256.txt release/assetlinks.json
+          # Include keystore in APK zip so you can use it later when signing AAB for Play Store
+          cp walls.keystore release/walls.keystore
+          zip -j release/walls-release.zip release/app-release-signed.apk release/sha256.txt release/assetlinks.json release/walls.keystore
           [ -f release/app-release-signed.aab ] && zip -j release/walls-release-aab.zip release/app-release-signed.aab
 
       - uses: actions/upload-artifact@v4
