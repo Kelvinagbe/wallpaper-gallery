@@ -37,8 +37,26 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--s
 #view{flex:1;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
 #view::-webkit-scrollbar{width:2px}
 #view::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
-.page{padding:0 12px calc(var(--nav)+24px)}
-#msnry,#sMsnry{position:relative;width:100%;contain:layout style}
+/* PULL TO REFRESH */
+#ptr{
+  position:fixed;top:0;left:0;right:0;z-index:450;
+  display:flex;align-items:center;justify-content:center;
+  height:0;overflow:hidden;transition:height .2s cubic-bezier(.4,0,.2,1);
+  background:var(--bg);
+}
+#ptr-inner{
+  display:flex;align-items:center;gap:8px;
+  font-size:11px;font-weight:600;color:var(--muted);
+  opacity:0;transition:opacity .15s;
+}
+#ptr-inner svg{width:18px;height:18px;stroke:var(--accent);fill:none;stroke-width:2;transition:transform .3s}
+#ptr.pulling #ptr-inner{opacity:1}
+#ptr.refreshing #ptr-inner svg{animation:spin 1s linear infinite}
+#ptr.refreshing #ptr-inner{opacity:1}
+.page{padding:0 0 calc(var(--nav)+80px)}
+.page-padded{padding:0 12px calc(var(--nav)+80px)}
+.page-inner{padding:0 12px}
+#msnry,#sMsnry{position:relative;width:100%;contain:layout style;padding-bottom:8px}
 
 /* OFFLINE */
 #offBanner{display:none;position:fixed;top:0;left:0;right:0;z-index:500;padding:9px 16px;background:#FFF3E0;border-bottom:1px solid #FFE0B2;font-size:11px;color:#B84000;text-align:center;font-weight:600}
@@ -92,14 +110,51 @@ nav button.active::after{transform:translateX(-50%) scaleX(1)}
 .sec-see:hover{color:var(--accent)}
 
 /* HOT CAROUSEL */
-.hot-scroll{display:flex;gap:8px;overflow-x:auto;margin-bottom:20px;padding-bottom:2px;scroll-snap-type:x mandatory}
+.hot-scroll{display:flex;gap:10px;overflow-x:auto;margin-bottom:20px;padding-bottom:4px;scroll-snap-type:x mandatory}
 .hot-scroll::-webkit-scrollbar{display:none}
-.hot-item{flex-shrink:0;width:90px;border-radius:var(--r);overflow:hidden;position:relative;cursor:pointer;box-shadow:0 2px 12px rgba(108,71,232,.18);transition:transform .2s cubic-bezier(.34,1.56,.64,1);scroll-snap-align:start}
-.hot-item:active{transform:scale(.94)}
-.hot-item img{width:100%;aspect-ratio:9/16;object-fit:cover;display:block}
-.hot-ov{position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.82) 0%,rgba(0,0,0,.1) 55%,transparent 100%)}
-.hot-title{position:absolute;bottom:7px;left:7px;right:7px;font-size:9px;font-weight:700;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.hot-rank{position:absolute;top:6px;left:6px;font-family:var(--serif);font-style:italic;font-size:16px;color:rgba(255,255,255,.9);text-shadow:0 1px 8px rgba(0,0,0,.5)}
+.hot-item{
+  flex-shrink:0;width:130px;
+  border-radius:18px;overflow:hidden;position:relative;cursor:pointer;
+  border:1.5px solid rgba(255,255,255,.12);
+  background:var(--s2);
+  transition:transform .2s cubic-bezier(.34,1.56,.64,1);
+  scroll-snap-align:start;
+}
+.hot-item:nth-child(1){border-color:rgba(56,210,180,.7);}
+.hot-item:nth-child(2){border-color:rgba(255,180,50,.6);}
+.hot-item:nth-child(3){border-color:rgba(108,71,232,.7);}
+.hot-item:active{transform:scale(.95)}
+.hot-item img{width:100%;aspect-ratio:3/4;object-fit:cover;display:block;background:var(--s2)}
+.hot-ov{
+  position:absolute;inset:0;
+  background:linear-gradient(to top,rgba(0,0,0,.85) 0%,rgba(0,0,0,.08) 50%,transparent 100%)
+}
+.hot-title{
+  position:absolute;bottom:9px;left:9px;right:9px;
+  font-size:11px;font-weight:700;color:#fff;
+  line-height:1.3;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}
+.hot-rank{
+  position:absolute;top:8px;left:9px;
+  font-family:var(--serif);font-style:italic;font-size:16px;color:rgba(255,255,255,.9);
+  text-shadow:0 1px 8px rgba(0,0,0,.6);line-height:1;
+}
+/* HOT skeleton */
+.hot-sk{
+  flex-shrink:0;width:130px;height:173px;border-radius:18px;
+  background:var(--sk1);overflow:hidden;position:relative;
+  scroll-snap-align:start;
+}
+.hot-sk::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent 0%,var(--sk2) 38%,transparent 100%);transform:translateX(-100%);animation:wave 1.6s ease-in-out infinite}
+/* media type badge — top-right pill */
+.hot-badge{
+  position:absolute;top:8px;right:8px;
+  display:flex;align-items:center;gap:3px;
+  padding:3px 6px;border-radius:8px;
+  background:rgba(0,0,0,.48);border:1px solid rgba(255,255,255,.16);
+}
+.hot-badge svg{width:10px;height:10px;stroke:#fff;fill:none;stroke-width:2.2}
 
 /* MASONRY */
 .card-wrap{position:absolute;cursor:pointer;-webkit-tap-highlight-color:transparent}
@@ -149,10 +204,20 @@ nav button.active::after{transform:translateX(-50%) scaleX(1)}
 .spons-pill{font-size:8px;font-weight:700;color:var(--accent);background:var(--accent-dim);border-radius:4px;padding:2px 6px;border:1px solid var(--accent-glow)}
 
 /* LOAD MORE */
-.lm{display:flex;justify-content:center;padding:20px 0 4px}
-.lm-btn{padding:10px 32px;border-radius:99px;border:1.5px solid var(--border2);background:transparent;color:var(--muted);font-family:var(--sans);font-size:12px;font-weight:600;cursor:pointer;transition:all .18s}
-.lm-btn:hover{border-color:var(--accent);color:var(--accent)}
+.lm{display:flex;justify-content:center;padding:28px 0 20px}
+.lm-btn{
+  padding:12px 40px;border-radius:99px;
+  border:1.5px solid var(--border2);background:transparent;
+  color:var(--muted);font-family:var(--sans);font-size:12px;font-weight:600;
+  cursor:pointer;transition:all .22s;
+  display:flex;align-items:center;gap:8px;
+}
+.lm-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-dim)}
+.lm-btn:active{transform:scale(.96)}
 .lm-btn:disabled{opacity:.35;cursor:default}
+.lm-btn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;animation:none;display:none}
+.lm-btn.loading svg{display:block;animation:spin 1s linear infinite}
+/* extra bottom space so content isn't cut off by nav */
 
 /* SEARCH */
 #searchOverlay{position:fixed;inset:0;z-index:550;background:var(--bg);display:flex;flex-direction:column;transform:translateY(100%);transition:transform .3s cubic-bezier(.4,0,.2,1);pointer-events:none}
@@ -173,92 +238,159 @@ nav button.active::after{transform:translateX(-50%) scaleX(1)}
 #srch-hint svg{width:40px;height:40px;stroke:var(--muted);fill:none;stroke-width:1.2;opacity:.35}
 #srch-hint p{font-size:14px;color:var(--muted);font-style:italic;font-family:var(--serif)}
 
-/* ═══ FULL-SCREEN VIEWER MODAL ═══ */
-#modal{position:fixed;inset:0;z-index:600;background:#000;pointer-events:none;display:none;flex-direction:column}
+/* ═══ VIEWER MODAL — TRUE FULL SCREEN ═══ */
+#modal{
+  position:fixed;inset:0;z-index:600;
+  background:#000;
+  pointer-events:none;display:none;
+  flex-direction:column;
+}
 #modal.open{pointer-events:all}
 
-/* back + share at top */
-#modal-top{
-  position:absolute;top:0;left:0;right:0;z-index:5;
-  display:flex;align-items:center;justify-content:space-between;
-  padding:max(14px,env(safe-area-inset-top)) 14px 14px;
-  background:linear-gradient(rgba(0,0,0,.55) 0%,transparent 100%);
-  opacity:0;transition:opacity .28s .05s;
+/* the card = full screen */
+#modal-card{
+  width:100%;height:100%;
+  display:flex;flex-direction:column;
+  position:relative;
+  opacity:0;transform:translateY(24px);
+  transition:opacity .28s,transform .28s cubic-bezier(.34,1.3,.64,1);
 }
-#modal.open #modal-top{opacity:1}
+#modal.open #modal-card{opacity:1;transform:translateY(0)}
 
-.m-circ{
-  width:42px;height:42px;border-radius:50%;
-  background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.2);
-  color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;
-  transition:background .15s,transform .15s;
-}
-.m-circ:active{background:rgba(255,255,255,.28);transform:scale(.93)}
-.m-circ svg{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:2.2}
-
-/* image fills screen */
+/* image fills entire screen */
 #modal-img-wrap{
-  flex:1;display:flex;align-items:center;justify-content:center;
-  overflow:hidden;position:relative;
+  position:absolute;inset:0;
+  width:100%;height:100%;
+  overflow:hidden;
+  z-index:0;
 }
 #modal-img{
-  max-width:100%;max-height:100%;object-fit:contain;
+  width:100%;height:100%;object-fit:cover;
   display:block;opacity:0;transition:opacity .3s;
+}
+
+/* gradient overlays */
+#modal-img-wrap::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:160px;
+  background:linear-gradient(to bottom,rgba(0,0,0,.7) 0%,transparent 100%);
+  z-index:1;pointer-events:none;
+}
+#modal-img-wrap::after{
+  content:'';position:absolute;bottom:0;left:0;right:0;height:280px;
+  background:linear-gradient(to top,rgba(0,0,0,.92) 0%,rgba(0,0,0,.5) 50%,transparent 100%);
+  z-index:1;pointer-events:none;
 }
 
 /* spinner — purple arc */
 #modal-spinner{
   position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-  pointer-events:none;
+  pointer-events:none;z-index:2;
 }
-#modal-spinner svg{width:40px;height:40px;animation:spin 1s linear infinite}
+#modal-spinner svg{width:36px;height:36px;animation:spin 1s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 #modal-spinner circle{
   stroke:var(--accent);stroke-width:3.5;stroke-linecap:round;
   stroke-dasharray:60 100;fill:none;
 }
 
-/* bottom overlay — transparent gradient with buttons */
+/* top bar — absolute over image */
+#modal-top{
+  position:absolute;top:0;left:0;right:0;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:max(14px,env(safe-area-inset-top)) 14px 12px;
+  z-index:10;
+}
+
+.m-circ{
+  width:38px;height:38px;border-radius:50%;
+  background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.18);
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;
+  transition:background .15s,transform .15s;flex-shrink:0;
+}
+.m-circ:active{background:rgba(0,0,0,.6);transform:scale(.93)}
+.m-circ svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:2.2}
+
+/* uploader pill */
+#modal-uploader{display:flex;align-items:center;gap:7px;background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.18);border-radius:99px;padding:5px 11px 5px 5px;cursor:pointer;transition:background .15s;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+#modal-uploader:active{background:rgba(0,0,0,.6)}
+#modal-up-avatar{width:26px;height:26px;border-radius:50%;object-fit:cover;background:rgba(255,255,255,.12);flex-shrink:0}
+#modal-up-name{font-size:12px;font-weight:600;color:#fff;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* bottom info + actions — absolute over image */
 #modal-btm{
-  position:absolute;bottom:0;left:0;right:0;z-index:5;
-  padding:80px 16px max(24px,env(safe-area-inset-bottom)) 16px;
-  background:linear-gradient(transparent 0%,rgba(0,0,0,.88) 40%);
-  opacity:0;transform:translateY(8px);transition:all .3s .06s;
+  position:absolute;bottom:0;left:0;right:0;
+  padding:16px 16px max(20px,env(safe-area-inset-bottom));
+  z-index:10;
+  opacity:0;transform:translateY(10px);transition:all .3s .1s;
 }
 #modal.open #modal-btm{opacity:1;transform:translateY(0)}
 
-#modal-info{margin-bottom:14px}
+#modal-info{margin-bottom:12px}
 #modal-title{
-  font-family:var(--serif);font-style:italic;font-size:18px;
-  color:rgba(255,255,255,.92);letter-spacing:-.01em;margin-bottom:6px;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  font-family:var(--serif);font-style:italic;font-size:20px;
+  color:#fff;letter-spacing:-.01em;margin-bottom:5px;
+  line-height:1.25;text-shadow:0 1px 8px rgba(0,0,0,.4);
 }
-#modal-badges{display:flex;gap:5px;margin-bottom:6px;flex-wrap:wrap}
-.m-badge{display:flex;align-items:center;gap:4px;font-size:10px;padding:3px 9px;border-radius:7px;background:rgba(255,255,255,.1);color:rgba(255,255,255,.5);border:1px solid rgba(255,255,255,.12)}
+#modal-desc{
+  font-size:12px;color:rgba(255,255,255,.65);line-height:1.6;
+  margin-bottom:8px;display:none;
+}
+#modal-desc.has-content{display:block}
+#modal-badges{display:flex;gap:5px;margin-bottom:7px;flex-wrap:wrap}
+.m-badge{display:flex;align-items:center;gap:4px;font-size:10px;padding:3px 9px;border-radius:7px;background:rgba(255,255,255,.12);color:rgba(255,255,255,.7);border:1px solid rgba(255,255,255,.16);backdrop-filter:blur(4px)}
 .m-badge svg{width:10px;height:10px;stroke:currentColor;fill:none;stroke-width:2}
-#modal-tags{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px}
-.m-tag{font-size:10px;padding:3px 9px;border-radius:99px;border:1px solid rgba(255,255,255,.14);color:rgba(255,255,255,.45)}
-#modal-stats{display:flex;gap:14px}
-.m-stat{display:flex;align-items:center;gap:4px;font-size:11px;color:rgba(255,255,255,.38)}
+#modal-tags{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px}
+.m-tag{font-size:10px;padding:3px 10px;border-radius:99px;border:1px solid rgba(255,255,255,.2);color:rgba(255,255,255,.6);cursor:pointer;transition:all .15s}
+.m-tag:active{background:rgba(255,255,255,.15);color:#fff}
+#modal-stats{display:flex;gap:16px;margin-bottom:0}
+.m-stat{display:flex;align-items:center;gap:4px;font-size:11px;color:rgba(255,255,255,.5)}
 .m-stat svg{width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:2}
-.m-stat strong{color:rgba(255,255,255,.72);font-weight:600;font-family:var(--mono)}
+.m-stat strong{color:rgba(255,255,255,.85);font-weight:600;font-family:var(--mono)}
 
-/* action row — transparent buttons */
-#modal-acts{display:flex;gap:8px;margin-top:14px}
-.ma{
-  flex:1;padding:13px 8px;border-radius:13px;border:none;
-  font-family:var(--sans);font-size:13px;font-weight:700;cursor:pointer;
-  display:flex;align-items:center;justify-content:center;gap:6px;
-  transition:all .18s;letter-spacing:-.01em;color:#fff;
+/* action row — always visible at bottom */
+#modal-acts{
+  display:flex;align-items:center;
+  gap:10px;margin-top:14px;
 }
-.ma svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2.2}
-.ma:active{transform:scale(.96)}
-/* Download — solid accent purple */
-.ma-primary{background:var(--accent)}
-.ma-primary:active{opacity:.84}
-/* Set — frosted transparent */
-.ma-set{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.2)}
-.ma-set:active{background:rgba(255,255,255,.24)}
+.ma-dl-full{
+  flex:1;height:52px;border-radius:14px;border:none;
+  background:var(--accent);color:#fff;
+  display:flex;align-items:center;justify-content:center;gap:9px;
+  cursor:pointer;padding:0;
+  box-shadow:0 4px 24px rgba(108,71,232,.55);
+  transition:all .18s;font-family:var(--sans);font-size:13px;font-weight:700;
+}
+.ma-dl-full:active{opacity:.84;transform:scale(.97)}
+.ma-dl-full svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2.2;flex-shrink:0}
+.ma-set-btn{
+  width:52px;height:52px;border-radius:14px;
+  border:1.5px solid rgba(255,255,255,.25) !important;
+}
+.ma-icon-btn{
+  width:52px;height:52px;border-radius:14px;border:none;
+  background:rgba(255,255,255,.15);
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  color:#fff;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;
+  transition:all .18s;
+}
+.ma-icon-btn:active{background:rgba(255,255,255,.28);transform:scale(.93)}
+.ma-icon-btn svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2}
+.ma-fab{display:none}
+.ma-heart-btn{
+  width:52px;height:52px;border-radius:14px;border:none;
+  background:rgba(255,255,255,.15);
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  color:#fff;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;
+  transition:all .18s;
+  border:1.5px solid rgba(255,255,255,.2);
+}
+.ma-heart-btn:active{background:rgba(255,255,255,.28);transform:scale(.93)}
+.ma-heart-btn svg{width:20px;height:20px;stroke:#fff;fill:none;stroke-width:2;transition:all .2s cubic-bezier(.34,1.56,.64,1)}
+.ma-heart-btn.liked svg{fill:#f43f5e;stroke:#f43f5e}
+.ma-set-link{display:none}
 
 /* BOTTOM SHEETS */
 #setSheet,#optSheet,#permSheet{position:fixed;inset:0;z-index:700;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;opacity:0;pointer-events:none;transition:opacity .22s}
@@ -302,13 +434,13 @@ nav button.active::after{transform:translateX(-50%) scaleX(1)}
 .ps-deny{width:100%;padding:12px;border-radius:13px;border:1.5px solid var(--border);background:transparent;color:var(--muted);font-family:var(--sans);font-size:13px;cursor:pointer}
 
 /* DOWNLOADS */
-.downloads-header{padding:20px 0 16px}
+.downloads-header{padding:20px 16px 16px}
 .downloads-header-row{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:2px}
 .downloads-title{font-family:var(--serif);font-style:italic;font-size:38px;letter-spacing:-.02em;line-height:.95}
 .downloads-count{font-size:10px;font-weight:500;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-top:5px}
 .dl-clear{background:none;border:1.5px solid var(--border2);color:var(--muted);font-family:var(--sans);font-size:11px;font-weight:600;padding:6px 13px;border-radius:99px;cursor:pointer;transition:all .15s}
 .dl-clear:active{border-color:var(--accent);color:var(--accent)}
-.dl-row{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border)}
+.dl-row{display:flex;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid var(--border)}
 .dl-th{width:54px;height:54px;border-radius:11px;object-fit:cover;flex-shrink:0;background:var(--s2);cursor:pointer;transition:transform .15s}
 .dl-th:active{transform:scale(.95)}
 .dl-inf{flex:1;min-width:0}
@@ -351,6 +483,12 @@ nav button.active::after{transform:translateX(-50%) scaleX(1)}
   <button class="dlb-x" onclick="hideDlBar()"><svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
 </div>
 
+<div id="ptr">
+  <div id="ptr-inner">
+    <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+    <span id="ptr-label">Pull to refresh</span>
+  </div>
+</div>
 <div id="app">
   <div id="view"></div>
   <nav>
@@ -387,13 +525,18 @@ nav button.active::after{transform:translateX(-50%) scaleX(1)}
 
 <!-- Full-screen viewer -->
 <div id="modal">
-  <!-- Top: back + share -->
+  <div id="modal-card">
+  <!-- Top: back + uploader -->
   <div id="modal-top">
     <button class="m-circ" onclick="closeModal()">
       <svg viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
     </button>
-    <button class="m-circ" onclick="shareWP()">
-      <svg viewBox="0 0 24 24"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8M16 6l-4-4-4 4M12 2v13"/></svg>
+    <div id="modal-uploader" onclick="toast('View profile')">
+      <img id="modal-up-avatar" src="" alt=""/>
+      <span id="modal-up-name">Walls</span>
+    </div>
+    <button class="m-circ" id="modal-more-btn" onclick="S.current&&openOptSheet(S.current)">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
     </button>
   </div>
 
@@ -405,10 +548,11 @@ nav button.active::after{transform:translateX(-50%) scaleX(1)}
     </div>
   </div>
 
-  <!-- Bottom: info + transparent action buttons -->
+  <!-- Bottom: info + action buttons -->
   <div id="modal-btm">
     <div id="modal-info">
       <div id="modal-title"></div>
+      <div id="modal-desc"></div>
       <div id="modal-badges">
         <div class="m-badge" id="m-res-badge" style="display:none"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/></svg><span id="mRes"></span></div>
         <div class="m-badge" id="m-cat-badge" style="display:none"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 10h16M4 14h8"/></svg><span id="mCat"></span></div>
@@ -420,15 +564,18 @@ nav button.active::after{transform:translateX(-50%) scaleX(1)}
         <div class="m-stat"><svg viewBox="0 0 24 24"><path d="M12 3v13M5 16l7 5 7-5"/><path d="M3 21h18"/></svg><strong id="mD">0</strong></div>
       </div>
     </div>
+    <!-- full-width download + set wallpaper -->
     <div id="modal-acts">
-      <button class="ma ma-primary" onclick="modalDl()">
-        <svg viewBox="0 0 24 24"><path d="M12 3v13M5 16l7 5 7-5"/><path d="M3 21h18"/></svg>Download
+      <button class="ma-dl-full" id="modal-dl-btn" onclick="modalDl()">
+        <svg viewBox="0 0 24 24"><path d="M12 3v13M5 16l7 5 7-5"/><path d="M3 21h18"/></svg>
+        <span id="modal-dl-label">Download</span>
       </button>
-      <button class="ma ma-set" onclick="openSetSheet()">
-        <svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Set Wallpaper
+      <button class="ma-icon-btn ma-set-btn" onclick="openSetSheet()">
+        <svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
       </button>
     </div>
   </div>
+  </div><!-- end #modal-card -->
 </div>
 
 <!-- Set wallpaper sheet -->
@@ -487,7 +634,7 @@ nav button.active::after{transform:translateX(-50%) scaleX(1)}
 <div id="toast"></div>
 
 <script>
-const API='https://walls.ovrica.name.ng/api/wallpapers',TIMEOUT=12000,GAP=8;
+const API='https://walls.ovrica.name.ng/api/wallpapers',TIMEOUT=12000,GAP=10;
 const MOBILE_AR=9/16,DESKTOP_AR=16/9;
 const AD_IMG='https://images.unsplash.com/photo-1557682250-33bd709cbe85?w=600&q=80';
 const S={page:'home',filter:'recent',search:'',wpPage:0,wpTotal:0,items:[],loading:false,searchT:null,current:null};
@@ -523,18 +670,19 @@ async function apiFetch(params){
 }
 
 const cols=w=>w>=900?4:w>=600?3:2;
+const MPAD=12;// side padding for masonry grid
 
 function buildMasonry(el,items,isSk){
-  const W=el.clientWidth,nc=cols(W),cw=(W-GAP*(nc-1))/nc,colH=new Array(nc).fill(0);
+  const W=el.clientWidth-MPAD*2,nc=cols(W),cw=(W-GAP*(nc-1))/nc,colH=new Array(nc).fill(0);
   el.innerHTML='';el.style.position='relative';
   items.forEach((item,i)=>{
     // inject ad every 7 real cards
     if(!isSk&&i>0&&i%7===0){
-      const ac=colH.indexOf(Math.min(...colH)),ax=ac*(cw+GAP),ay=colH[ac],ah=cw/1.6;
+      const ac=colH.indexOf(Math.min(...colH)),ax=MPAD+ac*(cw+GAP),ay=colH[ac],ah=cw/1.6;
       const ad=mkAd(cw,ah);ad.style.cssText=`left:${ax}px;top:${ay}px;width:${cw}px;height:${ah}px`;
       el.appendChild(ad);colH[ac]+=ah+GAP+30;
     }
-    const c=colH.indexOf(Math.min(...colH)),x=c*(cw+GAP),y=colH[c];
+    const c=colH.indexOf(Math.min(...colH)),x=MPAD+c*(cw+GAP),y=colH[c];
     if(isSk){
       const h=cw/MOBILE_AR;
       const sk=document.createElement('div');sk.className='sk';
@@ -553,14 +701,14 @@ function buildMasonry(el,items,isSk){
 }
 
 function appendMasonry(el,items){
-  const W=el.clientWidth,nc=cols(W),cw=(W-GAP*(nc-1))/nc,colH=new Array(nc).fill(0);
+  const W=el.clientWidth-MPAD*2,nc=cols(W),cw=(W-GAP*(nc-1))/nc,colH=new Array(nc).fill(0);
   el.querySelectorAll('.card-wrap,.ad-card').forEach(c=>{
-    const col=Math.round(parseFloat(c.style.left)/(cw+GAP));
+    const col=Math.round((parseFloat(c.style.left)-MPAD)/(cw+GAP));
     const bot=parseFloat(c.style.top)+c.offsetHeight+GAP;
     if(colH[col]!==undefined)colH[col]=Math.max(colH[col],bot);
   });
   items.forEach(item=>{
-    const c=colH.indexOf(Math.min(...colH)),x=c*(cw+GAP),y=colH[c];
+    const c=colH.indexOf(Math.min(...colH)),x=MPAD+c*(cw+GAP),y=colH[c];
     const ar=item.pc?DESKTOP_AR:MOBILE_AR,h=cw/ar;
     const card=mkCard(item,cw,h);
     card.style.cssText=`left:${x}px;top:${y}px;width:${cw}px`;
@@ -629,17 +777,21 @@ async function renderHome(reset=true){
   if(reset){S.wpPage=0;S.items=[];}
   if(reset){
     v.innerHTML=`<div class="page">
-      <div class="home-header fu">
-        <div><div class="home-wordmark-title">Walls</div><div class="home-wordmark-sub">Curated wallpapers</div></div>
+      <div class="page-inner">
+        <div class="home-header fu">
+          <div><div class="home-wordmark-title">Walls</div><div class="home-wordmark-sub">Curated wallpapers</div></div>
+        </div>
+        <div class="pills-row fu d1" id="pills">${['recent','trending','popular'].map(f=>`<button class="pill${f===S.filter?' on':''}" onclick="setFilter('${f}')">${f[0].toUpperCase()+f.slice(1)}</button>`).join('')}</div>
+        <div class="sec-row fu d2"><span class="sec-label">Hot right now</span><button class="sec-see" onclick="toast('See all')">See all</button></div>
+        <div class="hot-scroll fu d2" id="hotScroll">${Array(6).fill('<div class="hot-sk"></div>').join('')}</div>
+        <div class="sec-row fu d3" style="margin-bottom:10px"><span class="sec-label">All wallpapers</span></div>
+        <div id="msnry"></div>
+        <div class="lm" id="lm" style="display:none"><button class="lm-btn" id="lmBtn" onclick="loadMore()"><svg viewBox="0 0 24 24"><path d="M12 3v13M5 16l7 5 7-5"/><path d="M3 21h18"/></svg>Load more</button></div>
       </div>
-      <div class="pills-row fu d1" id="pills">${['recent','trending','popular'].map(f=>`<button class="pill${f===S.filter?' on':''}" onclick="setFilter('${f}')">${f[0].toUpperCase()+f.slice(1)}</button>`).join('')}</div>
-      <div class="sec-row fu d2"><span class="sec-label">Hot right now</span><button class="sec-see" onclick="toast('See all')">See all</button></div>
-      <div class="hot-scroll fu d2" id="hotScroll"></div>
-      <div class="sec-row fu d3" style="margin-bottom:10px"><span class="sec-label">All wallpapers</span></div>
-      <div id="msnry"></div>
-      <div class="lm" id="lm" style="display:none"><button class="lm-btn" id="lmBtn" onclick="loadMore()">Load more</button></div>
     </div>`;
     buildMasonry($('msnry'),Array(10).fill({}),true);
+    // fetch hot independently
+    fetchHot();
   }
   if(S.loading)return;S.loading=true;
   try{
@@ -648,11 +800,10 @@ async function renderHome(reset=true){
     const g=$('msnry');if(!g)return;
     if(reset){
       wallpapers.length?buildMasonry(g,wallpapers,false):(g.innerHTML=emptyH('No wallpapers','Try a different filter'),g.style.height='auto');
-      buildHot(wallpapers);
     } else appendMasonry(g,wallpapers);
     const lm=$('lm'),lb=$('lmBtn');
     if(lm)lm.style.display=pagination.hasMore?'flex':'none';
-    if(lb){lb.disabled=false;lb.textContent='Load more'}
+    if(lb){lb.disabled=false;lb.classList.remove('loading');lb.innerHTML=`<svg viewBox="0 0 24 24"><path d="M12 3v13M5 16l7 5 7-5"/><path d="M3 21h18"/></svg>Load more`}
   } catch(e){
     S.loading=false;const g=$('msnry');if(!g)return;
     g.innerHTML=e.offline?offH('renderHome()'):e.timeout?toH('renderHome()'):errH('renderHome()');
@@ -660,13 +811,62 @@ async function renderHome(reset=true){
   }
 }
 
+const HOT_CACHE_KEY='walls_hot_cache';
+const HOT_TTL=6*60*60*1000; // 6 hours
+
+function getHotCache(){
+  try{
+    const raw=localStorage.getItem(HOT_CACHE_KEY);
+    if(!raw)return null;
+    const{ts,data}=JSON.parse(raw);
+    if(Date.now()-ts>HOT_TTL){localStorage.removeItem(HOT_CACHE_KEY);return null;}
+    return data;
+  }catch(e){return null;}
+}
+function setHotCache(data){
+  try{localStorage.setItem(HOT_CACHE_KEY,JSON.stringify({ts:Date.now(),data}));}catch(e){}
+}
+
+async function fetchHot(forceRefresh=false){
+  const c=$('hotScroll');if(!c)return;
+  // Use cache unless forced refresh or expired
+  if(!forceRefresh){
+    const cached=getHotCache();
+    if(cached&&cached.length){buildHot(cached);return;}
+  }
+  try{
+    const HOT_API='https://walls.ovrica.name.ng/api/hot';
+    const ctrl=new AbortController(),tid=setTimeout(()=>ctrl.abort(),TIMEOUT);
+    const r=await fetch(HOT_API,{
+      signal:ctrl.signal,method:'GET',mode:'cors',
+      headers:{'Accept':'application/json','Content-Type':'application/json'}
+    });
+    clearTimeout(tid);
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    const data=await r.json();
+    const wallpapers=data.wallpapers||data||[];
+    if(wallpapers.length){
+      setHotCache(wallpapers);
+      buildHot(wallpapers);
+    } else {
+      buildHot(S.items.slice(0,10));
+    }
+  }catch(e){
+    const cached=getHotCache();
+    if(cached&&cached.length){buildHot(cached);}
+    else if(S.items.length){buildHot(S.items.slice(0,10));}
+    else{const c2=$('hotScroll');if(c2)c2.innerHTML='<div style="padding:8px 4px;font-size:11px;color:var(--muted)">Unavailable</div>';}
+  }
+}
+
 function buildHot(wallpapers){
   const c=$('hotScroll');if(!c)return;c.innerHTML='';
-  (wallpapers||[]).slice(0,8).forEach((wp,i)=>{
+  (wallpapers||[]).slice(0,10).forEach((wp,i)=>{
     const item=document.createElement('div');item.className='hot-item fu';
     item.style.animationDelay=(i*0.04)+'s';
-    const rank=i<3?`<div class="hot-rank">${i===0?'①':i===1?'②':'③'}</div>`:'';
-    item.innerHTML=`<img src="${esc(wp.thumbnail)}" alt="${esc(wp.title)}" loading="lazy"/><div class="hot-ov"></div><div class="hot-title">${esc(wp.title)}</div>${rank}`;
+    const badge=wp.pc?`<div class="hot-badge"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="12" rx="2"/><path d="M8 19h8M12 15v4"/></svg></div>`:'';
+    const rank=i<3?`<div class="hot-rank">#${i+1}</div>`:'';
+    item.innerHTML=`<img src="${esc(wp.thumbnail)}" alt="${esc(wp.title)}" loading="lazy" decoding="async"/><div class="hot-ov"></div>${badge}${rank}<div class="hot-title">${esc(wp.title)}</div>`;
     item.addEventListener('click',()=>openModal(wp));
     c.appendChild(item);
   });
@@ -680,7 +880,8 @@ function setFilter(f){
 
 async function loadMore(){
   if(S.loading)return;
-  const lb=$('lmBtn');if(lb){lb.disabled=true;lb.textContent='Loading…'}
+  const lb=$('lmBtn');
+  if(lb){lb.disabled=true;lb.classList.add('loading');lb.innerHTML=`<svg viewBox="0 0 24 24"><path d="M12 3v13M5 16l7 5 7-5"/><path d="M3 21h18"/></svg>Loading…`}
   S.wpPage++;S.loading=false;await renderHome(false);
 }
 
@@ -713,26 +914,49 @@ async function doSearch(q){
   }
 }
 
-/* Downloads — View opens modal (not redirect) */
+/* Downloads — reads from phone storage via native bridge, falls back to localStorage */
 function renderDownloads(){
-  $('view').innerHTML=`<div class="page">
+  const v=$('view');
+
+  // try to get files from native bridge first
+  let nativeFiles=null;
+  try{
+    if(typeof window!=='undefined'&&window.WallsApp?.getDownloadedFiles){
+      const raw=window.WallsApp.getDownloadedFiles();
+      nativeFiles=typeof raw==='string'?JSON.parse(raw):raw;
+    }
+  } catch(e){console.warn('Native getDownloadedFiles failed:',e)}
+
+  const items=nativeFiles||DL;
+  const isNative=!!nativeFiles;
+
+  v.innerHTML=`<div class="page">
     <div class="downloads-header fu">
       <div class="downloads-header-row">
         <div class="downloads-title">Saved</div>
-        ${DL.length?`<button class="dl-clear" onclick="clearDL()">Clear all</button>`:''}
+        ${items.length&&!isNative?`<button class="dl-clear" onclick="clearDL()">Clear all</button>`:''}
       </div>
-      <div class="downloads-count">${DL.length} wallpaper${DL.length!==1?'s':''}</div>
+      <div class="downloads-count">${items.length} wallpaper${items.length!==1?'s':''} ${isNative?'· from device storage':''}</div>
     </div>
-    <div class="fu d1">
-      ${DL.length?DL.map((d,i)=>`
-        <div class="dl-row">
-          <img class="dl-th" src="${esc(d.thumb)}" alt="${esc(d.title)}" loading="lazy" onclick="openModal(DL[${i}].wp||{id:DL[${i}].id,url:DL[${i}].url||DL[${i}].thumb,thumbnail:DL[${i}].thumb,title:DL[${i}].title,views:0,likes:0,downloads:0})"/>
-          <div class="dl-inf"><p>${esc(d.title)}</p><span>${new Date(d.savedAt).toLocaleDateString('en',{month:'short',day:'numeric',year:'numeric'})}</span></div>
+    <div class="fu d1" style="padding:0 16px">
+      ${items.length?items.map((d,i)=>{
+        const thumb=d.thumb||d.path||'';
+        const title=d.title||d.name||'Wallpaper';
+        const url=d.url||d.path||thumb;
+        const savedAt=d.savedAt||d.date||Date.now();
+        const dateStr=new Date(savedAt).toLocaleDateString('en',{month:'short',day:'numeric',year:'numeric'});
+        const wpObj=d.wp||{id:d.id||i,url,thumbnail:thumb,title,views:0,likes:0,downloads:0};
+        return `<div class="dl-row">
+          <img class="dl-th" src="${esc(thumb)}" alt="${esc(title)}" loading="lazy"
+            onerror="this.style.background='var(--s2)'"
+            onclick='openModal(${JSON.stringify(wpObj).replace(/'/g,"&#39;")})' />
+          <div class="dl-inf"><p>${esc(title)}</p><span>${dateStr}</span></div>
           <div class="dl-acts">
-            <button class="dl-act" onclick="openModal(DL[${i}].wp||{id:DL[${i}].id,url:DL[${i}].url||DL[${i}].thumb,thumbnail:DL[${i}].thumb,title:DL[${i}].title,views:0,likes:0,downloads:0})">View</button>
-            <button class="dl-act" onclick="startDlRaw('${esc(d.url||d.thumb)}','${esc(d.title)}')">↓</button>
+            <button class="dl-act" onclick='openModal(${JSON.stringify(wpObj).replace(/'/g,"&#39;")})'>View</button>
+            <button class="dl-act" onclick='(function(){S.current=${JSON.stringify(wpObj).replace(/'/g,"&#39;")};openSetSheet()})()'>Set</button>
           </div>
-        </div>`).join(''):`<div class="empty"><svg viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg><h3>Nothing saved yet</h3><p>Download wallpapers and they'll appear here</p></div>`}
+        </div>`}).join('')
+        :`<div class="empty"><svg viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg><h3>Nothing saved yet</h3><p>Download wallpapers and they'll appear here</p></div>`}
     </div>
   </div>`;
 }
@@ -744,13 +968,49 @@ function openModal(wp){
   const img=$('modal-img'),spin=$('modal-spinner');
 
   $('modal-title').textContent=wp.title||'Wallpaper';
+
+  // description
+  const descEl=$('modal-desc');
+  if(descEl){
+    const desc=wp.description||wp.desc||'';
+    descEl.textContent=desc;
+    descEl.classList.toggle('has-content',!!desc);
+  }
+
   $('mV').textContent=fmt(wp.views);$('mL').textContent=fmt(wp.likes);$('mD').textContent=fmt(wp.downloads);
   const rb=$('m-res-badge');
   if(wp.width&&wp.height){$('mRes').textContent=`${wp.width}×${wp.height}`;rb.style.display='flex'}else rb.style.display='none';
   const cb=$('m-cat-badge');
   if(wp.category){$('mCat').textContent=wp.category;cb.style.display='flex'}else cb.style.display='none';
   const tags=wp.tags||(wp.tag?[wp.tag]:[]);
-  $('modal-tags').innerHTML=tags.length?tags.slice(0,6).map(t=>`<span class="m-tag">${esc(t)}</span>`).join(''):'';
+  $('modal-tags').innerHTML=tags.length?tags.slice(0,8).map(t=>`<span class="m-tag">${esc(t)}</span>`).join(''):'';
+
+  // uploader
+  const upName=wp.uploadedBy||wp.user||'Walls';
+  const upAvatar=wp.userAvatar&&wp.userAvatar!=='favicon.ico'?wp.userAvatar:'';
+  $('modal-up-name').textContent='@'+upName;
+  const upAv=$('modal-up-avatar');
+  if(upAvatar){upAv.src=upAvatar;upAv.style.display='block'}
+  else{upAv.style.display='none'}
+
+  // reset heart
+  $('modal-heart')?.classList.remove('liked');
+
+  // show/hide download button state
+  const alreadySaved=!!DL.find(d=>d.id===wp.id);
+  const dlBtn=$('modal-dl-btn');
+  const dlLabel=$('modal-dl-label');
+  if(dlBtn){
+    if(alreadySaved){
+      dlBtn.style.background='rgba(255,255,255,.18)';
+      dlBtn.title='Already downloaded';
+      dlBtn.innerHTML=`<svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2.2" width="18" height="18"><polyline points="20 6 9 17 4 12"/></svg><span>Saved</span>`;
+    } else {
+      dlBtn.style.background='';
+      dlBtn.title='Download';
+      dlBtn.innerHTML=`<svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2.2" width="18" height="18"><path d="M12 3v13M5 16l7 5 7-5"/><path d="M3 21h18"/></svg><span>Download</span>`;
+    }
+  }
 
   // reset image state — show spinner
   img.style.opacity='0';
@@ -779,13 +1039,29 @@ function closeModal(){
   },280);
 }
 
+function toggleModalLike(){
+  const btn=$('modal-heart');btn.classList.toggle('liked');
+  toast(btn.classList.contains('liked')?'Liked ♥':'Unliked');
+}
+
 function shareWP(){
   if(!S.current)return;
   const url=S.current.url||S.current.thumbnail;
   if(navigator.share)navigator.share({title:S.current.title,url}).catch(()=>{});
   else navigator.clipboard?.writeText(url).then(()=>toast('Link copied!'));
 }
-const modalDl=()=>{if(S.current)startDl(S.current)};
+const modalDl=()=>{
+  if(!S.current)return;
+  startDl(S.current);
+  // flip button to saved state
+  const dlBtn=$('modal-dl-btn');
+  if(dlBtn){
+    setTimeout(()=>{
+      dlBtn.style.background='rgba(255,255,255,.18)';
+      dlBtn.innerHTML=`<svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2.2" width="18" height="18"><polyline points="20 6 9 17 4 12"/></svg><span>Saved</span>`;
+    },1200);
+  }
+};
 
 // tap empty area to close
 $('modal').addEventListener('click',e=>{if(e.target===$('modal-img-wrap'))closeModal()});
@@ -798,10 +1074,17 @@ const closeSetSheet=()=>$('setSheet').classList.remove('open');
 
 function setWP(target){
   closeSetSheet();if(!S.current)return;
-  const url=S.current.url||S.current.thumbnail;
+  // Use cached local URL if already downloaded, else use remote URL
+  const saved=DL.find(d=>d.id===S.current.id);
+  const url=(saved?.url)||S.current.url||S.current.thumbnail;
   const doSet=()=>{
     if(window.Android?.setWallpaper){window.Android.setWallpaper(url,target);toast('Setting wallpaper…');closeModal();return}
     if(window.Capacitor?.Plugins?.WallpaperPlugin){window.Capacitor.Plugins.WallpaperPlugin.setWallpaper({url,target}).then(()=>{toast('Wallpaper set! 🎉');closeModal()}).catch(()=>toast('Could not set wallpaper'));return}
+    // If already saved, skip download — just toast instructions
+    if(saved){
+      toast(`Long-press photo in Saved → Set as ${target==='both'?'home & lock':target+' screen'}`);
+      closeModal();return;
+    }
     startDlRaw(url,S.current.title);
     setTimeout(()=>toast(`Saved! Long-press photo → Set as ${target==='both'?'home & lock':target+' screen'}`),1400);
     closeModal();
@@ -853,6 +1136,57 @@ const errH=fn=>`<div class="empty"><svg viewBox="0 0 24 24"><circle cx="12" cy="
 
 let resT;
 window.addEventListener('resize',()=>{clearTimeout(resT);resT=setTimeout(()=>{['msnry','sMsnry'].forEach(id=>{const g=$(id);if(g&&S.items.length)buildMasonry(g,S.items,false)})},180)});
+
+// ── PULL TO REFRESH ──────────────────────────────────────────
+(function(){
+  const view=$('view');
+  const ptr=$('ptr');
+  const lbl=$('ptr-label');
+  const icon=ptr.querySelector('svg');
+  const THRESHOLD=72;
+  let startY=0,pulling=false,refreshing=false,dist=0;
+
+  view.addEventListener('touchstart',e=>{
+    if(view.scrollTop===0&&!refreshing)startY=e.touches[0].clientY;
+    else startY=0;
+  },{passive:true});
+
+  view.addEventListener('touchmove',e=>{
+    if(!startY||refreshing)return;
+    dist=Math.max(0,e.touches[0].clientY-startY);
+    if(dist<4)return;
+    pulling=true;
+    const h=Math.min(dist*0.45,THRESHOLD);
+    ptr.style.height=h+'px';
+    ptr.classList.add('pulling');
+    ptr.classList.remove('refreshing');
+    const progress=Math.min(dist/THRESHOLD,1);
+    icon.style.transform=`rotate(${progress*360}deg)`;
+    lbl.textContent=dist>=THRESHOLD?'Release to refresh':'Pull to refresh';
+  },{passive:true});
+
+  view.addEventListener('touchend',async()=>{
+    if(!pulling){startY=0;return;}
+    pulling=false;
+    if(dist>=THRESHOLD&&!refreshing){
+      refreshing=true;
+      ptr.style.height='52px';
+      ptr.classList.add('refreshing');
+      ptr.classList.remove('pulling');
+      lbl.textContent='Refreshing…';
+      // Clear hot cache so it re-fetches
+      try{localStorage.removeItem(HOT_CACHE_KEY);}catch(e){}
+      await renderHome(true);
+      await fetchHot(true);
+      refreshing=false;
+      toast('Refreshed ✓');
+    }
+    ptr.style.height='0';
+    ptr.classList.remove('pulling','refreshing');
+    icon.style.transform='';
+    dist=0;startY=0;
+  },{passive:true});
+})();
 
 $('modal').style.display='none';
 goPage('home');
