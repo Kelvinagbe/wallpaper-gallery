@@ -27,7 +27,7 @@ jobs:
           printf "24333f8a63b6825ea9c5514f83c2829b004d1fee\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e" \
             > $SDK/licenses/android-sdk-license
           echo "y" | $SDK/cmdline-tools/latest/bin/sdkmanager \
-            "platforms;android-35" "build-tools;34.0.0" "platform-tools" 2>&1 | tail -3
+            "platforms;android-36" "build-tools;35.0.0" "platform-tools" 2>&1 | tail -3
 
       - name: Install dependencies & Configure Capacitor
         run: |
@@ -143,22 +143,36 @@ jobs:
               private BroadcastReceiver   dlReceiver;
               private String pendingDlUrl, pendingDlName, pendingWpUrl, pendingWpTarget;
               private long   backPressedTime = 0;
-              private boolean webLoaded = false, splashDone = false;
+              private boolean webLoaded = false;
+              private boolean webReady  = false; // true only after first frame painted
               private int     lastBgColor = 0;
 
               @Override
               protected void onCreate(Bundle savedInstanceState) {
-                  // ── Samsung blank screen fix: set window bg BEFORE super.onCreate ──
-                  // This prevents the white flash between splash and WebView load
+                  // ── Samsung/Android 15 blank screen fix ────────────────────────
+                  // Set window bg BEFORE super.onCreate — prevents white flash
                   boolean darkMode = (getResources().getConfiguration().uiMode &
                       Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
                   lastBgColor = Color.parseColor(darkMode ? "#0E0C15" : "#F7F6FB");
                   getWindow().setBackgroundDrawable(new ColorDrawable(lastBgColor));
                   getWindow().addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
-                  // Keep splash until web is ready
+
+                  // ── Install splash and keep it until WebView first paint ────────
+                  // On Android 15, setKeepOnScreenCondition has a race where it can
+                  // release before WebView has painted — OnPreDrawListener is the fix.
                   SplashScreen splash = SplashScreen.installSplashScreen(this);
-                  splash.setKeepOnScreenCondition(() -> !splashDone);
                   super.onCreate(savedInstanceState);
+
+                  // Use OnPreDrawListener: splash stays until we call proceed()
+                  final android.view.ViewTreeObserver.OnPreDrawListener[] listener = {null};
+                  final android.view.View content = findViewById(android.R.id.content);
+                  listener[0] = () -> {
+                      if (!webReady) return false; // keep blocking draw
+                      content.getViewTreeObserver().removeOnPreDrawListener(listener[0]);
+                      return true; // allow draw — splash dismissed automatically
+                  };
+                  content.getViewTreeObserver().addOnPreDrawListener(listener[0]);
+
                   applySystemTheme();
                   FirebaseMessaging.getInstance().getToken().addOnCompleteListener(task -> {
                       if (!task.isSuccessful()) return;
@@ -199,8 +213,11 @@ jobs:
                   lastBgColor = newBg;
                   getWindow().setBackgroundDrawable(new ColorDrawable(newBg));
                   wv.setBackgroundColor(newBg);
+                  // Only reload if WebView has never loaded anything (cold start edge case)
                   String url = wv.getUrl();
-                  if (url == null || url.equals("about:blank")) wv.loadUrl(BASE_URL);
+                  if (url == null || url.isEmpty() || url.equals("about:blank")) {
+                      wv.loadUrl(BASE_URL);
+                  }
               }
 
               @Override public void onConfigurationChanged(Configuration c) { super.onConfigurationChanged(c); applySystemTheme(); }
@@ -270,21 +287,23 @@ jobs:
                   wv.setWebViewClient(new WebViewClient() {
                       @Override public void onPageStarted(WebView v, String url, Bitmap fav) {
                           runOnUiThread(() -> showLoadingOverlay(v));
+                          // Safety timeout — if page never finishes, release splash after 12s
                           if (toR[0] != null) toH.removeCallbacks(toR[0]);
                           toR[0] = () -> {
-                              splashDone = true;
-                              runOnUiThread(() -> {
-                                  hideLoadingOverlay(v);
-                                  v.loadData(offlineHtml(), "text/html", "UTF-8");
-                              });
+                              webReady = true;
+                              runOnUiThread(() -> hideLoadingOverlay(v));
                           };
-                          toH.postDelayed(toR[0], 15000);
+                          toH.postDelayed(toR[0], 12000);
                       }
 
                       @Override public void onPageFinished(WebView v, String url) {
                           if (toR[0] != null) { toH.removeCallbacks(toR[0]); toR[0] = null; }
-                          splashDone = true;
-                          runOnUiThread(() -> hideLoadingOverlay(v));
+                          // Small delay so WebView has time to paint first frame
+                          // This is the Android 15 fix — webReady=true triggers OnPreDrawListener
+                          toH.postDelayed(() -> {
+                              webReady = true;
+                              runOnUiThread(() -> hideLoadingOverlay(v));
+                          }, 120);
                           boolean dark = isDarkTheme();
                           String fcmToken = getSharedPreferences(PREF_FILE, MODE_PRIVATE).getString("fcm_token", "");
                           v.evaluateJavascript(
@@ -292,8 +311,7 @@ jobs:
                               "window.WALLS_VERSION='" + getVersion() + "';" +
                               "window.WALLS_DARK=" + dark + ";" +
                               "window.WALLS_FCM_TOKEN='" + fcmToken + "';" +
-                              // ── Private folder base URL so HTML can load local images
-                              "window.WALLS_LOCAL_BASE='content://" + AUTHORITY + "/walls_private/';" +
+                              "window.WALLS_LOCAL_BASE='https://walls.local/wallpapers/';" +
                               "window.WallsApp={" +
                               "  download:       function(url,id,title){Android.downloadFile(url,id||'',title||'')}," +
                               "  setWallpaper:   function(contentUri,target){Android.setWallpaper(contentUri,target||'home')}," +
@@ -317,15 +335,24 @@ jobs:
                       }
 
                       @Override public void onReceivedError(WebView v, WebResourceRequest req, WebResourceError err) {
+                          // Only handle main frame errors, release splash so app doesn't hang
                           if (!req.isForMainFrame()) return;
                           if (toR[0] != null) { toH.removeCallbacks(toR[0]); toR[0] = null; }
-                          splashDone = true;
-                          runOnUiThread(() -> { hideLoadingOverlay(v); v.loadData(offlineHtml(), "text/html", "UTF-8"); });
+                          webReady = true;
+                          runOnUiThread(() -> hideLoadingOverlay(v));
+                          // Let WebView show its own error or the page will just be empty
+                          // Do NOT inject offline HTML — app retries on resume
                       }
 
                       @Override public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest req) {
                           String url = req.getUrl().toString();
-                          if (url.startsWith(BASE_URL) || url.startsWith("https://localhost") || url.startsWith("capacitor://")) return false;
+                          // ── Allow walls.ovrica.name.ng (deep links + static files) ──
+                          if (url.startsWith("https://walls.ovrica.name.ng") ||
+                              url.startsWith("https://walls.local") ||
+                              url.startsWith("https://localhost") ||
+                              url.startsWith("http://localhost") ||
+                              url.startsWith("capacitor://")) return false;
+                          // Everything else (external links) open in browser
                           try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url))); } catch (Exception ignored) {}
                           return true;
                       }
@@ -386,33 +413,6 @@ jobs:
                   loadingOverlay = null;
               }
 
-              // ── Offline HTML — native, no network dependency ─────────────────────
-              private String offlineHtml() {
-                  boolean dark = isDarkTheme();
-                  String bg   = dark ? "#0E0C15" : "#F7F6FB";
-                  String text = dark ? "#EDE9FF" : "#13111A";
-                  String sub  = dark ? "#5C5478" : "#8E89A8";
-                  String btn  = "#6C47E8";
-                  return "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'/>" +
-                      "<style>*{margin:0;padding:0;box-sizing:border-box}" +
-                      "body{background:" + bg + ";color:" + text + ";font-family:-apple-system,BlinkMacSystemFont,'DM Sans',sans-serif;" +
-                      "display:flex;flex-direction:column;align-items:center;justify-content:center;height:100dvh;text-align:center;padding:32px}" +
-                      ".icon{width:72px;height:72px;border-radius:20px;background:#1a1530;display:flex;align-items:center;justify-content:center;margin:0 auto 28px}" +
-                      "svg{width:36px;height:36px}" +
-                      "h1{font-size:22px;font-weight:700;margin-bottom:8px}" +
-                      "p{font-size:14px;color:" + sub + ";line-height:1.65;max-width:260px;margin-bottom:32px}" +
-                      "button{padding:14px 36px;background:" + btn + ";color:#fff;border:none;border-radius:99px;" +
-                      "font-size:15px;font-weight:700;cursor:pointer;font-family:inherit}" +
-                      "</style></head><body>" +
-                      "<div class='icon'><svg viewBox='0 0 24 24' fill='none' stroke='#6C47E8' stroke-width='1.8'>" +
-                      "<line x1='1' y1='1' x2='23' y2='23'/>" +
-                      "<path d='M16.72 11.06A10.94 10.94 0 0119 12.55M5 12.55a10.94 10.94 0 015.17-2.39M10.71 5.05A16 16 0 0122.56 9M1.42 9a15.91 15.91 0 014.7-2.88M8.53 16.11a6 6 0 016.95 0M12 20h.01'/>" +
-                      "</svg></div>" +
-                      "<h1>No connection</h1>" +
-                      "<p>Check your internet and try again. Your saved wallpapers are still available.</p>" +
-                      "<button onclick='location.reload()'>Retry</button>" +
-                      "</body></html>";
-              }
 
               // ── JS Bridge ────────────────────────────────────────────────────────
               private void setupJsBridge() {
@@ -1041,6 +1041,12 @@ jobs:
           sed -i '/dependencies {/a\    implementation platform("com.google.firebase:firebase-bom:34.11.0")' android/app/build.gradle
           sed -i "/^plugins {/a\\    id 'com.google.gms.google-services'" android/app/build.gradle
           sed -i "/^        classpath 'com.android.tools.build:gradle/a\\        classpath 'com.google.gms:google-services:4.4.4'" android/build.gradle
+          # ── Patch compileSdkVersion and targetSdkVersion to 36 ──
+          sed -i 's/compileSdkVersion [0-9]*/compileSdkVersion 36/g' android/app/build.gradle
+          sed -i 's/compileSdk = [0-9]*/compileSdk = 36/g' android/app/build.gradle
+          sed -i 's/targetSdkVersion [0-9]*/targetSdkVersion 36/g' android/app/build.gradle
+          sed -i 's/targetSdk = [0-9]*/targetSdk = 36/g' android/app/build.gradle
+          sed -i "s/buildToolsVersion \"[^\"]*\"/buildToolsVersion \"35.0.0\"/g" android/app/build.gradle
           keytool -genkeypair -v -keystore walls.keystore \
             -alias walls -keyalg RSA -keysize 2048 -validity 10000 \
             -storepass ${{ secrets.KEYSTORE_PASSWORD }} -keypass ${{ secrets.KEYSTORE_PASSWORD }} \
@@ -1055,7 +1061,7 @@ jobs:
 
       - name: Sign and package
         run: |
-          BT=$ANDROID_SDK_ROOT/build-tools/34.0.0
+          BT=$ANDROID_SDK_ROOT/build-tools/35.0.0
           UNSIGNED=$(find android -name "app-release-unsigned.apk" | head -1)
           [ -z "$UNSIGNED" ] && echo "ERROR: No unsigned APK!" && exit 1
           $BT/zipalign -v -p 4 "$UNSIGNED" app-aligned.apk
