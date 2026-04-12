@@ -48,17 +48,16 @@ jobs:
           cat > "$RES/xml/file_paths.xml" << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <paths>
-            <external-path name="walls_downloads" path="Pictures/Walls/" />
-            <external-path name="external_files" path="." />
-            <external-files-path name="external_files_path" path="." />
-            <cache-path name="cache" path="." />
+            <external-files-path name="walls_private" path="wallpapers/" />
+            <external-path name="walls_pictures"  path="Pictures/Walls/" />
+            <external-path name="external_files"  path="." />
+            <cache-path     name="cache"           path="." />
           </paths>
           EOF
 
           printf '<?xml version="1.0" encoding="utf-8"?>\n<resources><color name="ic_launcher_background">#000000</color></resources>' \
             > "$RES/values/ic_launcher_background.xml"
 
-          # Grid notification layout — 6-image 2x3 grid
           cat > "$RES/layout/notification_grid.xml" << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
@@ -102,6 +101,8 @@ jobs:
           import android.graphics.*;
           import android.graphics.drawable.ColorDrawable;
           import android.Manifest;
+          import android.net.ConnectivityManager;
+          import android.net.NetworkInfo;
           import android.net.Uri;
           import android.os.*;
           import android.provider.MediaStore;
@@ -114,6 +115,7 @@ jobs:
           import androidx.core.app.*;
           import androidx.core.content.*;
           import androidx.core.splashscreen.SplashScreen;
+          import androidx.webkit.WebViewAssetLoader;
           import com.getcapacitor.BridgeActivity;
           import com.google.firebase.messaging.FirebaseMessaging;
           import org.json.*;
@@ -130,31 +132,33 @@ jobs:
               private static final int    NOTIF_ING = 2001, NOTIF_DONE = 2002, NOTIF_WELCOME = 4001;
               private static final int    REQ_STORAGE = 1002, REQ_NOTIF = 1001;
               private static final long   TIMEOUT_MS  = 30_000;
-              private static final String WALLS_FOLDER = "Walls";
-              private static final String AUTHORITY    = "ng.name.ovrica.walls.fileprovider";
-              static final String         BASE_URL     = "https://walls.ovrica.name.ng";
-              static final String         PREF_FILE    = "walls_prefs";
-              private static final String PREF_MIN_VER = "cached_min_version";
+              // ── PRIVATE folder inside Android/data/ng.name.ovrica.walls/files/wallpapers/
+              private static final String WALLS_PRIV_DIR = "wallpapers";
+              private static final String WALLS_PUB_DIR  = "Walls"; // for export to Pictures/
+              private static final String AUTHORITY      = "ng.name.ovrica.walls.fileprovider";
+              static final String         BASE_URL       = "https://walls.ovrica.name.ng";
+              static final String         PREF_FILE      = "walls_prefs";
+              private static final String PREF_MIN_VER   = "cached_min_version";
 
-              private DownloadManager    dm;
               private NotificationManager nm;
-              private BroadcastReceiver  dlReceiver;
-              private final Handler progressHandler = new Handler(Looper.getMainLooper());
-              private Runnable progressRunnable;
-              private long   lastId = -1, downloadStartTime = 0;
-              private String lastFile = "", lastLocalPath = "";
+              private BroadcastReceiver   dlReceiver;
               private String pendingDlUrl, pendingDlName, pendingWpUrl, pendingWpTarget;
-              private long    backPressedTime = 0;
+              private long   backPressedTime = 0;
               private boolean webLoaded = false, splashDone = false;
               private int     lastBgColor = 0;
 
               @Override
               protected void onCreate(Bundle savedInstanceState) {
-                  SplashScreen splash = SplashScreen.installSplashScreen(this);
-                  splash.setKeepOnScreenCondition(() -> !splashDone);
-                  lastBgColor = Color.parseColor(isDarkTheme() ? "#111318" : "#F1F3F4");
+                  // ── Samsung blank screen fix: set window bg BEFORE super.onCreate ──
+                  // This prevents the white flash between splash and WebView load
+                  boolean darkMode = (getResources().getConfiguration().uiMode &
+                      Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+                  lastBgColor = Color.parseColor(darkMode ? "#0E0C15" : "#F7F6FB");
                   getWindow().setBackgroundDrawable(new ColorDrawable(lastBgColor));
                   getWindow().addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+                  // Keep splash until web is ready
+                  SplashScreen splash = SplashScreen.installSplashScreen(this);
+                  splash.setKeepOnScreenCondition(() -> !splashDone);
                   super.onCreate(savedInstanceState);
                   applySystemTheme();
                   FirebaseMessaging.getInstance().getToken().addOnCompleteListener(task -> {
@@ -168,18 +172,17 @@ jobs:
               @Override
               public void onStart() {
                   super.onStart();
-                  dm = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
                   nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
                   mkChannel(DL_CH,    "Walls Downloads",     "Wallpaper download notifications");
                   mkChannel(PROMO_CH, "Wallpaper Reminders", "Periodic reminders");
-                  mkChannel(TREND_CH, "Trending Wallpapers", "Hot & trending wallpaper picks");
+                  mkChannel(TREND_CH, "Trending Wallpapers",  "Hot & trending wallpaper picks");
                   if (Build.VERSION.SDK_INT >= 33 &&
                       ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
                       ActivityCompat.requestPermissions(this, new String[]{ Manifest.permission.POST_NOTIFICATIONS }, REQ_NOTIF);
                   if (getBridge() != null && getBridge().getWebView() != null && !webLoaded) {
                       setupWebView(); setupJsBridge(); webLoaded = true;
                   }
-                  registerDlReceiver(); scheduleReminder();
+                  scheduleReminder();
                   handleDeepLink(getIntent()); handleNotifUrl(getIntent());
                   showWelcome(); checkForUpdate();
               }
@@ -193,8 +196,7 @@ jobs:
                   super.onResume();
                   WebView wv = getBridge() != null ? getBridge().getWebView() : null;
                   if (wv == null) return;
-                  // FIX: always apply bg immediately on resume to prevent white/flicker flash
-                  int newBg = Color.parseColor(isDarkTheme() ? "#111318" : "#F1F3F4");
+                  int newBg = Color.parseColor(isDarkTheme() ? "#0E0C15" : "#F7F6FB");
                   lastBgColor = newBg;
                   getWindow().setBackgroundDrawable(new ColorDrawable(newBg));
                   wv.setBackgroundColor(newBg);
@@ -208,15 +210,9 @@ jobs:
               public void onBackPressed() {
                   WebView wv = getBridge() != null ? getBridge().getWebView() : null;
                   if (wv != null && wv.canGoBack()) { wv.goBack(); return; }
-                  if (System.currentTimeMillis() - backPressedTime < 2000) { super.onBackPressed(); return; }
+                  if (System.currentTimeMillis() - backPressedTime < 2000) { finish(); return; }
                   backPressedTime = System.currentTimeMillis();
                   Toast.makeText(this, "Press back again to exit", Toast.LENGTH_SHORT).show();
-              }
-
-              @Override
-              public void onDestroy() {
-                  super.onDestroy(); stopProgressPolling();
-                  if (dlReceiver != null) try { unregisterReceiver(dlReceiver); } catch (Exception ignored) {}
               }
 
               private boolean isDarkTheme() {
@@ -224,67 +220,73 @@ jobs:
               }
 
               private void applySystemTheme() {
-                  boolean dark = isDarkTheme();
-                  int bg = Color.parseColor(dark ? "#111318" : "#F1F3F4");
-                  lastBgColor = bg; getWindow().setBackgroundDrawable(new ColorDrawable(bg));
+                  int bg = Color.parseColor(isDarkTheme() ? "#0E0C15" : "#F7F6FB");
+                  lastBgColor = bg;
+                  getWindow().setBackgroundDrawable(new ColorDrawable(bg));
                   WebView wv = getBridge() != null ? getBridge().getWebView() : null;
-                  if (wv != null) { wv.setBackgroundColor(bg); wv.evaluateJavascript("window.dispatchEvent(new CustomEvent('walls_theme',{detail:{dark:" + dark + "}}))", null); }
-                  if (Build.VERSION.SDK_INT >= 21) { getWindow().setStatusBarColor(bg); getWindow().setNavigationBarColor(bg); }
-                  if (Build.VERSION.SDK_INT >= 26) {
-                      View decor = getWindow().getDecorView(); int flags = decor.getSystemUiVisibility();
-                      if (!dark) flags |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
-                      else       flags &= ~(View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
-                      decor.setSystemUiVisibility(flags);
+                  if (wv != null) {
+                      wv.setBackgroundColor(bg);
+                      boolean dark = isDarkTheme();
+                      wv.evaluateJavascript("window.dispatchEvent(new CustomEvent('walls_theme',{detail:{dark:" + dark + "}}))", null);
                   }
               }
 
-              private String offlineHtml() {
-                  boolean dark = isDarkTheme();
-                  String bg = dark ? "#111318" : "#F1F3F4", fg = dark ? "#ffffff" : "#1a1a1a";
-                  String muted = dark ? "rgba(255,255,255,0.5)" : "rgba(0,0,0,0.45)";
-                  return "<html><body style='background:" + bg + ";color:" + fg + ";font-family:-apple-system,sans-serif;" +
-                      "display:flex;flex-direction:column;align-items:center;justify-content:center;" +
-                      "height:100vh;margin:0;text-align:center;padding:32px;box-sizing:border-box'>" +
-                      "<div style='font-size:56px;margin-bottom:8px'>📡</div>" +
-                      "<h2 style='margin:0 0 8px;font-size:20px'>No Internet</h2>" +
-                      "<p style='margin:0 0 28px;font-size:14px;color:" + muted + "'>Check your connection and try again</p>" +
-                      "<button onclick='location.reload()' style='padding:13px 32px;background:#6c63ff;" +
-                      "border:none;border-radius:12px;color:#fff;font-size:15px;font-weight:600;cursor:pointer'>Retry</button>" +
-                      "</body></html>";
-              }
-
-              void handleNotifUrl(Intent intent) {
-                  if (intent == null) return;
-                  String url = intent.getStringExtra("open_url");
-                  if (url == null || url.isEmpty()) return;
-                  WebView wv = getBridge() != null ? getBridge().getWebView() : null;
-                  if (wv == null) return;
-                  runOnUiThread(() -> { showLoadingOverlay(wv); wv.loadUrl(url); });
+              private boolean isOnline() {
+                  ConnectivityManager cm = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+                  if (cm == null) return false;
+                  NetworkInfo ni = cm.getActiveNetworkInfo();
+                  return ni != null && ni.isConnected();
               }
 
               private void setupWebView() {
                   WebView wv = getBridge().getWebView();
-                  WebSettings ws = wv.getSettings();
-                  ws.setJavaScriptEnabled(true); ws.setDomStorageEnabled(true); ws.setAllowFileAccess(true);
-                  ws.setAllowContentAccess(true); ws.setCacheMode(WebSettings.LOAD_DEFAULT); ws.setTextZoom(100);
-                  ws.setSupportZoom(false); ws.setUseWideViewPort(true); ws.setMediaPlaybackRequiresUserGesture(false);
-                  if (Build.VERSION.SDK_INT >= 21) ws.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+                  // ── Samsung/Android blank screen fix ──────────────────────────
+                  // Set background BEFORE any load so there's never a white flash
                   wv.setBackgroundColor(lastBgColor);
+                  wv.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+                  // ── WebSettings ───────────────────────────────────────────────
+                  WebSettings ws = wv.getSettings();
+                  ws.setJavaScriptEnabled(true);
+                  ws.setDomStorageEnabled(true);
+                  ws.setCacheMode(WebSettings.LOAD_DEFAULT);
+                  ws.setAllowFileAccess(false);
+                  ws.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+                  // ── Disable ALL zoom (prevents Samsung double-tap zoom) ────────
+                  ws.setSupportZoom(false);
+                  ws.setBuiltInZoomControls(false);
+                  ws.setDisplayZoomControls(false);
+                  // ── Mobile viewport / responsive ──────────────────────────────
+                  ws.setUseWideViewPort(true);
+                  ws.setLoadWithOverviewMode(true);
+                  // ── Prevent font size adjustment on Samsung ────────────────────
+                  ws.setTextZoom(100);
+
+                  // ── WebViewAssetLoader: lets WebView load content:// images from private folder
+                  // JS can use: <img src="https://walls.local/wallpapers/filename.jpg">
+                  File privateDir = getExternalFilesDir(WALLS_PRIV_DIR);
+                  if (privateDir != null) privateDir.mkdirs();
+
+                  final Handler toH = new Handler(Looper.getMainLooper());
+                  final Runnable[] toR = {null};
 
                   wv.setWebViewClient(new WebViewClient() {
-                      private final Handler toH = new Handler(Looper.getMainLooper());
-                      private Runnable toR;
-
                       @Override public void onPageStarted(WebView v, String url, Bitmap fav) {
                           runOnUiThread(() -> showLoadingOverlay(v));
-                          if (toR != null) toH.removeCallbacks(toR);
-                          toR = () -> { splashDone = true; runOnUiThread(() -> { hideLoadingOverlay(v); v.loadData(offlineHtml(), "text/html", "UTF-8"); }); };
-                          toH.postDelayed(toR, 15000);
+                          if (toR[0] != null) toH.removeCallbacks(toR[0]);
+                          toR[0] = () -> {
+                              splashDone = true;
+                              runOnUiThread(() -> {
+                                  hideLoadingOverlay(v);
+                                  v.loadData(offlineHtml(), "text/html", "UTF-8");
+                              });
+                          };
+                          toH.postDelayed(toR[0], 15000);
                       }
 
                       @Override public void onPageFinished(WebView v, String url) {
-                          if (toR != null) { toH.removeCallbacks(toR); toR = null; }
-                          splashDone = true; runOnUiThread(() -> hideLoadingOverlay(v));
+                          if (toR[0] != null) { toH.removeCallbacks(toR[0]); toR[0] = null; }
+                          splashDone = true;
+                          runOnUiThread(() -> hideLoadingOverlay(v));
                           boolean dark = isDarkTheme();
                           String fcmToken = getSharedPreferences(PREF_FILE, MODE_PRIVATE).getString("fcm_token", "");
                           v.evaluateJavascript(
@@ -292,34 +294,25 @@ jobs:
                               "window.WALLS_VERSION='" + getVersion() + "';" +
                               "window.WALLS_DARK=" + dark + ";" +
                               "window.WALLS_FCM_TOKEN='" + fcmToken + "';" +
+                              // ── Private folder base URL so HTML can load local images
+                              "window.WALLS_LOCAL_BASE='content://" + AUTHORITY + "/walls_private/';" +
                               "window.WallsApp={" +
-                              "  download:        function(u,n){Android.downloadFile(u,n||'wallpaper.jpg')}," +
-                              "  setWallpaper:    function(u,t){Android.setWallpaper(u,t||'home')}," +
-                              "  requestStorage:  function(){Android.requestStoragePermission()}," +
-                              "  hasStorage:      function(){return Android.hasStorage()}," +
-                              "  isAndroid:       function(){return true}," +
-                              "  getVersion:      function(){return Android.getVersion()}," +
-                              "  openUrl:         function(u){Android.openUrl(u)}," +
-                              "  getTheme:        function(){return Android.getTheme()}," +
-                              // FIX: getSystemImages now uses Promise pattern so JS can await it
-                              "  getSystemImages: function(){return new Promise(function(res){var cb='_wCb'+Date.now();window[cb]=function(d){delete window[cb];res(d)};Android.getSystemImages(cb);})}," +
-                              "  getWallsFolder:  function(){return new Promise(function(res){var cb='_wCb'+Date.now();window[cb]=function(d){delete window[cb];res(d)};Android.getWallsFolder(cb);})}," +
-                              "  shareFile:       function(p){Android.shareFile(p)}," +
-                              "  toast:           function(m){Android.showToast(m)}," +
-                              "  getSetLog:       function(){try{return JSON.parse(Android.getWallpaperLog())}catch(e){return []}}," +
-                              "  getFcmToken:     function(){return window.WALLS_FCM_TOKEN}," +
-                              "  pickImages:function(cb){" +
-                              "    window._wallsPickCb=cb;Android.requestStoragePermission();" +
-                              "    window.addEventListener('walls_perm_granted',function h(){" +
-                              "      window.removeEventListener('walls_perm_granted',h);Android.getSystemImages('_wallsPickCb');" +
-                              "    },{once:true});" +
-                              "  }" +
+                              "  download:       function(url,id,title){Android.downloadFile(url,id||'',title||'')}," +
+                              "  setWallpaper:   function(contentUri,target){Android.setWallpaper(contentUri,target||'home')}," +
+                              "  exportToGallery:function(contentUri,title){Android.exportToGallery(contentUri,title||'wallpaper')}," +
+                              "  deleteFile:     function(contentUri){Android.deleteFile(contentUri)}," +
+                              "  getSavedList:   function(){return new Promise(function(res){var cb='_wCb'+Date.now();window[cb]=function(d){delete window[cb];res(d)};Android.getSavedList(cb);})}," +
+                              "  requestStorage: function(){Android.requestStoragePermission()}," +
+                              "  hasStorage:     function(){return Android.hasStorage()}," +
+                              "  isAndroid:      function(){return true}," +
+                              "  getVersion:     function(){return Android.getVersion()}," +
+                              "  openUrl:        function(u){Android.openUrl(u)}," +
+                              "  getTheme:       function(){return Android.getTheme()}," +
+                              "  shareFile:      function(p){Android.shareFile(p)}," +
+                              "  toast:          function(m){Android.showToast(m)}," +
+                              "  getSetLog:      function(){try{return JSON.parse(Android.getWallpaperLog())}catch(e){return []}}," +
+                              "  getFcmToken:    function(){return window.WALLS_FCM_TOKEN}" +
                               "};" +
-                              "window.Android_download=    function(u,n){window.WallsApp.download(u,n)};" +
-                              "window.Android_setWallpaper=function(u,t){window.WallsApp.setWallpaper(u,t)};" +
-                              "window.Android_pickImages=  function(cb){window.WallsApp.pickImages(cb)};" +
-                              "window.Android_hasStorage=  function(){return window.WallsApp.hasStorage()};" +
-                              "window.Android_getFcmToken= function(){return window.WALLS_FCM_TOKEN};" +
                               "window.dispatchEvent(new CustomEvent('walls_native_ready',{detail:{" +
                               "  hasStorage:" + hasStoragePermission() + ",dark:" + dark + ",platform:'android',fcmToken:'" + fcmToken + "'}}));" +
                               "window.dispatchEvent(new CustomEvent('walls_theme',{detail:{dark:" + dark + "}}));", null);
@@ -327,16 +320,32 @@ jobs:
 
                       @Override public void onReceivedError(WebView v, WebResourceRequest req, WebResourceError err) {
                           if (!req.isForMainFrame()) return;
-                          if (toR != null) { toH.removeCallbacks(toR); toR = null; }
+                          if (toR[0] != null) { toH.removeCallbacks(toR[0]); toR[0] = null; }
                           splashDone = true;
                           runOnUiThread(() -> { hideLoadingOverlay(v); v.loadData(offlineHtml(), "text/html", "UTF-8"); });
                       }
 
                       @Override public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest req) {
                           String url = req.getUrl().toString();
-                          if (url.startsWith(BASE_URL) || url.startsWith("https://localhost") || url.startsWith("http://localhost") || url.startsWith("capacitor://")) return false;
+                          if (url.startsWith(BASE_URL) || url.startsWith("https://localhost") || url.startsWith("capacitor://")) return false;
                           try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url))); } catch (Exception ignored) {}
                           return true;
+                      }
+
+                      // ── Intercept requests to serve local private files to WebView
+                      @Override public WebResourceResponse shouldInterceptRequest(WebView v, WebResourceRequest req) {
+                          String url = req.getUrl().toString();
+                          // Pattern: https://walls.local/wallpapers/<filename>
+                          if (url.startsWith("https://walls.local/wallpapers/")) {
+                              String filename = url.substring("https://walls.local/wallpapers/".length());
+                              File f = new File(getExternalFilesDir(WALLS_PRIV_DIR), filename);
+                              if (f.exists()) {
+                                  try {
+                                      return new WebResourceResponse("image/jpeg", "utf-8", new FileInputStream(f));
+                                  } catch (Exception ignored) {}
+                              }
+                          }
+                          return super.shouldInterceptRequest(v, req);
                       }
                   });
 
@@ -353,25 +362,23 @@ jobs:
                           new AlertDialog.Builder(MainActivity.this).setTitle("Walls").setMessage(msg)
                               .setPositiveButton("OK",(d,w)->r.confirm()).setOnCancelListener(d->r.confirm()).show(); return true;
                       }
-                      @Override public boolean onJsPrompt(WebView v, String url, String msg, String def, JsPromptResult r) {
-                          new AlertDialog.Builder(MainActivity.this).setTitle("Walls").setMessage(msg)
-                              .setPositiveButton("OK",(d,w)->r.confirm(def)).setNegativeButton("Cancel",(d,w)->r.cancel())
-                              .setOnCancelListener(d->r.cancel()).show(); return true;
-                      }
                   });
               }
 
+              // ── Loading overlay shown between splash and page ready ────────────────
               private android.widget.FrameLayout loadingOverlay;
               void showLoadingOverlay(WebView wv) {
                   if (loadingOverlay != null && loadingOverlay.getParent() != null) return;
                   android.widget.FrameLayout fl = new android.widget.FrameLayout(this);
                   fl.setBackgroundColor(lastBgColor);
+                  // Spinner
                   android.widget.ProgressBar pb = new android.widget.ProgressBar(this);
                   pb.setIndeterminate(true);
-                  pb.getIndeterminateDrawable().setColorFilter(Color.parseColor("#6c63ff"), android.graphics.PorterDuff.Mode.SRC_IN);
-                  android.widget.FrameLayout.LayoutParams lp = new android.widget.FrameLayout.LayoutParams(120, 120);
+                  pb.getIndeterminateDrawable().setColorFilter(Color.parseColor("#6C47E8"), android.graphics.PorterDuff.Mode.SRC_IN);
+                  android.widget.FrameLayout.LayoutParams lp = new android.widget.FrameLayout.LayoutParams(100, 100);
                   lp.gravity = android.view.Gravity.CENTER;
-                  fl.addView(pb, lp); loadingOverlay = fl;
+                  fl.addView(pb, lp);
+                  loadingOverlay = fl;
                   if (wv.getParent() instanceof android.view.ViewGroup)
                       ((android.view.ViewGroup) wv.getParent()).addView(fl, new android.view.ViewGroup.LayoutParams(-1, -1));
               }
@@ -381,23 +388,211 @@ jobs:
                   loadingOverlay = null;
               }
 
+              // ── Offline HTML — native, no network dependency ─────────────────────
+              private String offlineHtml() {
+                  boolean dark = isDarkTheme();
+                  String bg   = dark ? "#0E0C15" : "#F7F6FB";
+                  String text = dark ? "#EDE9FF" : "#13111A";
+                  String sub  = dark ? "#5C5478" : "#8E89A8";
+                  String btn  = "#6C47E8";
+                  return "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'/>" +
+                      "<style>*{margin:0;padding:0;box-sizing:border-box}" +
+                      "body{background:" + bg + ";color:" + text + ";font-family:-apple-system,BlinkMacSystemFont,'DM Sans',sans-serif;" +
+                      "display:flex;flex-direction:column;align-items:center;justify-content:center;height:100dvh;text-align:center;padding:32px}" +
+                      ".icon{width:72px;height:72px;border-radius:20px;background:#1a1530;display:flex;align-items:center;justify-content:center;margin:0 auto 28px}" +
+                      "svg{width:36px;height:36px}" +
+                      "h1{font-size:22px;font-weight:700;margin-bottom:8px}" +
+                      "p{font-size:14px;color:" + sub + ";line-height:1.65;max-width:260px;margin-bottom:32px}" +
+                      "button{padding:14px 36px;background:" + btn + ";color:#fff;border:none;border-radius:99px;" +
+                      "font-size:15px;font-weight:700;cursor:pointer;font-family:inherit}" +
+                      "</style></head><body>" +
+                      "<div class='icon'><svg viewBox='0 0 24 24' fill='none' stroke='#6C47E8' stroke-width='1.8'>" +
+                      "<line x1='1' y1='1' x2='23' y2='23'/>" +
+                      "<path d='M16.72 11.06A10.94 10.94 0 0119 12.55M5 12.55a10.94 10.94 0 015.17-2.39M10.71 5.05A16 16 0 0122.56 9M1.42 9a15.91 15.91 0 014.7-2.88M8.53 16.11a6 6 0 016.95 0M12 20h.01'/>" +
+                      "</svg></div>" +
+                      "<h1>No connection</h1>" +
+                      "<p>Check your internet and try again. Your saved wallpapers are still available.</p>" +
+                      "<button onclick='location.reload()'>Retry</button>" +
+                      "</body></html>";
+              }
+
+              // ── JS Bridge ────────────────────────────────────────────────────────
               private void setupJsBridge() {
                   getBridge().getWebView().addJavascriptInterface(new Object() {
+
+                      // ── DOWNLOAD to private folder ───────────────────────────────
+                      // Called from JS: WallsApp.download(url, id, title)
+                      // Saves to Android/data/.../files/wallpapers/walls_<id>.jpg
+                      // Callbacks: walls_dl_progress, walls_dl_done {localUrl, id}
                       @android.webkit.JavascriptInterface
-                      public void downloadFile(String url, String filename) {
+                      public void downloadFile(String url, String wallpaperId, String title) {
                           if (url == null || url.isEmpty()) return;
-                          String name = (filename != null && !filename.isEmpty()) ? filename : "wallpaper.jpg";
-                          if (!name.contains(".")) name += ".jpg";
-                          final String fn = name;
-                          if (hasStoragePermission()) runOnUiThread(() -> triggerDownload(url, fn));
-                          else { pendingDlUrl = url; pendingDlName = fn; requestStoragePermission(); }
+                          final String id    = (wallpaperId != null && !wallpaperId.isEmpty()) ? wallpaperId : String.valueOf(System.currentTimeMillis());
+                          final String fname = "walls_" + id + ".jpg";
+                          final String ttl   = (title != null && !title.isEmpty()) ? title : "Wallpaper";
+                          new Thread(() -> {
+                              try {
+                                  File dir = getExternalFilesDir(WALLS_PRIV_DIR);
+                                  if (dir == null) throw new Exception("Storage unavailable");
+                                  dir.mkdirs();
+                                  File outFile = new File(dir, fname);
+
+                                  // Skip if already downloaded
+                                  if (outFile.exists() && outFile.length() > 1024) {
+                                      String localUrl = "https://walls.local/wallpapers/" + fname;
+                                      notifyJsDownloadDone(id, fname, ttl, localUrl);
+                                      return;
+                                  }
+
+                                  HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+                                  conn.setConnectTimeout(15000); conn.setReadTimeout(60000); conn.connect();
+                                  int total = conn.getContentLength();
+                                  InputStream in = conn.getInputStream();
+                                  FileOutputStream out = new FileOutputStream(outFile);
+                                  byte[] buf = new byte[8192]; int read; long done = 0;
+                                  while ((read = in.read(buf)) != -1) {
+                                      out.write(buf, 0, read); done += read;
+                                      if (total > 0) {
+                                          final int pct = (int)(done * 100L / total);
+                                          final String n = ttl;
+                                          WebView wv = getBridge() != null ? getBridge().getWebView() : null;
+                                          if (wv != null) runOnUiThread(() ->
+                                              wv.evaluateJavascript("window.dispatchEvent(new CustomEvent('walls_dl_progress',{detail:{pct:" + pct + ",name:'" + escJs(n) + "'}}))", null));
+                                      }
+                                  }
+                                  out.close(); in.close();
+
+                                  // ── Local URL readable by WebView via shouldInterceptRequest
+                                  String localUrl = "https://walls.local/wallpapers/" + fname;
+                                  notifyJsDownloadDone(id, fname, ttl, localUrl);
+
+                                  // Show notification
+                                  nm.notify(NOTIF_DONE, notifBuilder(DL_CH, "✅ " + ttl, "Saved to Walls").setAutoCancel(true).build());
+                              } catch (Exception e) {
+                                  android.util.Log.e("WallsDL", "Download failed: " + e.getMessage());
+                                  WebView wv = getBridge() != null ? getBridge().getWebView() : null;
+                                  if (wv != null) runOnUiThread(() ->
+                                      wv.evaluateJavascript("window.dispatchEvent(new Event('walls_dl_failed'))", null));
+                              }
+                          }).start();
                       }
+
+                      // ── SET WALLPAPER from local URL (no re-download) ────────────
+                      // localUrl = "https://walls.local/wallpapers/walls_<id>.jpg"
                       @android.webkit.JavascriptInterface
-                      public void setWallpaper(String url, String target) {
-                          if (url == null || url.isEmpty()) return;
-                          if (hasStoragePermission()) runOnUiThread(() -> downloadForWallpaper(url, target));
-                          else { pendingWpUrl = url; pendingWpTarget = target; requestStoragePermission(); }
+                      public void setWallpaper(String localUrl, String target) {
+                          if (localUrl == null || localUrl.isEmpty()) return;
+                          new Thread(() -> {
+                              try {
+                                  Bitmap bmp = null;
+                                  if (localUrl.startsWith("https://walls.local/wallpapers/")) {
+                                      // Read from private folder directly — no network
+                                      String fname = localUrl.substring("https://walls.local/wallpapers/".length());
+                                      File f = new File(getExternalFilesDir(WALLS_PRIV_DIR), fname);
+                                      if (f.exists()) bmp = BitmapFactory.decodeFile(f.getAbsolutePath());
+                                  }
+                                  if (bmp == null) {
+                                      // Fallback: download from remote URL
+                                      HttpURLConnection conn = (HttpURLConnection) new URL(localUrl).openConnection();
+                                      conn.setConnectTimeout(15000); conn.setReadTimeout(30000); conn.connect();
+                                      bmp = BitmapFactory.decodeStream(conn.getInputStream());
+                                  }
+                                  if (bmp == null) throw new Exception("Could not decode image");
+                                  int flags = "lock".equals(target) ? WallpaperManager.FLAG_LOCK :
+                                              "both".equals(target) ? WallpaperManager.FLAG_SYSTEM | WallpaperManager.FLAG_LOCK :
+                                              WallpaperManager.FLAG_SYSTEM;
+                                  WallpaperManager wm = WallpaperManager.getInstance(MainActivity.this);
+                                  if (Build.VERSION.SDK_INT >= 24) wm.setBitmap(bmp, null, true, flags);
+                                  else wm.setBitmap(bmp);
+                                  logWallpaperSet(target);
+                                  runOnUiThread(() -> {
+                                      Toast.makeText(MainActivity.this, "Wallpaper set! 🎉", Toast.LENGTH_SHORT).show();
+                                      WebView wv = getBridge() != null ? getBridge().getWebView() : null;
+                                      if (wv != null) wv.evaluateJavascript("window.dispatchEvent(new CustomEvent('walls_wp_set'))", null);
+                                  });
+                              } catch (Exception e) {
+                                  runOnUiThread(() -> Toast.makeText(MainActivity.this, "Could not set wallpaper: " + e.getMessage(), Toast.LENGTH_LONG).show());
+                              }
+                          }).start();
                       }
+
+                      // ── EXPORT private file → Pictures/Walls/ (Gallery) ──────────
+                      @android.webkit.JavascriptInterface
+                      public void exportToGallery(String localUrl, String title) {
+                          if (localUrl == null || !localUrl.startsWith("https://walls.local/wallpapers/")) return;
+                          String fname = localUrl.substring("https://walls.local/wallpapers/".length());
+                          File src = new File(getExternalFilesDir(WALLS_PRIV_DIR), fname);
+                          if (!src.exists()) { runOnUiThread(() -> Toast.makeText(MainActivity.this, "File not found", Toast.LENGTH_SHORT).show()); return; }
+                          new Thread(() -> {
+                              try {
+                                  String displayName = (title != null && !title.isEmpty() ? title : "wallpaper") + ".jpg";
+                                  OutputStream fos;
+                                  if (Build.VERSION.SDK_INT >= 29) {
+                                      ContentValues cv = new ContentValues();
+                                      cv.put(MediaStore.Images.Media.DISPLAY_NAME, displayName);
+                                      cv.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
+                                      cv.put(MediaStore.Images.Media.RELATIVE_PATH, android.os.Environment.DIRECTORY_PICTURES + "/" + WALLS_PUB_DIR);
+                                      cv.put(MediaStore.Images.Media.IS_PENDING, 1);
+                                      Uri uri = getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, cv);
+                                      fos = getContentResolver().openOutputStream(uri);
+                                      pipe(new FileInputStream(src), fos);
+                                      cv.clear(); cv.put(MediaStore.Images.Media.IS_PENDING, 0);
+                                      getContentResolver().update(uri, cv, null, null);
+                                  } else {
+                                      File pubDir = new File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_PICTURES), WALLS_PUB_DIR);
+                                      pubDir.mkdirs();
+                                      File dst = new File(pubDir, displayName);
+                                      pipe(new FileInputStream(src), new FileOutputStream(dst));
+                                      sendBroadcast(new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE).setData(Uri.fromFile(dst)));
+                                  }
+                                  runOnUiThread(() -> Toast.makeText(MainActivity.this, "Exported to Gallery 📁", Toast.LENGTH_SHORT).show());
+                              } catch (Exception e) {
+                                  runOnUiThread(() -> Toast.makeText(MainActivity.this, "Export failed: " + e.getMessage(), Toast.LENGTH_LONG).show());
+                              }
+                          }).start();
+                      }
+
+                      // ── DELETE private file ──────────────────────────────────────
+                      @android.webkit.JavascriptInterface
+                      public void deleteFile(String localUrl) {
+                          if (localUrl == null || !localUrl.startsWith("https://walls.local/wallpapers/")) return;
+                          String fname = localUrl.substring("https://walls.local/wallpapers/".length());
+                          File f = new File(getExternalFilesDir(WALLS_PRIV_DIR), fname);
+                          if (f.exists()) f.delete();
+                      }
+
+                      // ── GET list of saved wallpapers from private folder ─────────
+                      @android.webkit.JavascriptInterface
+                      public String getSavedList(String callbackName) {
+                          new Thread(() -> {
+                              try {
+                                  File dir = getExternalFilesDir(WALLS_PRIV_DIR);
+                                  JSONArray arr = new JSONArray();
+                                  if (dir != null && dir.exists()) {
+                                      File[] files = dir.listFiles((d, name) -> name.startsWith("walls_") && name.endsWith(".jpg"));
+                                      if (files != null) {
+                                          java.util.Arrays.sort(files, (a, b) -> Long.compare(b.lastModified(), a.lastModified()));
+                                          for (File f : files) {
+                                              String localUrl = "https://walls.local/wallpapers/" + f.getName();
+                                              arr.put(new JSONObject()
+                                                  .put("localUrl", localUrl)
+                                                  .put("filename", f.getName())
+                                                  .put("size", f.length())
+                                                  .put("savedAt", f.lastModified()));
+                                          }
+                                      }
+                                  }
+                                  final String json = arr.toString();
+                                  WebView wv = getBridge() != null ? getBridge().getWebView() : null;
+                                  if (wv != null && callbackName != null)
+                                      runOnUiThread(() -> wv.evaluateJavascript("if(typeof window['" + callbackName + "']==='function')window['" + callbackName + "'](" + json + ");", null));
+                              } catch (Exception e) {
+                                  android.util.Log.e("WallsSaved", e.getMessage());
+                              }
+                          }).start();
+                          return "pending";
+                      }
+
                       @android.webkit.JavascriptInterface public void    requestStoragePermission() { runOnUiThread(() -> MainActivity.this.requestStoragePermission()); }
                       @android.webkit.JavascriptInterface public boolean hasStorage()   { return hasStoragePermission(); }
                       @android.webkit.JavascriptInterface public boolean isAndroid()    { return true; }
@@ -412,122 +607,12 @@ jobs:
                       @android.webkit.JavascriptInterface public String getWallpaperLog() {
                           try { return getSharedPreferences(PREF_FILE, MODE_PRIVATE).getString("wp_set_log", "[]"); } catch (Exception e) { return "[]"; }
                       }
-
-                      // FIX: reads ALL images (scoped storage for API 29+, file path for <29)
-                      // Also reads Pictures/Walls/ folder specifically for local wallpapers
-                      @android.webkit.JavascriptInterface
-                      public String getSystemImages(String callbackName) {
-                          new Thread(() -> {
-                              try {
-                                  JSONArray arr = new JSONArray();
-                                  if (Build.VERSION.SDK_INT >= 29) {
-                                      // Android 10+ (API 29+): use MediaStore content URIs (no file path needed)
-                                      String[] proj = { MediaStore.Images.Media._ID, MediaStore.Images.Media.DISPLAY_NAME, MediaStore.Images.Media.SIZE, MediaStore.Images.Media.RELATIVE_PATH };
-                                      Cursor cur = getContentResolver().query(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, proj, null, null, MediaStore.Images.Media.DATE_ADDED + " DESC");
-                                      if (cur != null) {
-                                          int idIdx   = cur.getColumnIndexOrThrow(MediaStore.Images.Media._ID);
-                                          int nameIdx = cur.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME);
-                                          int sizeIdx = cur.getColumnIndexOrThrow(MediaStore.Images.Media.SIZE);
-                                          int relIdx  = cur.getColumnIndexOrThrow(MediaStore.Images.Media.RELATIVE_PATH);
-                                          while (cur.moveToNext()) {
-                                              long id = cur.getLong(idIdx);
-                                              Uri contentUri = Uri.withAppendedPath(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, String.valueOf(id));
-                                              String relPath = cur.getString(relIdx);
-                                              boolean isWallsFolder = relPath != null && relPath.contains("Walls");
-                                              arr.put(new JSONObject()
-                                                  .put("uri", contentUri.toString())
-                                                  .put("name", cur.getString(nameIdx))
-                                                  .put("size", cur.getLong(sizeIdx))
-                                                  .put("path", contentUri.toString())  // same as uri on API 29+
-                                                  .put("isLocal", isWallsFolder));
-                                          }
-                                          cur.close();
-                                      }
-                                  } else {
-                                      // Android 9 and below (API <29): use DATA file path
-                                      String[] proj = { MediaStore.Images.Media.DATA, MediaStore.Images.Media.DISPLAY_NAME, MediaStore.Images.Media.SIZE };
-                                      Cursor cur = getContentResolver().query(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, proj, null, null, MediaStore.Images.Media.DATE_ADDED + " DESC");
-                                      if (cur != null) {
-                                          int di = cur.getColumnIndexOrThrow(MediaStore.Images.Media.DATA);
-                                          int ni = cur.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME);
-                                          int si = cur.getColumnIndexOrThrow(MediaStore.Images.Media.SIZE);
-                                          while (cur.moveToNext()) {
-                                              String filePath = cur.getString(di);
-                                              boolean isWallsFolder = filePath != null && filePath.contains("/Walls/");
-                                              arr.put(new JSONObject()
-                                                  .put("uri", "file://" + filePath)
-                                                  .put("path", filePath)
-                                                  .put("name", cur.getString(ni))
-                                                  .put("size", cur.getLong(si))
-                                                  .put("isLocal", isWallsFolder));
-                                          }
-                                          cur.close();
-                                      }
-                                  }
-                                  final String json = arr.toString();
-                                  WebView wv = getBridge() != null ? getBridge().getWebView() : null;
-                                  if (wv != null && callbackName != null && !callbackName.isEmpty())
-                                      runOnUiThread(() -> wv.evaluateJavascript("if(typeof window['" + callbackName + "']==='function')window['" + callbackName + "'](" + json + ");", null));
-                              } catch (Exception e) {
-                                  android.util.Log.e("WallsStorage", "getSystemImages error: " + e.getMessage());
-                                  WebView wv = getBridge() != null ? getBridge().getWebView() : null;
-                                  if (wv != null && callbackName != null && !callbackName.isEmpty())
-                                      runOnUiThread(() -> wv.evaluateJavascript("if(typeof window['" + callbackName + "']==='function')window['" + callbackName + "']([]);", null));
-                              }
-                          }).start();
-                          return "pending";
-                      }
-
-                      // FIX: dedicated method to read only Pictures/Walls/ downloaded wallpapers
-                      @android.webkit.JavascriptInterface
-                      public String getWallsFolder(String callbackName) {
-                          new Thread(() -> {
-                              try {
-                                  JSONArray arr = new JSONArray();
-                                  if (Build.VERSION.SDK_INT >= 29) {
-                                      String selection = MediaStore.Images.Media.RELATIVE_PATH + " LIKE ?";
-                                      String[] selArgs = { "%Walls/%" };
-                                      String[] proj = { MediaStore.Images.Media._ID, MediaStore.Images.Media.DISPLAY_NAME, MediaStore.Images.Media.SIZE };
-                                      Cursor cur = getContentResolver().query(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, proj, selection, selArgs, MediaStore.Images.Media.DATE_ADDED + " DESC");
-                                      if (cur != null) {
-                                          int idIdx   = cur.getColumnIndexOrThrow(MediaStore.Images.Media._ID);
-                                          int nameIdx = cur.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME);
-                                          int sizeIdx = cur.getColumnIndexOrThrow(MediaStore.Images.Media.SIZE);
-                                          while (cur.moveToNext()) {
-                                              long id = cur.getLong(idIdx);
-                                              Uri contentUri = Uri.withAppendedPath(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, String.valueOf(id));
-                                              arr.put(new JSONObject().put("uri", contentUri.toString()).put("name", cur.getString(nameIdx)).put("size", cur.getLong(sizeIdx)).put("isLocal", true));
-                                          }
-                                          cur.close();
-                                      }
-                                  } else {
-                                      File wallsDir = new File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_PICTURES), "Walls");
-                                      if (wallsDir.exists()) {
-                                          File[] files = wallsDir.listFiles((d, name) -> name.toLowerCase().matches(".*\\.(jpg|jpeg|png|webp)"));
-                                          if (files != null) for (File f : files)
-                                              arr.put(new JSONObject().put("uri", "file://" + f.getAbsolutePath()).put("path", f.getAbsolutePath()).put("name", f.getName()).put("size", f.length()).put("isLocal", true));
-                                      }
-                                  }
-                                  final String json = arr.toString();
-                                  WebView wv = getBridge() != null ? getBridge().getWebView() : null;
-                                  if (wv != null && callbackName != null && !callbackName.isEmpty())
-                                      runOnUiThread(() -> wv.evaluateJavascript("if(typeof window['" + callbackName + "']==='function')window['" + callbackName + "'](" + json + ");", null));
-                              } catch (Exception e) {
-                                  android.util.Log.e("WallsStorage", "getWallsFolder error: " + e.getMessage());
-                                  WebView wv = getBridge() != null ? getBridge().getWebView() : null;
-                                  if (wv != null && callbackName != null && !callbackName.isEmpty())
-                                      runOnUiThread(() -> wv.evaluateJavascript("if(typeof window['" + callbackName + "']==='function')window['" + callbackName + "']([]);", null));
-                              }
-                          }).start();
-                          return "pending";
-                      }
-
-                      @android.webkit.JavascriptInterface
-                      public void shareFile(String path) {
-                          if (path == null || path.isEmpty()) return;
+                      @android.webkit.JavascriptInterface public void shareFile(String localUrl) {
+                          if (localUrl == null || !localUrl.startsWith("https://walls.local/wallpapers/")) return;
                           runOnUiThread(() -> {
                               try {
-                                  File f = new File(path.replace("file://", ""));
+                                  String fname = localUrl.substring("https://walls.local/wallpapers/".length());
+                                  File f = new File(getExternalFilesDir(WALLS_PRIV_DIR), fname);
                                   Uri uri = FileProvider.getUriForFile(MainActivity.this, AUTHORITY, f);
                                   startActivity(Intent.createChooser(new Intent(Intent.ACTION_SEND).setType("image/*")
                                       .putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "Share wallpaper"));
@@ -537,86 +622,43 @@ jobs:
                   }, "Android");
               }
 
+              // ── Helper: fire walls_dl_done with localUrl back to JS ───────────────
+              private void notifyJsDownloadDone(String id, String fname, String title, String localUrl) {
+                  WebView wv = getBridge() != null ? getBridge().getWebView() : null;
+                  if (wv == null) return;
+                  runOnUiThread(() -> wv.evaluateJavascript(
+                      "window.dispatchEvent(new CustomEvent('walls_dl_done',{detail:{" +
+                      "id:'" + escJs(id) + "'," +
+                      "localUrl:'" + escJs(localUrl) + "'," +
+                      "filename:'" + escJs(fname) + "'," +
+                      "name:'" + escJs(title) + "'}}))", null));
+              }
+
+              private void pipe(InputStream in, OutputStream out) throws IOException {
+                  byte[] buf = new byte[8192]; int n;
+                  while ((n = in.read(buf)) != -1) out.write(buf, 0, n);
+                  in.close(); out.close();
+              }
+
+              private String escJs(String s) { return s == null ? "" : s.replace("\\","\\\\").replace("'","\\'").replace("\n","\\n"); }
+
               private boolean hasStoragePermission() {
-                  if (Build.VERSION.SDK_INT >= 34)
-                      return ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED
-                          || ContextCompat.checkSelfPermission(this, "android.permission.READ_MEDIA_VISUAL_USER_SELECTED") == PackageManager.PERMISSION_GRANTED;
-                  if (Build.VERSION.SDK_INT >= 33) return ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED;
-                  if (Build.VERSION.SDK_INT >= 29) return true; // scoped storage — no permission needed to read own files
+                  if (Build.VERSION.SDK_INT >= 29) return true; // private folder needs no permission
                   return ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
               }
 
               private void requestStoragePermission() {
-                  if (Build.VERSION.SDK_INT >= 34)
-                      ActivityCompat.requestPermissions(this, new String[]{ Manifest.permission.READ_MEDIA_IMAGES, "android.permission.READ_MEDIA_VISUAL_USER_SELECTED" }, REQ_STORAGE);
-                  else if (Build.VERSION.SDK_INT >= 33)
-                      ActivityCompat.requestPermissions(this, new String[]{ Manifest.permission.READ_MEDIA_IMAGES }, REQ_STORAGE);
-                  else if (Build.VERSION.SDK_INT < 29)
-                      ActivityCompat.requestPermissions(this, new String[]{ Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.READ_EXTERNAL_STORAGE }, REQ_STORAGE);
-                  // API 29-32: no runtime permission needed for scoped storage
+                  if (Build.VERSION.SDK_INT >= 29) return; // not needed for private folder
+                  ActivityCompat.requestPermissions(this, new String[]{ Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.READ_EXTERNAL_STORAGE }, REQ_STORAGE);
               }
 
               @Override
               public void onRequestPermissionsResult(int code, @NonNull String[] perms, @NonNull int[] results) {
                   super.onRequestPermissionsResult(code, perms, results);
-                  if (code != REQ_STORAGE) return;
+                  if (code == REQ_NOTIF) return;
                   boolean granted = results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED;
                   WebView wv = getBridge() != null ? getBridge().getWebView() : null;
                   if (wv != null) wv.evaluateJavascript("window.dispatchEvent(new CustomEvent('walls_perm_" + (granted ? "granted" : "denied") + "'))", null);
-                  if (!granted) { Toast.makeText(this, "Storage permission denied.", Toast.LENGTH_LONG).show(); return; }
-                  if (pendingDlUrl != null) { final String u = pendingDlUrl, n = pendingDlName; pendingDlUrl = null; pendingDlName = null; runOnUiThread(() -> triggerDownload(u, n)); }
-                  if (pendingWpUrl != null) { final String u = pendingWpUrl, t = pendingWpTarget; pendingWpUrl = null; pendingWpTarget = null; runOnUiThread(() -> downloadForWallpaper(u, t)); }
-              }
-
-              private void triggerDownload(String url, String filename) {
-                  lastFile = filename; downloadStartTime = System.currentTimeMillis();
-                  Toast.makeText(this, "Starting download…", Toast.LENGTH_SHORT).show();
-                  nm.notify(NOTIF_ING, notifBuilder(DL_CH, "⬇️ Downloading", lastFile).setProgress(0,0,true).setOngoing(true).setOnlyAlertOnce(true).build());
-                  try {
-                      new File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_PICTURES), WALLS_FOLDER).mkdirs();
-                      DownloadManager.Request req = new DownloadManager.Request(Uri.parse(url))
-                          .setTitle(lastFile).setDescription("Saving to Pictures/Walls…").setMimeType("image/jpeg")
-                          .setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_PICTURES, WALLS_FOLDER + "/" + lastFile)
-                          .setNotificationVisibility(DownloadManager.Request.VISIBILITY_HIDDEN);
-                      lastId = dm.enqueue(req); startProgressPolling();
-                      WebView wv = getBridge() != null ? getBridge().getWebView() : null;
-                      if (wv != null) wv.evaluateJavascript("window.dispatchEvent(new CustomEvent('walls_dl_started',{detail:{name:'" + lastFile + "'}}))", null);
-                  } catch (Exception e) { nm.cancel(NOTIF_ING); runOnUiThread(() -> Toast.makeText(this, "Download failed: " + e.getMessage(), Toast.LENGTH_LONG).show()); }
-              }
-
-              private void downloadForWallpaper(String url, String target) {
-                  Toast.makeText(this, "Downloading wallpaper…", Toast.LENGTH_SHORT).show();
-                  new Thread(() -> {
-                      try {
-                          HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
-                          conn.setConnectTimeout(15000); conn.setReadTimeout(30000); conn.connect();
-                          Bitmap bmp = BitmapFactory.decodeStream(conn.getInputStream());
-                          if (bmp == null) throw new Exception("Could not decode image");
-                          int flags = "lock".equals(target) ? WallpaperManager.FLAG_LOCK :
-                                      "both".equals(target) ? WallpaperManager.FLAG_SYSTEM | WallpaperManager.FLAG_LOCK : WallpaperManager.FLAG_SYSTEM;
-                          applyWallpaperBitmap(bmp, flags);
-                          String fname = "walls_" + System.currentTimeMillis() + ".jpg";
-                          File dir = new File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_PICTURES), WALLS_FOLDER);
-                          dir.mkdirs(); File out = new File(dir, fname);
-                          try (FileOutputStream fos = new FileOutputStream(out)) { bmp.compress(Bitmap.CompressFormat.JPEG, 95, fos); }
-                          scanFile(out);
-                      } catch (Exception e) { runOnUiThread(() -> Toast.makeText(this, "Could not set wallpaper: " + e.getMessage(), Toast.LENGTH_LONG).show()); }
-                  }).start();
-              }
-
-              private void applyWallpaperBitmap(Bitmap bmp, int flags) {
-                  try {
-                      WallpaperManager wm = WallpaperManager.getInstance(this);
-                      if (Build.VERSION.SDK_INT >= 24) wm.setBitmap(bmp, null, true, flags); else wm.setBitmap(bmp);
-                      String target = (flags == WallpaperManager.FLAG_LOCK) ? "Lock Screen" :
-                                      (flags == (WallpaperManager.FLAG_SYSTEM | WallpaperManager.FLAG_LOCK)) ? "Both" : "Home Screen";
-                      logWallpaperSet(target);
-                      runOnUiThread(() -> {
-                          Toast.makeText(this, "Wallpaper set! 🎉", Toast.LENGTH_SHORT).show();
-                          WebView wv = getBridge() != null ? getBridge().getWebView() : null;
-                          if (wv != null) wv.evaluateJavascript("window.dispatchEvent(new CustomEvent('walls_wp_set'))", null);
-                      });
-                  } catch (Exception e) { runOnUiThread(() -> Toast.makeText(this, "Could not set wallpaper: " + e.getMessage(), Toast.LENGTH_LONG).show()); }
               }
 
               private void logWallpaperSet(String target) {
@@ -631,235 +673,69 @@ jobs:
                   } catch (Exception ignored) {}
               }
 
-              private void applyWallpaper(File file, int flags) {
-                  new Thread(() -> {
-                      try {
-                          Bitmap bmp = BitmapFactory.decodeFile(file.getAbsolutePath());
-                          if (bmp == null) throw new Exception("Could not decode image");
-                          applyWallpaperBitmap(bmp, flags);
-                      } catch (Exception e) { runOnUiThread(() -> Toast.makeText(this, "Could not set wallpaper: " + e.getMessage(), Toast.LENGTH_LONG).show()); }
-                  }).start();
-              }
-
-              private void scanFile(File file) { sendBroadcast(new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE).setData(Uri.fromFile(file))); }
               String getVersion() { try { return getPackageManager().getPackageInfo(getPackageName(), 0).versionName; } catch (Exception e) { return "1.0.0"; } }
-
-              private void startProgressPolling() {
-                  stopProgressPolling();
-                  progressRunnable = new Runnable() {
-                      @Override public void run() {
-                          if (lastId == -1) return;
-                          if (System.currentTimeMillis() - downloadStartTime > TIMEOUT_MS) {
-                              dm.remove(lastId); lastId = -1; nm.cancel(NOTIF_ING);
-                              nm.notify(NOTIF_DONE, notifBuilder(DL_CH, "Download Timed Out", "\"" + lastFile + "\" took too long.").setAutoCancel(true).build());
-                              runOnUiThread(() -> Toast.makeText(MainActivity.this, "Download timed out.", Toast.LENGTH_LONG).show()); return;
-                          }
-                          Cursor c = dm.query(new DownloadManager.Query().setFilterById(lastId));
-                          if (c == null || !c.moveToFirst()) { if (c != null) c.close(); progressHandler.postDelayed(this, 1000); return; }
-                          int    status   = c.getInt(c.getColumnIndex(DownloadManager.COLUMN_STATUS));
-                          long   dl       = c.getLong(c.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR));
-                          long   tot      = c.getLong(c.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES));
-                          String localUri = c.getString(c.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI));
-                          if (localUri != null) lastLocalPath = localUri;
-                          c.close();
-                          if (status == DownloadManager.STATUS_FAILED) {
-                              stopProgressPolling(); nm.cancel(NOTIF_ING);
-                              nm.notify(NOTIF_DONE, notifBuilder(DL_CH, "Download Failed", "\"" + lastFile + "\" could not be downloaded.").setAutoCancel(true).build());
-                              runOnUiThread(() -> Toast.makeText(MainActivity.this, "Download failed.", Toast.LENGTH_LONG).show()); return;
-                          }
-                          if (status == DownloadManager.STATUS_RUNNING || status == DownloadManager.STATUS_PAUSED) {
-                              if (tot > 0) {
-                                  int pct = (int)(dl * 100L / tot);
-                                  String sz  = dl  < 1<<20 ? String.format("%.1f KB", dl /1024f) : String.format("%.1f MB", dl /(1024f*1024));
-                                  String tsz = tot < 1<<20 ? String.format("%.1f KB", tot/1024f) : String.format("%.1f MB", tot/(1024f*1024));
-                                  NotificationCompat.Builder nb = notifBuilder(DL_CH, lastFile, sz + " / " + tsz + "  ·  " + pct + "%")
-                                      .setProgress(100, pct, false).setOngoing(true).setOnlyAlertOnce(true);
-                                  if (!lastLocalPath.isEmpty()) {
-                                      try {
-                                          BitmapFactory.Options o = new BitmapFactory.Options(); o.inSampleSize = 4;
-                                          Bitmap t = BitmapFactory.decodeFile(new java.io.File(android.net.Uri.parse(lastLocalPath).getPath()).getAbsolutePath(), o);
-                                          if (t != null) nb.setLargeIcon(t);
-                                      } catch (Exception ignored) {}
-                                  }
-                                  nm.notify(NOTIF_ING, nb.build());
-                                  WebView wv = getBridge() != null ? getBridge().getWebView() : null;
-                                  if (wv != null) wv.evaluateJavascript("window.dispatchEvent(new CustomEvent('walls_dl_progress',{detail:{pct:" + pct + ",name:'" + lastFile + "'}}))", null);
-                              }
-                              progressHandler.postDelayed(this, 1000);
-                          } else { stopProgressPolling(); }
-                      }
-                  };
-                  progressHandler.postDelayed(progressRunnable, 500);
-              }
-
-              private void stopProgressPolling() {
-                  if (progressRunnable != null) { progressHandler.removeCallbacks(progressRunnable); progressRunnable = null; }
-              }
-
-              private void registerDlReceiver() {
-                  dlReceiver = new BroadcastReceiver() {
-                      @Override public void onReceive(Context ctx, Intent intent) {
-                          long id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1);
-                          if (id != lastId) return;
-                          stopProgressPolling();
-                          Cursor c = dm.query(new DownloadManager.Query().setFilterById(id));
-                          if (c == null || !c.moveToFirst()) { if (c != null) c.close(); return; }
-                          int    status = c.getInt(c.getColumnIndex(DownloadManager.COLUMN_STATUS));
-                          String uri    = c.getString(c.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI));
-                          int    reason = c.getInt(c.getColumnIndex(DownloadManager.COLUMN_REASON));
-                          c.close(); nm.cancel(NOTIF_ING);
-                          runOnUiThread(() -> {
-                              if (status == DownloadManager.STATUS_SUCCESSFUL && uri != null) onDownloadSuccess(ctx, uri);
-                              else {
-                                  nm.notify(NOTIF_DONE, notifBuilder(DL_CH, "Download Failed", "Could not download \"" + lastFile + "\".").setAutoCancel(true).build());
-                                  Toast.makeText(ctx, "Download failed (code " + reason + ")", Toast.LENGTH_LONG).show();
-                              }
-                          });
-                      }
-                  };
-                  IntentFilter f = new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE);
-                  if (Build.VERSION.SDK_INT >= 33) registerReceiver(dlReceiver, f, RECEIVER_NOT_EXPORTED);
-                  else registerReceiver(dlReceiver, f);
-              }
-
-              // FIX: removed "Set as Wallpaper" dialog after download — just show notification
-              private void onDownloadSuccess(Context ctx, String localUri) {
-                  try {
-                      File file = new File(Uri.parse(localUri).getPath()); scanFile(file);
-                      WebView wv = getBridge() != null ? getBridge().getWebView() : null;
-                      if (wv != null) wv.evaluateJavascript("window.dispatchEvent(new CustomEvent('walls_dl_done',{detail:{name:'" + lastFile + "'}}))", null);
-                      Bitmap thumb = null;
-                      try { BitmapFactory.Options o = new BitmapFactory.Options(); o.inSampleSize = 4; thumb = BitmapFactory.decodeFile(file.getAbsolutePath(), o); } catch (Exception ignored) {}
-                      Uri safeUri = FileProvider.getUriForFile(ctx, AUTHORITY, file);
-                      Intent setIntent = Intent.createChooser(new Intent(Intent.ACTION_ATTACH_DATA).setDataAndType(safeUri, "image/*")
-                          .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION).putExtra("mimeType", "image/*"), "Set as wallpaper");
-                      NotificationCompat.Builder nb = notifBuilder(DL_CH, "✅ Wallpaper Saved!", "\"" + lastFile + "\" — tap to set as wallpaper");
-                      if (thumb != null) { nb.setLargeIcon(thumb); nb.setStyle(new NotificationCompat.BigPictureStyle().bigPicture(thumb).bigLargeIcon((Bitmap)null).setBigContentTitle("✅ Wallpaper Saved!").setSummaryText(lastFile)); }
-                      nm.notify(NOTIF_DONE, nb.setContentIntent(PendingIntent.getActivity(ctx, 0, setIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE)).setAutoCancel(true).build());
-                  } catch (Exception e) { nm.notify(NOTIF_DONE, notifBuilder(DL_CH, "Error", "Saved but could not open: " + e.getMessage()).setAutoCancel(true).build()); }
-              }
 
               void mkChannel(String id, String name, String desc) {
                   if (Build.VERSION.SDK_INT < 26) return;
                   NotificationChannel ch = new NotificationChannel(id, name, NotificationManager.IMPORTANCE_HIGH);
                   ch.setDescription(desc); ch.enableVibration(true); ch.setVibrationPattern(new long[]{0,250,100,250});
-                  ch.setSound(android.provider.Settings.System.DEFAULT_NOTIFICATION_URI,
-                      new android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION).build());
                   nm.createNotificationChannel(ch);
               }
 
               NotificationCompat.Builder notifBuilder(String ch, String title, String text) {
                   NotificationCompat.Builder b = new NotificationCompat.Builder(this, ch)
                       .setSmallIcon(R.drawable.ic_notification).setContentTitle(title).setContentText(text)
-                      .setPriority(NotificationCompat.PRIORITY_HIGH).setCategory(NotificationCompat.CATEGORY_STATUS).setDefaults(NotificationCompat.DEFAULT_ALL);
+                      .setPriority(NotificationCompat.PRIORITY_HIGH);
                   try { b.setLargeIcon(BitmapFactory.decodeResource(getResources(), R.mipmap.ic_launcher)); } catch (Exception ignored) {}
                   return b;
-              }
-
-              PendingIntent launchIntent() {
-                  return PendingIntent.getActivity(this, 0, getPackageManager().getLaunchIntentForPackage(getPackageName()),
-                      PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
               }
 
               private void handleDeepLink(Intent intent) {
                   if (intent == null || getBridge() == null) return;
                   Uri data = intent.getData(); if (data == null) return;
-                  String url = data.toString();
                   WebView wv = getBridge().getWebView(); if (wv == null) return;
-                  runOnUiThread(() -> {
-                      showLoadingOverlay(wv);
-                      final Handler dlH = new Handler(Looper.getMainLooper());
-                      final Runnable[] dlT = {null};
-                      wv.setWebViewClient(new WebViewClient() {
-                          @Override public void onPageStarted(WebView v, String u, Bitmap f) {
-                              runOnUiThread(() -> showLoadingOverlay(v));
-                              if (dlT[0] != null) dlH.removeCallbacks(dlT[0]);
-                              dlT[0] = () -> { splashDone = true; runOnUiThread(() -> { hideLoadingOverlay(v); v.loadData(offlineHtml(), "text/html", "UTF-8"); }); };
-                              dlH.postDelayed(dlT[0], 15000);
-                          }
-                          @Override public void onPageFinished(WebView v, String u) {
-                              if (dlT[0] != null) { dlH.removeCallbacks(dlT[0]); dlT[0] = null; }
-                              splashDone = true; runOnUiThread(() -> hideLoadingOverlay(v));
-                          }
-                          @Override public void onReceivedError(WebView v, WebResourceRequest req, WebResourceError err) {
-                              if (!req.isForMainFrame()) return;
-                              if (dlT[0] != null) { dlH.removeCallbacks(dlT[0]); dlT[0] = null; }
-                              splashDone = true; runOnUiThread(() -> { hideLoadingOverlay(v); v.loadData(offlineHtml(), "text/html", "UTF-8"); });
-                          }
-                          @Override public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest req) {
-                              String u = req.getUrl().toString();
-                              if (u.startsWith(BASE_URL) || u.startsWith("https://localhost") || u.startsWith("http://localhost") || u.startsWith("capacitor://")) return false;
-                              try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(u))); } catch (Exception ignored) {}
-                              return true;
-                          }
-                      });
-                      wv.loadUrl(url);
-                      wv.evaluateJavascript("window.dispatchEvent(new CustomEvent('walls_deeplink',{detail:{url:'" + url + "'}}))", null);
-                  });
+                  runOnUiThread(() -> wv.loadUrl(data.toString()));
+              }
+
+              private void handleNotifUrl(Intent intent) {
+                  if (intent == null) return;
+                  String url = intent.getStringExtra("open_url");
+                  if (url == null || url.isEmpty()) return;
+                  WebView wv = getBridge() != null ? getBridge().getWebView() : null;
+                  if (wv != null) runOnUiThread(() -> wv.loadUrl(url));
               }
 
               private void showWelcome() {
                   SharedPreferences prefs = getSharedPreferences(PREF_FILE, MODE_PRIVATE);
-                  boolean first = prefs.getBoolean("first_launch", true);
-                  if (first) prefs.edit().putBoolean("first_launch", false).apply();
-                  nm.notify(NOTIF_WELCOME, notifBuilder(PROMO_CH,
-                      first ? "Welcome to Walls 🖼️" : "🔥 Hot wallpapers waiting!",
-                      first ? "Discover stunning wallpapers curated just for you." : "Check out today's trending wallpapers. Find your next favorite.")
-                      .setContentIntent(launchIntent()).setAutoCancel(true).build());
+                  if (!prefs.getBoolean("first_launch", true)) return;
+                  prefs.edit().putBoolean("first_launch", false).apply();
+                  nm.notify(NOTIF_WELCOME, notifBuilder(PROMO_CH, "Welcome to Walls! 🎨", "Tap to explore thousands of curated wallpapers.")
+                      .setContentIntent(PendingIntent.getActivity(this, 0, getPackageManager().getLaunchIntentForPackage(getPackageName()),
+                          PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE)).setAutoCancel(true).build());
               }
 
               private void checkForUpdate() {
-                  final String cv = getVersion();
-                  SharedPreferences prefs = getSharedPreferences(PREF_FILE, MODE_PRIVATE);
-                  String cachedMin = prefs.getString(PREF_MIN_VER, "");
-                  if (!cachedMin.isEmpty() && isNewer(cachedMin, cv)) { runOnUiThread(() -> showUpdateUI(cv, cachedMin, true)); return; }
                   new Thread(() -> {
                       try {
-                          HttpURLConnection conn = (HttpURLConnection) new URL(BASE_URL + "/version.json").openConnection();
-                          conn.setConnectTimeout(5000); conn.setReadTimeout(5000); conn.setRequestProperty("Cache-Control","no-cache");
-                          if (conn.getResponseCode() != 200) return;
-                          BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+                          HttpURLConnection c = (HttpURLConnection) new URL(BASE_URL + "/api/version").openConnection();
+                          c.setConnectTimeout(8000); c.setReadTimeout(8000); c.connect();
+                          if (c.getResponseCode() != 200) return;
+                          BufferedReader br = new BufferedReader(new InputStreamReader(c.getInputStream()));
                           StringBuilder sb = new StringBuilder(); String line;
-                          while ((line = br.readLine()) != null) sb.append(line); br.close();
-                          JSONObject vObj = new JSONObject(sb.toString());
-                          String latest = vObj.optString("latest",""), minVer = vObj.optString("minVersion","");
-                          if (!minVer.isEmpty()) prefs.edit().putString(PREF_MIN_VER, minVer).apply();
-                          if (!latest.isEmpty() && isNewer(latest, cv)) { boolean forced = !minVer.isEmpty() && isNewer(minVer,cv); runOnUiThread(() -> showUpdateUI(cv,latest,forced)); }
-                      } catch (Exception e) { android.util.Log.e("WallsUpdate", e.getMessage()); }
+                          while ((line = br.readLine()) != null) sb.append(line);
+                          JSONObject obj = new JSONObject(sb.toString());
+                          String latest = obj.optString("version", "");
+                          boolean forced = obj.optBoolean("forced", false);
+                          String current = getVersion();
+                          if (latest.isEmpty() || latest.equals(current)) return;
+                          WebView wv = getBridge() != null ? getBridge().getWebView() : null;
+                          if (wv != null) {
+                              final String l = latest; final boolean f = forced;
+                              runOnUiThread(() -> wv.evaluateJavascript(
+                                  "window.dispatchEvent(new CustomEvent('walls_update',{detail:{latest:'" + escJs(l) + "',forced:" + f + "}}))", null));
+                          }
+                      } catch (Exception ignored) {}
                   }).start();
-              }
-
-              private boolean isNewer(String a, String b) {
-                  try {
-                      String[] av = a.split("\\."), bv = b.split("\\.");
-                      for (int i = 0; i < Math.max(av.length,bv.length); i++) {
-                          int ai = i < av.length ? Integer.parseInt(av[i].trim()) : 0;
-                          int bi = i < bv.length ? Integer.parseInt(bv[i].trim()) : 0;
-                          if (ai != bi) return ai > bi;
-                      }
-                  } catch (Exception ignored) {} return false;
-              }
-
-              private void showUpdateUI(String current, String latest, boolean forced) {
-                  WebView wv = getBridge() != null ? getBridge().getWebView() : null; if (wv == null) return;
-                  boolean dark = isDarkTheme();
-                  String bg=dark?"#0d0d12":"#F1F3F4", fg=dark?"#ffffff":"#111318";
-                  String muted=dark?"rgba(255,255,255,0.5)":"rgba(0,0,0,0.45)", bdr=dark?"rgba(255,255,255,0.08)":"rgba(0,0,0,0.1)";
-                  String label=forced?"Update Required":"Update Available";
-                  String sub="v"+current+" → v"+latest+(forced?" — Required to continue":"");
-                  String dlUrl=BASE_URL+"/download";
-                  String js="(function(){if(document.getElementById('walls-upd-overlay'))return;" +
-                      "var o=document.createElement('div');o.id='walls-upd-overlay';" +
-                      "o.style.cssText='position:fixed;inset:0;background:"+bg+";z-index:2147483647;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:32px;box-sizing:border-box;text-align:center';" +
-                      "var img=document.createElement('img');img.src='file:///android_res/mipmap/ic_launcher.png';img.style.cssText='width:80px;height:80px;border-radius:20px;margin-bottom:24px;box-shadow:0 4px 32px rgba(108,99,255,0.35)';img.onerror=function(){this.style.display='none'};o.appendChild(img);" +
-                      "var h=document.createElement('div');h.textContent='"+label+"';h.style.cssText='font-size:24px;font-weight:800;color:"+fg+";margin-bottom:8px';o.appendChild(h);" +
-                      "var s=document.createElement('div');s.textContent='"+sub+"';s.style.cssText='font-size:14px;color:"+muted+";margin-bottom:40px';o.appendChild(s);" +
-                      "var w=document.createElement('div');w.style.cssText='width:100%;max-width:340px';" +
-                      "var btn=document.createElement('button');btn.textContent='Update Now';btn.style.cssText='width:100%;padding:16px;background:#6c63ff;border:none;border-radius:16px;color:#fff;font-size:16px;font-weight:700;cursor:pointer';" +
-                      "btn.onclick=function(){window.Android&&Android.openUrl('"+dlUrl+"')};w.appendChild(btn);" +
-                      (forced?"":"var later=document.createElement('button');later.textContent='Maybe Later';later.style.cssText='margin-top:10px;width:100%;padding:13px;background:transparent;border:1px solid "+bdr+";border-radius:14px;color:"+muted+";font-size:14px;cursor:pointer;font-family:inherit';later.onclick=function(){document.getElementById('walls-upd-overlay').remove()};w.appendChild(later);") +
-                      "o.appendChild(w);document.body.appendChild(o);})();";
-                  wv.post(() -> wv.evaluateJavascript(js, null));
               }
 
               private void scheduleReminder() {
@@ -872,18 +748,6 @@ jobs:
           EOF
 
       # ─── WallsFirebaseMessagingService.java ──────────────────────────────────
-      # Firebase Console → Custom data keys:
-      #   title      → notification title
-      #   body       → notification body text
-      #   url        → open URL in WebView on tap
-      #   image_url  → single image BigPicture style
-      #   images     → comma-separated URLs for 6-image grid
-      #   total      → total count → shows "+N More" on last grid cell
-      #   channel    → walls_trending | walls_promo | walls_downloads
-      #
-      # IMPORTANT: To show image in Firebase notification you MUST send as
-      # data-only message (no "notification" key in payload), only "data" key.
-      # Firebase Console: use "Additional options > Custom data" for image_url.
       - name: Write WallsFirebaseMessagingService.java
         run: |
           FILE=android/app/src/main/java/ng/name/ovrica/walls/WallsFirebaseMessagingService.java
@@ -895,7 +759,6 @@ jobs:
           import android.content.*;
           import android.graphics.*;
           import android.os.Build;
-          import android.widget.RemoteViews;
           import androidx.core.app.NotificationCompat;
           import com.google.firebase.messaging.FirebaseMessagingService;
           import com.google.firebase.messaging.RemoteMessage;
@@ -907,119 +770,44 @@ jobs:
           public class WallsFirebaseMessagingService extends FirebaseMessagingService {
               private static final int NOTIF_ID = 6001;
 
-              @Override
-              public void onNewToken(String token) {
+              @Override public void onNewToken(String token) {
                   super.onNewToken(token);
                   getSharedPreferences(MainActivity.PREF_FILE, MODE_PRIVATE).edit().putString("fcm_token", token).apply();
-                  android.util.Log.d("FCM", "New token: " + token);
               }
 
-              @Override
-              public void onMessageReceived(RemoteMessage message) {
+              @Override public void onMessageReceived(RemoteMessage message) {
                   super.onMessageReceived(message);
                   NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-                  Map<String, String> data = message.getData();
-
-                  String title   = get(data, "title",   message.getNotification() != null ? message.getNotification().getTitle() : null);
-                  String body    = get(data, "body",    message.getNotification() != null ? message.getNotification().getBody()  : null);
-                  String url     = get(data, "url",     null);
-                  String imgUrl  = get(data, "image_url", null);
-                  // FIX: also check FCM notification object's imageUrl field (set via Firebase Console "Image" field)
-                  if (imgUrl == null && message.getNotification() != null && message.getNotification().getImageUrl() != null)
-                      imgUrl = message.getNotification().getImageUrl().toString();
-                  String images  = get(data, "images",  null);
-                  String channel = get(data, "channel", MainActivity.TREND_CH);
-                  int    total   = 0;
-                  try { total = Integer.parseInt(data.getOrDefault("total", "0")); } catch (Exception ignored) {}
-                  if (title == null) title = "🔥 New Wallpapers!";
-                  if (body  == null) body  = "Fresh picks are live on Walls.";
-
+                  Map<String,String> data = message.getData();
+                  String title   = data.getOrDefault("title",   "🔥 New Wallpapers!");
+                  String body    = data.getOrDefault("body",    "Fresh picks are live on Walls.");
+                  String url     = data.getOrDefault("url",     null);
+                  String imgUrl  = data.getOrDefault("image_url", null);
+                  String channel = data.getOrDefault("channel", MainActivity.TREND_CH);
+                  if (message.getNotification() != null) {
+                      if (message.getNotification().getTitle() != null) title = message.getNotification().getTitle();
+                      if (message.getNotification().getBody()  != null) body  = message.getNotification().getBody();
+                      if (message.getNotification().getImageUrl() != null) imgUrl = message.getNotification().getImageUrl().toString();
+                  }
                   if (Build.VERSION.SDK_INT >= 26) {
-                      NotificationChannel ch = new NotificationChannel(channel, "Trending Wallpapers", NotificationManager.IMPORTANCE_HIGH);
-                      ch.setDescription("FCM push"); ch.enableVibration(true); ch.setVibrationPattern(new long[]{0,250,100,250});
-                      nm.createNotificationChannel(ch);
+                      NotificationChannel ch = new NotificationChannel(channel, "Walls Notifications", NotificationManager.IMPORTANCE_HIGH);
+                      ch.enableVibration(true); nm.createNotificationChannel(ch);
                   }
-
-                  Intent tapIntent = getPackageManager().getLaunchIntentForPackage(getPackageName());
-                  if (url != null && !url.isEmpty()) {
-                      tapIntent = new Intent(this, MainActivity.class);
-                      tapIntent.putExtra("open_url", url);
-                      tapIntent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                  Intent tap = getPackageManager().getLaunchIntentForPackage(getPackageName());
+                  if (url != null) { tap = new Intent(this, MainActivity.class); tap.putExtra("open_url", url); tap.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP); }
+                  PendingIntent pi = PendingIntent.getActivity(this, 0, tap, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+                  NotificationCompat.Builder nb = new NotificationCompat.Builder(this, channel)
+                      .setSmallIcon(R.drawable.ic_notification).setContentTitle(title).setContentText(body)
+                      .setPriority(NotificationCompat.PRIORITY_HIGH).setAutoCancel(true).setContentIntent(pi);
+                  if (imgUrl != null) {
+                      try {
+                          HttpURLConnection c = (HttpURLConnection) new URL(imgUrl).openConnection();
+                          c.setConnectTimeout(10000); c.connect();
+                          Bitmap bmp = BitmapFactory.decodeStream((InputStream) c.getContent());
+                          if (bmp != null) nb.setLargeIcon(bmp).setStyle(new NotificationCompat.BigPictureStyle().bigPicture(bmp).bigLargeIcon((Bitmap)null));
+                      } catch (Exception ignored) {}
                   }
-                  final PendingIntent pi = PendingIntent.getActivity(this, 0, tapIntent,
-                      PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-
-                  final String fTitle = title, fBody = body, fChannel = channel, fImgUrl = imgUrl, fImages = images;
-                  final int fTotal = total;
-
-                  new Thread(() -> {
-                      NotificationCompat.Builder nb = new NotificationCompat.Builder(this, fChannel)
-                          .setSmallIcon(R.drawable.ic_notification)
-                          .setContentTitle(fTitle).setContentText(fBody)
-                          .setPriority(NotificationCompat.PRIORITY_HIGH)
-                          .setDefaults(NotificationCompat.DEFAULT_ALL)
-                          .setVibrate(new long[]{0,250,100,250})
-                          .setContentIntent(pi).setAutoCancel(true);
-
-                      if (fImages != null && !fImages.isEmpty()) {
-                          // 6-image grid style
-                          String[] urls = fImages.split(",");
-                          Bitmap[] bitmaps = new Bitmap[6];
-                          for (int i = 0; i < Math.min(urls.length, 6); i++) {
-                              bitmaps[i] = fetchBitmap(urls[i].trim(), 2);
-                          }
-                          RemoteViews rv = new RemoteViews(getPackageName(), R.layout.notification_grid);
-                          rv.setTextViewText(R.id.notif_title, fTitle);
-                          int[] imgIds = { R.id.img1, R.id.img2, R.id.img3, R.id.img4, R.id.img5, R.id.img6 };
-                          for (int i = 0; i < 6; i++) {
-                              if (bitmaps[i] != null) rv.setImageViewBitmap(imgIds[i], bitmaps[i]);
-                              else                    rv.setImageViewResource(imgIds[i], R.mipmap.ic_launcher);
-                          }
-                          int extra = fTotal > 6 ? fTotal - 5 : 0;
-                          rv.setTextViewText(R.id.more_text, extra > 0 ? "+" + extra + " More" : "");
-                          nb.setCustomBigContentView(rv).setStyle(new NotificationCompat.DecoratedCustomViewStyle());
-
-                      } else if (fImgUrl != null && !fImgUrl.isEmpty()) {
-                          // Single BigPicture — FIX: higher res fetch (inSampleSize=1) + setLargeIcon
-                          Bitmap bmp = fetchBitmap(fImgUrl, 1);
-                          if (bmp != null) {
-                              nb.setLargeIcon(bmp);
-                              nb.setStyle(new NotificationCompat.BigPictureStyle()
-                                  .bigPicture(bmp)
-                                  .bigLargeIcon((Bitmap) null)
-                                  .setBigContentTitle(fTitle)
-                                  .setSummaryText(fBody));
-                          }
-                      }
-                      nm.notify(NOTIF_ID, nb.build());
-                  }).start();
-              }
-
-              // FIX: shared helper for downloading bitmaps with retry + proper stream close
-              private Bitmap fetchBitmap(String imageUrl, int sampleSize) {
-                  HttpURLConnection c = null;
-                  try {
-                      c = (HttpURLConnection) new URL(imageUrl).openConnection();
-                      c.setConnectTimeout(8000); c.setReadTimeout(10000);
-                      c.setRequestProperty("User-Agent", "Walls-Android/1.0");
-                      c.connect();
-                      if (c.getResponseCode() != 200) return null;
-                      BitmapFactory.Options o = new BitmapFactory.Options();
-                      o.inSampleSize = sampleSize;
-                      InputStream is = c.getInputStream();
-                      Bitmap bmp = BitmapFactory.decodeStream(is, null, o);
-                      is.close();
-                      return bmp;
-                  } catch (Exception e) {
-                      android.util.Log.e("FCM", "fetchBitmap failed: " + imageUrl + " — " + e.getMessage());
-                      return null;
-                  } finally {
-                      if (c != null) c.disconnect();
-                  }
-              }
-
-              private String get(Map<String,String> d, String key, String fallback) {
-                  String v = d.get(key); return (v != null && !v.isEmpty()) ? v : fallback;
+                  nm.notify(NOTIF_ID, nb.build());
               }
           }
           EOF
@@ -1031,44 +819,20 @@ jobs:
           mkdir -p $(dirname $FILE)
           cat > $FILE << 'EOF'
           package ng.name.ovrica.walls;
-
-          import android.app.*; import android.content.*; import android.graphics.*;
-          import android.os.*; import androidx.core.app.NotificationCompat;
-          import java.util.concurrent.TimeUnit;
-
+          import android.app.*; import android.content.*; import android.os.Build; import java.util.concurrent.TimeUnit;
+          import androidx.core.app.NotificationCompat;
           public class WallpaperReminderReceiver extends BroadcastReceiver {
-              private static final int NOTIF_ID = 5001;
-
-              @Override
-              public void onReceive(Context ctx, Intent intent) {
-                  reschedule(ctx);
+              @Override public void onReceive(Context ctx, Intent intent) {
                   NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
-                  if (Build.VERSION.SDK_INT >= 26) {
-                      NotificationChannel ch = new NotificationChannel(MainActivity.TREND_CH, "Trending Wallpapers", NotificationManager.IMPORTANCE_HIGH);
-                      ch.setDescription("Hot & trending wallpaper picks"); ch.enableVibration(true);
-                      nm.createNotificationChannel(ch);
-                  }
-                  Bitmap appIcon = null;
-                  try { appIcon = BitmapFactory.decodeResource(ctx.getResources(), R.mipmap.ic_launcher); } catch (Exception ignored) {}
-                  PendingIntent pi = PendingIntent.getActivity(ctx, 0,
-                      ctx.getPackageManager().getLaunchIntentForPackage(ctx.getPackageName()),
-                      PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-                  NotificationCompat.Builder nb = new NotificationCompat.Builder(ctx, MainActivity.TREND_CH)
-                      .setSmallIcon(R.drawable.ic_notification)
-                      .setContentTitle("🔥 Hot wallpapers waiting!")
-                      .setContentText("Fresh picks are live on Walls. Come see what's new.")
-                      .setPriority(NotificationCompat.PRIORITY_HIGH).setDefaults(NotificationCompat.DEFAULT_ALL)
-                      .setVibrate(new long[]{0,250,100,250}).setContentIntent(pi).setAutoCancel(true);
-                  if (appIcon != null) nb.setLargeIcon(appIcon);
-                  nm.notify(NOTIF_ID, nb.build());
-              }
-
-              private void reschedule(Context ctx) {
+                  PendingIntent pi = PendingIntent.getActivity(ctx, 0, ctx.getPackageManager().getLaunchIntentForPackage(ctx.getPackageName()), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+                  nm.notify(5001, new NotificationCompat.Builder(ctx, MainActivity.PROMO_CH)
+                      .setSmallIcon(R.drawable.ic_notification).setContentTitle("Fresh Wallpapers 🎨").setContentText("New wallpapers are waiting for you!")
+                      .setPriority(NotificationCompat.PRIORITY_DEFAULT).setAutoCancel(true).setContentIntent(pi).build());
                   AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
-                  PendingIntent pi = PendingIntent.getBroadcast(ctx, 0, new Intent(ctx, WallpaperReminderReceiver.class), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+                  PendingIntent rpi = PendingIntent.getBroadcast(ctx, 0, new Intent(ctx, WallpaperReminderReceiver.class), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
                   long next = System.currentTimeMillis() + TimeUnit.HOURS.toMillis(6);
-                  if (Build.VERSION.SDK_INT >= 23) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next, pi);
-                  else am.set(AlarmManager.RTC_WAKEUP, next, pi);
+                  if (Build.VERSION.SDK_INT >= 23) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next, rpi);
+                  else am.set(AlarmManager.RTC_WAKEUP, next, rpi);
               }
           }
           EOF
@@ -1080,51 +844,74 @@ jobs:
           mkdir -p $(dirname $FILE)
           cat > $FILE << 'EOF'
           package ng.name.ovrica.walls;
-          import android.app.*; import android.content.*; import android.os.Build;
-          import java.util.concurrent.TimeUnit;
-
+          import android.app.*; import android.content.*; import android.os.Build; import java.util.concurrent.TimeUnit;
           public class BootReceiver extends BroadcastReceiver {
               @Override public void onReceive(Context ctx, Intent intent) {
-                  if (!Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction()) &&
-                      !"android.intent.action.QUICKBOOT_POWERON".equals(intent.getAction())) return;
+                  if (!Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction()) && !"android.intent.action.QUICKBOOT_POWERON".equals(intent.getAction())) return;
                   AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
                   PendingIntent pi = PendingIntent.getBroadcast(ctx, 0, new Intent(ctx, WallpaperReminderReceiver.class), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-                  long next = System.currentTimeMillis() + TimeUnit.HOURS.toMillis(1);
-                  if (Build.VERSION.SDK_INT >= 23) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next, pi);
-                  else am.set(AlarmManager.RTC_WAKEUP, next, pi);
+                  if (Build.VERSION.SDK_INT >= 23) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + TimeUnit.HOURS.toMillis(1), pi);
+                  else am.set(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + TimeUnit.HOURS.toMillis(1), pi);
               }
           }
           EOF
 
-      # ─── Assets, icons, splash, styles ───────────────────────────────────────
+      # ─── Assets, icons (FIXED), splash, styles ───────────────────────────────
       - name: Assets, sync, icons, splash & styles
         run: |
           sudo apt-get install -y imagemagick librsvg2-bin -q
           cp capacitor.config.json android/app/src/main/assets/capacitor.config.json
           npx cap sync android
 
-          SVG="public/icon/icon.svg"; LOGO="public/icon/icon-512x512.png"; RES="android/app/src/main/res"
+          SVG="public/icon/icon.svg"
+          LOGO="public/icon/icon-512x512.png"
+          RES="android/app/src/main/res"
+
+          # Convert SVG → PNG if needed
           if [ -f "$SVG" ]; then
-            rsvg-convert -w 512 -h 512 "$SVG" -o "$LOGO" 2>/dev/null || convert -background none "$SVG" -resize 512x512 "$LOGO"
+            rsvg-convert -w 512 -h 512 "$SVG" -o "$LOGO" 2>/dev/null || \
+            convert -background none "$SVG" -resize 512x512 "$LOGO"
           fi
           [ -f "$LOGO" ] || (echo "ERROR: $LOGO not found." && exit 1)
 
+          # ── FIXED: Generate mipmap PNGs WITH proper padding so icon isn't clipped
+          # Android adaptive icons need ~66% safe zone — icon fills ~66% of the canvas
           for cfg in "mipmap-mdpi:48" "mipmap-hdpi:72" "mipmap-xhdpi:96" "mipmap-xxhdpi:144" "mipmap-xxxhdpi:192"; do
             folder="${cfg%%:*}"; size="${cfg##*:}"; mkdir -p "$RES/$folder"
-            convert "$LOGO" -resize "${size}x${size}" "$RES/$folder/ic_launcher.png"
+            # Create square icon with black background and centred logo at 76% size (leaves padding)
+            iconsize=$((size * 76 / 100))
+            convert -size "${size}x${size}" xc:"#000000" \
+              \( "$LOGO" -resize "${iconsize}x${iconsize}" \) \
+              -gravity center -composite \
+              -define png:color-type=2 \
+              "$RES/$folder/ic_launcher.png"
+            # Round icon: same but with circle mask
+            convert -size "${size}x${size}" xc:"#000000" \
+              \( "$LOGO" -resize "${iconsize}x${iconsize}" \) \
+              -gravity center -composite \
+              \( +clone -alpha extract \
+                 -draw "fill black polygon 0,0 0,${size} ${size},${size} ${size},0" \
+                 \( +clone -flip \) -compose Multiply -flatten \
+                 \( +clone -flop \) -compose Multiply -flatten \) \
+              -alpha off -compose CopyOpacity -composite \
+              "$RES/$folder/ic_launcher_round.png" 2>/dev/null || \
             cp "$RES/$folder/ic_launcher.png" "$RES/$folder/ic_launcher_round.png"
           done
 
           mkdir -p "$RES/drawable" "$RES/mipmap-anydpi-v26"
-          if [ -f "$SVG" ]; then
-            rsvg-convert -w 432 -h 432 "$SVG" -o "$RES/drawable/ic_launcher_foreground.png" 2>/dev/null || convert "$SVG" -resize 432x432 "$RES/drawable/ic_launcher_foreground.png"
-          else
-            convert "$LOGO" -resize 432x432 "$RES/drawable/ic_launcher_foreground.png"
-          fi
+
+          # ── Adaptive icon foreground: logo at 66% size centred on transparent bg
+          # This ensures the icon looks correct on all launcher shapes (circle, squircle, etc.)
+          convert -size 432x432 xc:none \
+            \( "$LOGO" -resize 286x286 \) \
+            -gravity center -composite \
+            "$RES/drawable/ic_launcher_foreground.png"
+
           printf '<?xml version="1.0" encoding="utf-8"?>\n<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n  <background android:drawable="@color/ic_launcher_background"/>\n  <foreground android:drawable="@drawable/ic_launcher_foreground"/>\n</adaptive-icon>' \
             > "$RES/mipmap-anydpi-v26/ic_launcher.xml"
           cp "$RES/mipmap-anydpi-v26/ic_launcher.xml" "$RES/mipmap-anydpi-v26/ic_launcher_round.xml"
 
+          # ── Notification icon (monochrome white)
           cat > "$RES/drawable/ic_notification.xml" << 'XMLEOF'
           <?xml version="1.0" encoding="utf-8"?>
           <vector xmlns:android="http://schemas.android.com/apk/res/android"
@@ -1136,14 +923,16 @@ jobs:
           </vector>
           XMLEOF
 
+          # ── Splash screens
           for dir in drawable-mdpi drawable-hdpi drawable-xhdpi drawable-xxhdpi drawable-xxxhdpi; do
             mkdir -p "$RES/$dir"
-            convert -size 1080x1920 xc:"#111318" \( "$LOGO" -resize 300x300 \) -gravity center -composite "$RES/$dir/splash.png"
+            convert -size 1080x1920 xc:"#0E0C15" \( "$LOGO" -resize 280x280 \) -gravity center -composite "$RES/$dir/splash.png"
           done
           mkdir -p "$RES/drawable-night" "$RES/drawable"
-          convert -size 1080x1920 xc:"#111318" \( "$LOGO" -resize 300x300 \) -gravity center -composite "$RES/drawable-night/splash.png"
-          convert -size 1080x1920 xc:"#F1F3F4" \( "$LOGO" -resize 300x300 \) -gravity center -composite "$RES/drawable/splash.png"
+          convert -size 1080x1920 xc:"#0E0C15" \( "$LOGO" -resize 280x280 \) -gravity center -composite "$RES/drawable-night/splash.png"
+          convert -size 1080x1920 xc:"#F7F6FB" \( "$LOGO" -resize 280x280 \) -gravity center -composite "$RES/drawable/splash.png"
 
+          # ── Styles
           STYLES="$RES/values/styles.xml"
           [ -f "$STYLES" ] && sed -i \
             -e 's|parent="Theme\.AppCompat\.Light\.NoActionBar"|parent="Theme.AppCompat.DayNight.NoActionBar"|g' \
@@ -1156,7 +945,7 @@ jobs:
 
           for qualifier in "values" "values-v31" "values-night" "values-night-v31"; do
             mkdir -p "$RES/$qualifier"
-            [[ "$qualifier" == *night* ]] && BG="#111318" || BG="#F1F3F4"
+            [[ "$qualifier" == *night* ]] && BG="#0E0C15" || BG="#F7F6FB"
             [[ "$qualifier" == *v31* ]]   && ICON_BG='<item name="windowSplashScreenIconBackgroundColor">#000000</item>' || ICON_BG=""
             cat > "$RES/$qualifier/splash_theme.xml" << XMLEOF
           <?xml version="1.0" encoding="utf-8"?>
@@ -1187,14 +976,15 @@ jobs:
           perms=[
               'android.permission.INTERNET','android.permission.ACCESS_NETWORK_STATE',
               'android.permission.SET_WALLPAPER','android.permission.SET_WALLPAPER_HINTS',
-              'android.permission.RECEIVE_BOOT_COMPLETED','android.permission.DOWNLOAD_WITHOUT_NOTIFICATION',
-              'android.permission.FOREGROUND_SERVICE','android.permission.FOREGROUND_SERVICE_DATA_SYNC','android.permission.WAKE_LOCK',
+              'android.permission.RECEIVE_BOOT_COMPLETED',
+              'android.permission.FOREGROUND_SERVICE','android.permission.WAKE_LOCK',
               'android.permission.SCHEDULE_EXACT_ALARM',
-              'android.permission.POST_NOTIFICATIONS','android.permission.READ_MEDIA_IMAGES','android.permission.USE_EXACT_ALARM',
-              'android.permission.READ_MEDIA_VISUAL_USER_SELECTED',
+              'android.permission.POST_NOTIFICATIONS',
+              'android.permission.USE_EXACT_ALARM',
           ]
           for perm in perms:
               if perm not in existing: ET.SubElement(root,'uses-permission').set(a('name'),perm)
+          # Only need WRITE for export to Gallery on Android < 10
           for perm,sdk in [('android.permission.WRITE_EXTERNAL_STORAGE','28'),('android.permission.READ_EXTERNAL_STORAGE','32')]:
               if perm not in existing:
                   el=ET.SubElement(root,'uses-permission'); el.set(a('name'),perm); el.set(a('maxSdkVersion'),sdk)
@@ -1234,7 +1024,7 @@ jobs:
               ET.SubElement(filt,'action').set(a('name'),'android.intent.action.BOOT_COMPLETED')
               ET.SubElement(filt,'action').set(a('name'),'android.intent.action.QUICKBOOT_POWERON')
 
-          tree.write(path,encoding='utf-8',xml_declaration=True); ET.parse(path); print("Manifest patched OK")
+          tree.write(path,encoding='utf-8',xml_declaration=True); print("Manifest patched OK")
           PYEOF
 
           cat >> android/build.gradle << 'EOF'
@@ -1276,9 +1066,7 @@ jobs:
             --out app-release-signed.apk app-aligned.apk
           $BT/apksigner verify --verbose app-release-signed.apk
           AAB_UNSIGNED=$(find android -name "app-release.aab" | head -1)
-          if [ -n "$AAB_UNSIGNED" ]; then
-            cp "$AAB_UNSIGNED" app-release-signed.aab
-          fi
+          if [ -n "$AAB_UNSIGNED" ]; then cp "$AAB_UNSIGNED" app-release-signed.aab; fi
           mkdir -p release; cp app-release-signed.apk release/
           [ -f app-release-signed.aab ] && cp app-release-signed.aab release/
           keytool -list -v -keystore walls.keystore -alias walls \
@@ -1286,7 +1074,6 @@ jobs:
           SHA256=$(sed 's/.*SHA256: //' release/sha256.txt)
           echo '[{"relation":["delegate_permission/common.handle_all_urls"],"target":{"namespace":"android_app","package_name":"ng.name.ovrica.walls","sha256_cert_fingerprints":["'"$SHA256"'"]}}]' \
             > release/assetlinks.json
-          # Include keystore in APK zip so you can use it later when signing AAB for Play Store
           cp walls.keystore release/walls.keystore
           zip -j release/walls-release.zip release/app-release-signed.apk release/sha256.txt release/assetlinks.json release/walls.keystore
           [ -f release/app-release-signed.aab ] && zip -j release/walls-release-aab.zip release/app-release-signed.aab
