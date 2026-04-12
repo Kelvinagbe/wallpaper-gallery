@@ -36,6 +36,8 @@ jobs:
           printf '{"appId":"ng.name.ovrica.walls","appName":"Walls","webDir":"public/app","android":{"allowMixedContent":true,"backgroundColor":"#000000"}}' \
             > capacitor.config.json
           npx cap add android
+          echo "=== android/variables.gradle ===" && cat android/variables.gradle || true
+          echo "=== android/app/build.gradle (first 20 lines) ===" && head -20 android/app/build.gradle || true
 
       - name: Copy google-services.json
         run: cp public/google-services.json android/app/google-services.json
@@ -1030,35 +1032,40 @@ jobs:
       - name: Add dependencies & generate keystore
         run: |
           python3 << 'PYEOF'
-          import re
+          import re, os
 
-          # ── Patch android/app/build.gradle ─────────────────────────────────────
+          # ── 1. Patch variables.gradle — the correct place for SDK versions ──────
+          # Capacitor's app/build.gradle reads from rootProject.ext.* (variables.gradle).
+          # Patching here avoids ever touching rootProject.ext references in app/build.gradle.
+          var_path = 'android/variables.gradle'
+          if os.path.exists(var_path):
+              with open(var_path, 'r') as f:
+                  var = f.read()
+              var = re.sub(r'(compileSdkVersion\s*=\s*)\d+', r'\g<1>36', var)
+              var = re.sub(r'(targetSdkVersion\s*=\s*)\d+',  r'\g<1>36', var)
+              with open(var_path, 'w') as f:
+                  f.write(var)
+              print("variables.gradle patched OK")
+
+          # ── 2. Patch android/app/build.gradle — deps + google-services only ────
           with open('android/app/build.gradle', 'r') as f:
               app = f.read()
 
-          # 1. Force compileSdk / compileSdkVersion to 36 (handles rootProject.ext.* and plain numbers)
-          app = re.sub(r'compileSdkVersion\s+\S+', 'compileSdkVersion 36', app)
-          app = re.sub(r'compileSdk\s*=\s*\S+',    'compileSdk = 36',       app)
-          # 2. Force targetSdk / targetSdkVersion to 36
-          app = re.sub(r'targetSdkVersion\s+\S+',  'targetSdkVersion 36',   app)
-          app = re.sub(r'targetSdk\s*=\s*\S+',     'targetSdk = 36',        app)
-          # 3. buildToolsVersion
-          app = re.sub(r'buildToolsVersion\s+"[^"]*"', 'buildToolsVersion "35.0.0"', app)
+          # Add Firebase + splashscreen inside the first dependencies { } block
+          extra_deps = (
+              '\n'
+              '    implementation platform("com.google.firebase:firebase-bom:34.11.0")\n'
+              '    implementation "com.google.firebase:firebase-messaging"\n'
+              '    implementation "com.google.firebase:firebase-inappmessaging-display"\n'
+              '    implementation "androidx.core:core-splashscreen:1.0.1"\n'
+          )
+          marker = 'dependencies {'
+          idx = app.find(marker)
+          if idx != -1 and 'firebase-bom' not in app:
+              insert_at = idx + len(marker)
+              app = app[:insert_at] + extra_deps + app[insert_at:]
 
-          # 4. Add Firebase + splashscreen deps inside the first dependencies { } block
-          extra_deps = [
-              '    implementation platform("com.google.firebase:firebase-bom:34.11.0")',
-              '    implementation "com.google.firebase:firebase-messaging"',
-              '    implementation "com.google.firebase:firebase-inappmessaging-display"',
-              '    implementation "androidx.core:core-splashscreen:1.0.1"',
-          ]
-          dep_marker = 'dependencies {'
-          idx = app.find(dep_marker)
-          if idx != -1:
-              insert_at = idx + len(dep_marker)
-              app = app[:insert_at] + '\n' + '\n'.join(extra_deps) + '\n' + app[insert_at:]
-
-          # 5. Apply google-services at end of file (works regardless of plugins DSL style)
+          # Apply google-services at bottom of file
           if 'com.google.gms.google-services' not in app:
               app += "\napply plugin: 'com.google.gms.google-services'\n"
 
@@ -1066,22 +1073,20 @@ jobs:
               f.write(app)
           print("app/build.gradle patched OK")
 
-          # ── Patch android/build.gradle ──────────────────────────────────────────
+          # ── 3. Patch android/build.gradle — google-services classpath only ──────
           with open('android/build.gradle', 'r') as f:
               root = f.read()
 
-          # Inject google-services classpath after the AGP classpath line
-          gs_classpath = "        classpath 'com.google.gms:google-services:4.4.4'"
           if 'google-services' not in root:
+              gs = "        classpath 'com.google.gms:google-services:4.4.4'"
               root = re.sub(
-                  r"(classpath\s+'com\.android\.tools\.build:gradle[^']*')",
-                  r"\1\n" + gs_classpath,
+                  r"(classpath 'com\.android\.tools\.build:gradle:[^']*')",
+                  r"\1\n" + gs,
                   root
               )
-
-          with open('android/build.gradle', 'w') as f:
-              f.write(root)
-          print("build.gradle patched OK")
+              with open('android/build.gradle', 'w') as f:
+                  f.write(root)
+              print("build.gradle patched OK")
           PYEOF
 
           keytool -genkeypair -v -keystore walls.keystore \
