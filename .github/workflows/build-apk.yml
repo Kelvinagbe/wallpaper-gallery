@@ -115,7 +115,6 @@ jobs:
           import androidx.core.app.*;
           import androidx.core.content.*;
           import androidx.core.splashscreen.SplashScreen;
-          import androidx.webkit.WebViewAssetLoader;
           import com.getcapacitor.BridgeActivity;
           import com.google.firebase.messaging.FirebaseMessaging;
           import org.json.*;
@@ -261,8 +260,7 @@ jobs:
                   // ── Prevent font size adjustment on Samsung ────────────────────
                   ws.setTextZoom(100);
 
-                  // ── WebViewAssetLoader: lets WebView load content:// images from private folder
-                  // JS can use: <img src="https://walls.local/wallpapers/filename.jpg">
+                  // ── shouldInterceptRequest serves private folder files to WebView
                   File privateDir = getExternalFilesDir(WALLS_PRIV_DIR);
                   if (privateDir != null) privateDir.mkdirs();
 
