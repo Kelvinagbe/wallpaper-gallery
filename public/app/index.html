@@ -2,8 +2,35 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no,viewport-fit=cover"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="format-detection" content="telephone=no"/>
+<meta name="theme-color" content="#0E0C15" media="(prefers-color-scheme: dark)"/>
+<meta name="theme-color" content="#F7F6FB" media="(prefers-color-scheme: light)"/>
 <title>Walls</title>
+<!-- Samsung/Android blank screen fix: apply bg color BEFORE any CSS loads -->
+<script>
+(function(){
+  var dark=window.matchMedia&&window.matchMedia('(prefers-color-scheme:dark)').matches;
+  var bg=dark?'#0E0C15':'#F7F6FB';
+  document.documentElement.style.background=bg;
+  document.documentElement.style.backgroundColor=bg;
+  // Apply as soon as body exists
+  if(document.body){document.body.style.background=bg;document.body.style.backgroundColor=bg;}
+  else document.addEventListener('DOMContentLoaded',function(){
+    document.body.style.background=bg;
+    document.body.style.backgroundColor=bg;
+  });
+  // Listen for native theme event (Capacitor fires this early)
+  window.addEventListener('walls_theme',function(e){
+    var d=e.detail&&e.detail.dark;
+    var c=d?'#0E0C15':'#F7F6FB';
+    document.documentElement.style.background=c;
+    if(document.body)document.body.style.background=c;
+  });
+})();
+</script>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:opsz,wght@9..40,300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <style>
 :root{
@@ -32,7 +59,32 @@ body.theme-light{
 }
 
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--sans);-webkit-font-smoothing:antialiased;overflow:hidden;transition:background .25s,color .25s}
+/* Samsung/Android WebView fix: set bg immediately, prevent white flash */
+html{
+  height:100%;height:100dvh;
+  background:#0E0C15;
+  -webkit-text-size-adjust:100%;
+  text-size-adjust:100%;
+}
+body{
+  height:100%;height:100dvh;
+  background:var(--bg);color:var(--text);
+  font-family:var(--sans);
+  -webkit-font-smoothing:antialiased;
+  overflow:hidden;
+  transition:background .25s,color .25s;
+  /* Samsung: prevent pull-to-refresh browser behaviour */
+  overscroll-behavior:none;
+  /* Disable text selection (feels more app-like) */
+  -webkit-user-select:none;
+  user-select:none;
+  /* Disable zoom on Samsung */
+  touch-action:manipulation;
+}
+/* Allow text selection in inputs */
+input,textarea{-webkit-user-select:text;user-select:text}
+/* Prevent zoom on input focus (Samsung/iOS) */
+input,select,textarea{font-size:16px}
 #app{display:flex;flex-direction:column;height:100dvh}
 #view{flex:1;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
 #view::-webkit-scrollbar{width:2px}
@@ -766,7 +818,6 @@ const API='https://walls.ovrica.name.ng/api/wallpapers',TIMEOUT=12000,GAP=10;
 const MOBILE_AR=9/16,DESKTOP_AR=16/9;
 const AD_IMG='https://images.unsplash.com/photo-1557682250-33bd709cbe85?w=600&q=80';
 const S={page:'home',filter:'recent',search:'',wpPage:0,wpTotal:0,items:[],loading:false,searchT:null,current:null};
-let DL=[];try{DL=JSON.parse(localStorage.getItem('walls_dl')||'[]')}catch(e){DL=[]}
 let _permCb=null,_dlT=null;
 
 const $=id=>document.getElementById(id);
@@ -1154,50 +1205,56 @@ async function doSearch(q){
 /* Downloads — reads from phone storage via native bridge, falls back to localStorage */
 function renderDownloads(){
   const v=$('view');
-
-  // try to get files from native bridge first
-  let nativeFiles=null;
-  try{
-    if(typeof window!=='undefined'&&window.WallsApp?.getDownloadedFiles){
-      const raw=window.WallsApp.getDownloadedFiles();
-      nativeFiles=typeof raw==='string'?JSON.parse(raw):raw;
-    }
-  } catch(e){console.warn('Native getDownloadedFiles failed:',e)}
-
-  const items=nativeFiles||DL;
-  const isNative=!!nativeFiles;
-
+  const items=DL;
   v.innerHTML=`<div class="page">
     <div class="downloads-header fu">
       <div class="downloads-header-row">
         <div class="downloads-title">Saved</div>
-        ${items.length&&!isNative?`<button class="dl-clear" onclick="clearDL()">Clear all</button>`:''}
+        ${items.length?`<button class="dl-clear" onclick="clearDL()">Clear all</button>`:''}
       </div>
-      <div class="downloads-count">${items.length} wallpaper${items.length!==1?'s':''} ${isNative?'· from device storage':''}</div>
+      <div class="downloads-count">${items.length} wallpaper${items.length!==1?'s':''}</div>
     </div>
     <div class="fu d1" style="padding:0 16px 200px">
       ${items.length?items.map((d,i)=>{
-        const thumb=d.thumb||d.path||'';
-        const title=d.title||d.name||'Wallpaper';
-        const url=d.url||d.path||thumb;
-        const savedAt=d.savedAt||d.date||Date.now();
-        const dateStr=new Date(savedAt).toLocaleDateString('en',{month:'short',day:'numeric',year:'numeric'});
-        const wpObj=d.wp||{id:d.id||i,url,thumbnail:thumb,title,views:0,likes:0,downloads:0};
+        // Use localUrl as image src — served by shouldInterceptRequest in native
+        // Fall back to remote thumb only if no localUrl
+        const imgSrc=d.localUrl||d.thumb||'';
+        const title=d.title||'Wallpaper';
+        const dateStr=new Date(d.savedAt||Date.now()).toLocaleDateString('en',{month:'short',day:'numeric',year:'numeric'});
+        // Build wp object for modal — use localUrl as the url so viewer shows local file
+        const wpObj={id:d.id,url:d.localUrl||d.thumb,thumbnail:d.localUrl||d.thumb,title,views:0,likes:0,downloads:0};
+        const wpJson=JSON.stringify(wpObj).replace(/'/g,"&#39;");
+        const localUrl=d.localUrl||'';
         return `<div class="dl-row">
-          <img class="dl-th" src="${esc(thumb)}" alt="${esc(title)}" loading="lazy"
-            onerror="this.style.background='var(--s2)'"
-            onclick='openModal(${JSON.stringify(wpObj).replace(/'/g,"&#39;")})' />
+          <img class="dl-th" src="${esc(imgSrc)}" alt="${esc(title)}" loading="lazy"
+            onerror="this.src='${esc(d.thumb||'')}'"
+            onclick='openModal(${wpJson})' />
           <div class="dl-inf"><p>${esc(title)}</p><span>${dateStr}</span></div>
           <div class="dl-acts">
-            <button class="dl-act" onclick='openModal(${JSON.stringify(wpObj).replace(/'/g,"&#39;")})'>View</button>
-            <button class="dl-act" onclick='(function(){S.current=${JSON.stringify(wpObj).replace(/'/g,"&#39;")};openSetSheet()})()'>Set</button>
+            <button class="dl-act" onclick='openModal(${wpJson})'>View</button>
+            <button class="dl-act" onclick='(function(){S.current=${wpJson};openSetSheet()})()'>Set</button>
+            ${localUrl?`<button class="dl-act" onclick='exportWP(${JSON.stringify(localUrl).replace(/'/g,"&#39;")},${JSON.stringify(title).replace(/'/g,"&#39;")})'>Export</button>`:''}
           </div>
         </div>`}).join('')
         :`<div class="empty"><svg viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg><h3>Nothing saved yet</h3><p>Download wallpapers and they'll appear here</p></div>`}
     </div>
   </div>`;
 }
-function clearDL(){if(!confirm('Clear all saved wallpapers?'))return;DL=[];try{localStorage.removeItem('walls_dl')}catch(e){}renderDownloads();toast('Cleared')}
+
+function exportWP(localUrl, title){
+  if(window.WallsApp?.exportToGallery){
+    window.WallsApp.exportToGallery(localUrl, title);
+  } else {
+    toast('Export only available in the app');
+  }
+}
+
+function clearDL(){
+  if(!confirm('Clear all saved wallpapers from this list?\n(Files remain on device)'))return;
+  DL=[];
+  try{localStorage.removeItem('walls_dl')}catch(e){}
+  renderDownloads();toast('Cleared');
+}
 
 /* Modal — spinner shown until image loads */
 function openModal(wp){
@@ -1235,7 +1292,9 @@ function openModal(wp){
   else{upAv.style.display='none'}
 
   // show/hide download button state
-  const alreadySaved=!!DL.find(d=>d.id===wp.id);
+  const id=String(wp.id||'');
+  const savedEntry=DL.find(d=>d.id===id);
+  const alreadySaved=!!savedEntry?.localUrl;
   const dlBtn=$('modal-dl-btn');
   if(dlBtn){
     if(alreadySaved){
@@ -1261,6 +1320,9 @@ function openModal(wp){
     document.body.style.overflow='hidden';
   };
 
+  // Use local file if saved (no network), otherwise remote URL
+  const imageUrl=savedEntry?.localUrl||wp.url||wp.thumbnail;
+
   // preload image — show modal once loaded (or after 1.5s timeout)
   const preloader=new Image();
   const openTimeout=setTimeout(()=>{showModal();spin.style.display='flex';},1500);
@@ -1273,9 +1335,11 @@ function openModal(wp){
   };
   preloader.onerror=()=>{
     clearTimeout(openTimeout);
-    showModal();
+    // If local failed, try remote
+    if(imageUrl!==wp.url&&wp.url){preloader.src=wp.url;}
+    else showModal();
   };
-  preloader.src=wp.url||wp.thumbnail;
+  preloader.src=imageUrl;
 }
 
 function closeModal(){
@@ -1304,15 +1368,34 @@ function shareWP(){
 const modalDl=()=>{
   if(!S.current)return;
   startDl(S.current);
-  // flip button to saved state
-  const dlBtn=$('modal-dl-btn');
-  if(dlBtn){
-    setTimeout(()=>{
-      dlBtn.style.background='rgba(255,255,255,.18)';
-      dlBtn.innerHTML=`<svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2.2" width="18" height="18"><polyline points="20 6 9 17 4 12"/></svg><span>Saved</span>`;
-    },1200);
-  }
 };
+
+function setWP(target){
+  closeSetSheet();if(!S.current)return;
+  const id=String(S.current.id||'');
+  const saved=DL.find(d=>d.id===id);
+  // Use localUrl if available (file in private folder) — no re-download
+  const localUrl=saved?.localUrl||S.current.url||S.current.thumbnail;
+  const doSet=()=>{
+    if(window.WallsApp?.setWallpaper){
+      window.WallsApp.setWallpaper(localUrl,target);
+      toast('Setting wallpaper…');closeModal();return;
+    }
+    if(window.Android?.setWallpaper){
+      window.Android.setWallpaper(localUrl,target);
+      toast('Setting wallpaper…');closeModal();return;
+    }
+    // Web fallback
+    if(saved?.localUrl){
+      toast(`Open Gallery → long-press → Set as ${target==='both'?'home & lock':target+' screen'}`);
+      closeModal();return;
+    }
+    startDl(S.current);
+    setTimeout(()=>toast(`Saved! Long-press photo → Set as ${target==='both'?'home & lock':target+' screen'}`),1400);
+    closeModal();
+  };
+  doSet();
+}
 
 // tap empty area to close
 $('modal').addEventListener('click',e=>{if(e.target===$('modal-img-wrap'))closeModal()});
@@ -1322,76 +1405,81 @@ $('modal').addEventListener('touchend',e=>{if(e.changedTouches[0].clientY-_ty>90
 
 const openSetSheet=()=>$('setSheet').classList.add('open');
 const closeSetSheet=()=>$('setSheet').classList.remove('open');
-
-function setWP(target){
-  closeSetSheet();if(!S.current)return;
-  const saved=DL.find(d=>d.id===S.current.id);
-  // Use saved local path/url if available, otherwise remote
-  const url=saved?.url||saved?.thumb||S.current.url||S.current.thumbnail;
-  const doSet=()=>{
-    // Native Android bridge — pass local path if saved, else remote URL
-    if(window.Android?.setWallpaper){
-      window.Android.setWallpaper(url,target);
-      toast('Setting wallpaper…');closeModal();return;
-    }
-    if(window.Capacitor?.Plugins?.WallpaperPlugin){
-      window.Capacitor.Plugins.WallpaperPlugin.setWallpaper({url,target})
-        .then(()=>{toast('Wallpaper set! 🎉');closeModal()})
-        .catch(()=>toast('Could not set wallpaper'));
-      return;
-    }
-    // Web fallback — if already saved skip download
-    if(saved){
-      toast(`Open Gallery → long-press → Set as ${target==='both'?'home & lock':target+' screen'}`);
-      closeModal();return;
-    }
-    // Not saved — download first then instruct
-    startDlRaw(url,S.current.title);
-    setTimeout(()=>toast(`Saved! Long-press photo → Set as ${target==='both'?'home & lock':target+' screen'}`),1400);
-    closeModal();
-  };
-  let shown=false;try{shown=!!localStorage.getItem('walls_perm_shown')}catch(e){}
-  if(isAndroid()&&!shown){
-    try{localStorage.setItem('walls_perm_shown','1')}catch(e){}
-    openPermSheet('Walls needs permission to save wallpapers to your device storage.',doSet);
-  } else doSet();
-}
-
 function openOptSheet(wp){S.current=wp;$('optTitle').textContent=wp.title;$('optSheet').classList.add('open')}
 const closeOptSheet=()=>$('optSheet').classList.remove('open');
 
-function startDl(wp){saveDL(wp);startDlRaw(wp.url||wp.thumbnail,wp.title,wp)}
-function startDlRaw(url,title){
-  if(!url)return;
-  const filename=(title||'wallpaper').replace(/[^a-z0-9_\-]/gi,'_')+'.jpg';
-  const proceed=()=>{
-    showDlBar(title);let pct=0;clearInterval(_dlT);
-    _dlT=setInterval(()=>{pct+=Math.random()*20+5;if(pct>=92)clearInterval(_dlT);setDlPct(Math.min(pct,92))},160);
-    if(window.Android?.downloadFile){window.Android.downloadFile(url,filename);setTimeout(()=>{clearInterval(_dlT);setDlPct(100);$('dlbStatus').textContent='Done ✓';setTimeout(hideDlBar,1800);toast('Saved to Pictures/Walls/ 📁')},2000);return}
-    if(isAndroid()){const ifr=document.createElement('iframe');ifr.style.display='none';ifr.src=url;document.body.appendChild(ifr);setTimeout(()=>document.body.removeChild(ifr),3000);setTimeout(()=>{clearInterval(_dlT);setDlPct(100);$('dlbStatus').textContent='Done ✓';setTimeout(hideDlBar,2000);toast('Saved to Pictures/Walls/ 📁')},2200);return}
-    const a=document.createElement('a');a.href=url;a.download=filename;a.target='_blank';a.rel='noopener';document.body.appendChild(a);a.click();document.body.removeChild(a);
-    setTimeout(()=>{clearInterval(_dlT);setDlPct(100);$('dlbStatus').textContent='Done ✓';setTimeout(hideDlBar,1800);toast('Downloaded!')},1200);
-  };
-  let shown=false;try{shown=!!localStorage.getItem('walls_perm_shown')}catch(e){}
-  if(isAndroid()&&!shown){try{localStorage.setItem('walls_perm_shown','1')}catch(e){}openPermSheet('Walls needs permission to save wallpapers to your device storage.',proceed)}
-  else proceed();
-}
+// ── Download storage — uses localUrl from native bridge ──────────────────
+// DL item shape: {id, title, localUrl, thumb, savedAt}
+// localUrl = "https://walls.local/wallpapers/walls_<id>.jpg" (served by shouldInterceptRequest)
+// thumb = remote thumbnail URL (small, for fallback only)
+let DL=[];try{DL=JSON.parse(localStorage.getItem('walls_dl')||'[]')}catch(e){DL=[]}
 
-window.addEventListener('walls_dl_progress',e=>{const{pct,name}=e.detail||{};if(pct!=null){clearInterval(_dlT);setDlPct(pct);if(name)$('dlbName').textContent=name}});
-window.addEventListener('walls_dl_done',()=>{clearInterval(_dlT);setDlPct(100);$('dlbStatus').textContent='Done ✓';setTimeout(hideDlBar,1800);toast('Saved to Pictures/Walls/ 📁')});
-window.addEventListener('walls_dl_failed',()=>{clearInterval(_dlT);hideDlBar();toast('Download failed. Try again.',3000)});
-
-const showDlBar=name=>{$('dlBar').classList.add('show');$('dlbName').textContent=name||'Wallpaper';$('dlbStatus').textContent='Downloading…';setDlPct(0)};
-const setDlPct=p=>$('dlbFill').style.width=p+'%';
-const hideDlBar=()=>{$('dlBar').classList.remove('show');clearInterval(_dlT)};
-
-function saveDL(wp){
-  if(!wp||DL.find(d=>d.id===wp.id))return;
-  DL.unshift({id:wp.id,thumb:wp.thumbnail,url:wp.url,title:wp.title,savedAt:Date.now(),wp});
-  if(DL.length>200)DL=DL.slice(0,200);
+function saveDL(wp, localUrl){
+  if(!wp)return;
+  const id=String(wp.id||'');
+  // Update existing or insert new
+  const existing=DL.findIndex(d=>d.id===id);
+  const entry={id, title:wp.title||'Wallpaper', localUrl:localUrl||'', thumb:wp.thumbnail||'', savedAt:Date.now()};
+  if(existing>=0) DL[existing]=entry; else DL.unshift(entry);
+  if(DL.length>500)DL=DL.slice(0,500);
   try{localStorage.setItem('walls_dl',JSON.stringify(DL))}catch(e){}
 }
 
+// Called when native bridge completes download — stores localUrl
+window.addEventListener('walls_dl_done',e=>{
+  clearInterval(_dlT);setDlPct(100);
+  $('dlbStatus').textContent='Done ✓';
+  setTimeout(hideDlBar,1800);
+  const d=e.detail||{};
+  if(d.localUrl&&S.current&&String(S.current.id)===String(d.id)){
+    saveDL(S.current, d.localUrl);
+    // Update download button to Saved state
+    const dlBtn=$('modal-dl-btn');
+    if(dlBtn){
+      dlBtn.style.background='rgba(255,255,255,.18)';
+      dlBtn.innerHTML=`<svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2.2" width="18" height="18"><polyline points="20 6 9 17 4 12"/></svg><span>Saved</span>`;
+    }
+  }
+  toast('Saved ✓');
+});
+
+function startDl(wp){
+  if(!wp)return;
+  const id=String(wp.id||'');
+  const existing=DL.find(d=>d.id===id);
+  // If already downloaded and localUrl exists, skip download
+  if(existing?.localUrl){toast('Already saved ✓');return;}
+  const url=wp.url||wp.thumbnail;
+  const title=(wp.title||'wallpaper').replace(/[^a-z0-9_\-]/gi,'_');
+  showDlBar(wp.title);
+  if(window.WallsApp?.download){
+    // Native bridge — Java handles download, fires walls_dl_done with localUrl
+    window.WallsApp.download(url, id, wp.title||'Wallpaper');
+  } else {
+    // Web fallback — no private folder, use browser download
+    startDlWeb(url, title, wp);
+  }
+}
+
+function startDlWeb(url, filename, wp){
+  let pct=0;clearInterval(_dlT);
+  _dlT=setInterval(()=>{pct+=Math.random()*20+5;if(pct>=92)clearInterval(_dlT);setDlPct(Math.min(pct,92))},160);
+  const a=document.createElement('a');a.href=url;a.download=filename+'.jpg';a.target='_blank';a.rel='noopener';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  setTimeout(()=>{
+    clearInterval(_dlT);setDlPct(100);$('dlbStatus').textContent='Done ✓';
+    setTimeout(hideDlBar,1800);
+    // Web fallback stores remote URL as localUrl
+    saveDL(wp, url);
+    toast('Downloaded!');
+  },1200);
+}
+
+window.addEventListener('walls_dl_progress',e=>{const{pct,name}=e.detail||{};if(pct!=null){clearInterval(_dlT);setDlPct(pct);if(name)$('dlbName').textContent=name}});
+window.addEventListener('walls_dl_failed',()=>{clearInterval(_dlT);hideDlBar();toast('Download failed. Try again.',3000)});
+const showDlBar=name=>{$('dlBar').classList.add('show');$('dlbName').textContent=name||'Wallpaper';$('dlbStatus').textContent='Downloading…';setDlPct(0)};
+const setDlPct=p=>$('dlbFill').style.width=p+'%';
+const hideDlBar=()=>{$('dlBar').classList.remove('show');clearInterval(_dlT)};
 const emptyH=(h,p='')=>`<div class="empty"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg><h3>${esc(h)}</h3>${p?`<p>${esc(p)}</p>`:''}</div>`;
 const offH=fn=>`<div class="empty"><svg viewBox="0 0 24 24"><line x1="1" y1="1" x2="23" y2="23"/><path d="M16.72 11.06A10.94 10.94 0 0119 12.55M5 12.55a10.94 10.94 0 015.17-2.39M10.71 5.05A16 16 0 0122.56 9M1.42 9a15.91 15.91 0 014.7-2.88M8.53 16.11a6 6 0 016.95 0M12 20h.01"/></svg><h3>No connection</h3><p>Check your internet and try again</p><button class="retry" onclick="${fn}">Retry</button></div>`;
 const toH=fn=>`<div class="empty"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><h3>Request timed out</h3><p>Server took too long.</p><button class="retry" onclick="${fn}">Retry</button></div>`;
