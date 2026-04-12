@@ -31,11 +31,15 @@ jobs:
 
       - name: Install dependencies & Configure Capacitor
         run: |
-          npm install @capacitor/core @capacitor/cli @capacitor/android
+          # FIX 2: Pin Capacitor to latest stable versions
+          npm install @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest
           [ -f "public/app/index.html" ] || (echo "ERROR: public/app/index.html not found." && exit 1)
-          printf '{"appId":"ng.name.ovrica.walls","appName":"Walls","webDir":"public/app","android":{"allowMixedContent":true,"backgroundColor":"#000000"}}' \
+          # FIX 1: Add server.androidScheme to capacitor.config.json
+          printf '{"appId":"ng.name.ovrica.walls","appName":"Walls","webDir":"public/app","server":{"androidScheme":"https"},"android":{"allowMixedContent":true,"backgroundColor":"#000000"}}' \
             > capacitor.config.json
           npx cap add android
+          # FIX 1: Run cap sync to copy web assets into android/app/src/main/assets/public/
+          npx cap sync android
           echo "=== android/variables.gradle ===" && cat android/variables.gradle || true
           echo "=== android/app/build.gradle (first 20 lines) ===" && head -20 android/app/build.gradle || true
 
@@ -133,9 +137,8 @@ jobs:
               private static final int    NOTIF_ING = 2001, NOTIF_DONE = 2002, NOTIF_WELCOME = 4001;
               private static final int    REQ_STORAGE = 1002, REQ_NOTIF = 1001;
               private static final long   TIMEOUT_MS  = 30_000;
-              // ── PRIVATE folder inside Android/data/ng.name.ovrica.walls/files/wallpapers/
               private static final String WALLS_PRIV_DIR = "wallpapers";
-              private static final String WALLS_PUB_DIR  = "Walls"; // for export to Pictures/
+              private static final String WALLS_PUB_DIR  = "Walls";
               private static final String AUTHORITY      = "ng.name.ovrica.walls.fileprovider";
               static final String         BASE_URL       = "https://walls.ovrica.name.ng";
               static final String         PREF_FILE      = "walls_prefs";
@@ -146,32 +149,26 @@ jobs:
               private String pendingDlUrl, pendingDlName, pendingWpUrl, pendingWpTarget;
               private long   backPressedTime = 0;
               private boolean webLoaded = false;
-              private boolean webReady  = false; // true only after first frame painted
+              private boolean webReady  = false;
               private int     lastBgColor = 0;
 
               @Override
               protected void onCreate(Bundle savedInstanceState) {
-                  // ── Samsung/Android 15 blank screen fix ────────────────────────
-                  // Set window bg BEFORE super.onCreate — prevents white flash
                   boolean darkMode = (getResources().getConfiguration().uiMode &
                       Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
                   lastBgColor = Color.parseColor(darkMode ? "#0E0C15" : "#F7F6FB");
                   getWindow().setBackgroundDrawable(new ColorDrawable(lastBgColor));
                   getWindow().addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
 
-                  // ── Install splash and keep it until WebView first paint ────────
-                  // On Android 15, setKeepOnScreenCondition has a race where it can
-                  // release before WebView has painted — OnPreDrawListener is the fix.
                   SplashScreen splash = SplashScreen.installSplashScreen(this);
                   super.onCreate(savedInstanceState);
 
-                  // Use OnPreDrawListener: splash stays until we call proceed()
                   final android.view.ViewTreeObserver.OnPreDrawListener[] listener = {null};
                   final android.view.View content = findViewById(android.R.id.content);
                   listener[0] = () -> {
-                      if (!webReady) return false; // keep blocking draw
+                      if (!webReady) return false;
                       content.getViewTreeObserver().removeOnPreDrawListener(listener[0]);
-                      return true; // allow draw — splash dismissed automatically
+                      return true;
                   };
                   content.getViewTreeObserver().addOnPreDrawListener(listener[0]);
 
@@ -215,7 +212,6 @@ jobs:
                   lastBgColor = newBg;
                   getWindow().setBackgroundDrawable(new ColorDrawable(newBg));
                   wv.setBackgroundColor(newBg);
-                  // Only reload if WebView has never loaded anything (cold start edge case)
                   String url = wv.getUrl();
                   if (url == null || url.isEmpty() || url.equals("about:blank")) {
                       wv.loadUrl(BASE_URL);
@@ -258,28 +254,21 @@ jobs:
 
               private void setupWebView() {
                   WebView wv = getBridge().getWebView();
-                  // ── Samsung/Android blank screen fix ──────────────────────────
-                  // Set background BEFORE any load so there's never a white flash
                   wv.setBackgroundColor(lastBgColor);
                   wv.setLayerType(View.LAYER_TYPE_HARDWARE, null);
-                  // ── WebSettings ───────────────────────────────────────────────
                   WebSettings ws = wv.getSettings();
                   ws.setJavaScriptEnabled(true);
                   ws.setDomStorageEnabled(true);
                   ws.setCacheMode(WebSettings.LOAD_DEFAULT);
                   ws.setAllowFileAccess(false);
                   ws.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-                  // ── Disable ALL zoom (prevents Samsung double-tap zoom) ────────
                   ws.setSupportZoom(false);
                   ws.setBuiltInZoomControls(false);
                   ws.setDisplayZoomControls(false);
-                  // ── Mobile viewport / responsive ──────────────────────────────
                   ws.setUseWideViewPort(true);
                   ws.setLoadWithOverviewMode(true);
-                  // ── Prevent font size adjustment on Samsung ────────────────────
                   ws.setTextZoom(100);
 
-                  // ── shouldInterceptRequest serves private folder files to WebView
                   File privateDir = getExternalFilesDir(WALLS_PRIV_DIR);
                   if (privateDir != null) privateDir.mkdirs();
 
@@ -289,7 +278,6 @@ jobs:
                   wv.setWebViewClient(new WebViewClient() {
                       @Override public void onPageStarted(WebView v, String url, Bitmap fav) {
                           runOnUiThread(() -> showLoadingOverlay(v));
-                          // Safety timeout — if page never finishes, release splash after 12s
                           if (toR[0] != null) toH.removeCallbacks(toR[0]);
                           toR[0] = () -> {
                               webReady = true;
@@ -300,8 +288,6 @@ jobs:
 
                       @Override public void onPageFinished(WebView v, String url) {
                           if (toR[0] != null) { toH.removeCallbacks(toR[0]); toR[0] = null; }
-                          // Small delay so WebView has time to paint first frame
-                          // This is the Android 15 fix — webReady=true triggers OnPreDrawListener
                           toH.postDelayed(() -> {
                               webReady = true;
                               runOnUiThread(() -> hideLoadingOverlay(v));
@@ -337,32 +323,25 @@ jobs:
                       }
 
                       @Override public void onReceivedError(WebView v, WebResourceRequest req, WebResourceError err) {
-                          // Only handle main frame errors, release splash so app doesn't hang
                           if (!req.isForMainFrame()) return;
                           if (toR[0] != null) { toH.removeCallbacks(toR[0]); toR[0] = null; }
                           webReady = true;
                           runOnUiThread(() -> hideLoadingOverlay(v));
-                          // Let WebView show its own error or the page will just be empty
-                          // Do NOT inject offline HTML — app retries on resume
                       }
 
                       @Override public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest req) {
                           String url = req.getUrl().toString();
-                          // ── Allow walls.ovrica.name.ng (deep links + static files) ──
                           if (url.startsWith("https://walls.ovrica.name.ng") ||
                               url.startsWith("https://walls.local") ||
                               url.startsWith("https://localhost") ||
                               url.startsWith("http://localhost") ||
                               url.startsWith("capacitor://")) return false;
-                          // Everything else (external links) open in browser
                           try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url))); } catch (Exception ignored) {}
                           return true;
                       }
 
-                      // ── Intercept requests to serve local private files to WebView
                       @Override public WebResourceResponse shouldInterceptRequest(WebView v, WebResourceRequest req) {
                           String url = req.getUrl().toString();
-                          // Pattern: https://walls.local/wallpapers/<filename>
                           if (url.startsWith("https://walls.local/wallpapers/")) {
                               String filename = url.substring("https://walls.local/wallpapers/".length());
                               File f = new File(getExternalFilesDir(WALLS_PRIV_DIR), filename);
@@ -392,13 +371,11 @@ jobs:
                   });
               }
 
-              // ── Loading overlay shown between splash and page ready ────────────────
               private android.widget.FrameLayout loadingOverlay;
               void showLoadingOverlay(WebView wv) {
                   if (loadingOverlay != null && loadingOverlay.getParent() != null) return;
                   android.widget.FrameLayout fl = new android.widget.FrameLayout(this);
                   fl.setBackgroundColor(lastBgColor);
-                  // Spinner
                   android.widget.ProgressBar pb = new android.widget.ProgressBar(this);
                   pb.setIndeterminate(true);
                   pb.getIndeterminateDrawable().setColorFilter(Color.parseColor("#6C47E8"), android.graphics.PorterDuff.Mode.SRC_IN);
@@ -415,15 +392,9 @@ jobs:
                   loadingOverlay = null;
               }
 
-
-              // ── JS Bridge ────────────────────────────────────────────────────────
               private void setupJsBridge() {
                   getBridge().getWebView().addJavascriptInterface(new Object() {
 
-                      // ── DOWNLOAD to private folder ───────────────────────────────
-                      // Called from JS: WallsApp.download(url, id, title)
-                      // Saves to Android/data/.../files/wallpapers/walls_<id>.jpg
-                      // Callbacks: walls_dl_progress, walls_dl_done {localUrl, id}
                       @android.webkit.JavascriptInterface
                       public void downloadFile(String url, String wallpaperId, String title) {
                           if (url == null || url.isEmpty()) return;
@@ -436,14 +407,11 @@ jobs:
                                   if (dir == null) throw new Exception("Storage unavailable");
                                   dir.mkdirs();
                                   File outFile = new File(dir, fname);
-
-                                  // Skip if already downloaded
                                   if (outFile.exists() && outFile.length() > 1024) {
                                       String localUrl = "https://walls.local/wallpapers/" + fname;
                                       notifyJsDownloadDone(id, fname, ttl, localUrl);
                                       return;
                                   }
-
                                   HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
                                   conn.setConnectTimeout(15000); conn.setReadTimeout(60000); conn.connect();
                                   int total = conn.getContentLength();
@@ -461,12 +429,8 @@ jobs:
                                       }
                                   }
                                   out.close(); in.close();
-
-                                  // ── Local URL readable by WebView via shouldInterceptRequest
                                   String localUrl = "https://walls.local/wallpapers/" + fname;
                                   notifyJsDownloadDone(id, fname, ttl, localUrl);
-
-                                  // Show notification
                                   nm.notify(NOTIF_DONE, notifBuilder(DL_CH, "✅ " + ttl, "Saved to Walls").setAutoCancel(true).build());
                               } catch (Exception e) {
                                   android.util.Log.e("WallsDL", "Download failed: " + e.getMessage());
@@ -477,8 +441,6 @@ jobs:
                           }).start();
                       }
 
-                      // ── SET WALLPAPER from local URL (no re-download) ────────────
-                      // localUrl = "https://walls.local/wallpapers/walls_<id>.jpg"
                       @android.webkit.JavascriptInterface
                       public void setWallpaper(String localUrl, String target) {
                           if (localUrl == null || localUrl.isEmpty()) return;
@@ -486,13 +448,11 @@ jobs:
                               try {
                                   Bitmap bmp = null;
                                   if (localUrl.startsWith("https://walls.local/wallpapers/")) {
-                                      // Read from private folder directly — no network
                                       String fname = localUrl.substring("https://walls.local/wallpapers/".length());
                                       File f = new File(getExternalFilesDir(WALLS_PRIV_DIR), fname);
                                       if (f.exists()) bmp = BitmapFactory.decodeFile(f.getAbsolutePath());
                                   }
                                   if (bmp == null) {
-                                      // Fallback: download from remote URL
                                       HttpURLConnection conn = (HttpURLConnection) new URL(localUrl).openConnection();
                                       conn.setConnectTimeout(15000); conn.setReadTimeout(30000); conn.connect();
                                       bmp = BitmapFactory.decodeStream(conn.getInputStream());
@@ -516,7 +476,6 @@ jobs:
                           }).start();
                       }
 
-                      // ── EXPORT private file → Pictures/Walls/ (Gallery) ──────────
                       @android.webkit.JavascriptInterface
                       public void exportToGallery(String localUrl, String title) {
                           if (localUrl == null || !localUrl.startsWith("https://walls.local/wallpapers/")) return;
@@ -552,7 +511,6 @@ jobs:
                           }).start();
                       }
 
-                      // ── DELETE private file ──────────────────────────────────────
                       @android.webkit.JavascriptInterface
                       public void deleteFile(String localUrl) {
                           if (localUrl == null || !localUrl.startsWith("https://walls.local/wallpapers/")) return;
@@ -561,7 +519,6 @@ jobs:
                           if (f.exists()) f.delete();
                       }
 
-                      // ── GET list of saved wallpapers from private folder ─────────
                       @android.webkit.JavascriptInterface
                       public String getSavedList(String callbackName) {
                           new Thread(() -> {
@@ -622,7 +579,6 @@ jobs:
                   }, "Android");
               }
 
-              // ── Helper: fire walls_dl_done with localUrl back to JS ───────────────
               private void notifyJsDownloadDone(String id, String fname, String title, String localUrl) {
                   WebView wv = getBridge() != null ? getBridge().getWebView() : null;
                   if (wv == null) return;
@@ -643,12 +599,12 @@ jobs:
               private String escJs(String s) { return s == null ? "" : s.replace("\\","\\\\").replace("'","\\'").replace("\n","\\n"); }
 
               private boolean hasStoragePermission() {
-                  if (Build.VERSION.SDK_INT >= 29) return true; // private folder needs no permission
+                  if (Build.VERSION.SDK_INT >= 29) return true;
                   return ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
               }
 
               private void requestStoragePermission() {
-                  if (Build.VERSION.SDK_INT >= 29) return; // not needed for private folder
+                  if (Build.VERSION.SDK_INT >= 29) return;
                   ActivityCompat.requestPermissions(this, new String[]{ Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.READ_EXTERNAL_STORAGE }, REQ_STORAGE);
               }
 
@@ -856,7 +812,7 @@ jobs:
           }
           EOF
 
-      # ─── Assets, icons (FIXED), splash, styles ───────────────────────────────
+      # ─── Assets, icons, splash & styles ──────────────────────────────────────
       - name: Assets, sync, icons, splash & styles
         run: |
           sudo apt-get install -y imagemagick librsvg2-bin -q
@@ -867,25 +823,20 @@ jobs:
           LOGO="public/icon/icon-512x512.png"
           RES="android/app/src/main/res"
 
-          # Convert SVG → PNG if needed
           if [ -f "$SVG" ]; then
             rsvg-convert -w 512 -h 512 "$SVG" -o "$LOGO" 2>/dev/null || \
             convert -background none "$SVG" -resize 512x512 "$LOGO"
           fi
           [ -f "$LOGO" ] || (echo "ERROR: $LOGO not found." && exit 1)
 
-          # ── FIXED: Generate mipmap PNGs WITH proper padding so icon isn't clipped
-          # Android adaptive icons need ~66% safe zone — icon fills ~66% of the canvas
           for cfg in "mipmap-mdpi:48" "mipmap-hdpi:72" "mipmap-xhdpi:96" "mipmap-xxhdpi:144" "mipmap-xxxhdpi:192"; do
             folder="${cfg%%:*}"; size="${cfg##*:}"; mkdir -p "$RES/$folder"
-            # Create square icon with black background and centred logo at 76% size (leaves padding)
             iconsize=$((size * 76 / 100))
             convert -size "${size}x${size}" xc:"#000000" \
               \( "$LOGO" -resize "${iconsize}x${iconsize}" \) \
               -gravity center -composite \
               -define png:color-type=2 \
               "$RES/$folder/ic_launcher.png"
-            # Round icon: same but with circle mask
             convert -size "${size}x${size}" xc:"#000000" \
               \( "$LOGO" -resize "${iconsize}x${iconsize}" \) \
               -gravity center -composite \
@@ -900,8 +851,6 @@ jobs:
 
           mkdir -p "$RES/drawable" "$RES/mipmap-anydpi-v26"
 
-          # ── Adaptive icon foreground: logo at 66% size centred on transparent bg
-          # This ensures the icon looks correct on all launcher shapes (circle, squircle, etc.)
           convert -size 432x432 xc:none \
             \( "$LOGO" -resize 286x286 \) \
             -gravity center -composite \
@@ -911,7 +860,6 @@ jobs:
             > "$RES/mipmap-anydpi-v26/ic_launcher.xml"
           cp "$RES/mipmap-anydpi-v26/ic_launcher.xml" "$RES/mipmap-anydpi-v26/ic_launcher_round.xml"
 
-          # ── Notification icon (monochrome white)
           cat > "$RES/drawable/ic_notification.xml" << 'XMLEOF'
           <?xml version="1.0" encoding="utf-8"?>
           <vector xmlns:android="http://schemas.android.com/apk/res/android"
@@ -923,7 +871,6 @@ jobs:
           </vector>
           XMLEOF
 
-          # ── Splash screens
           for dir in drawable-mdpi drawable-hdpi drawable-xhdpi drawable-xxhdpi drawable-xxxhdpi; do
             mkdir -p "$RES/$dir"
             convert -size 1080x1920 xc:"#0E0C15" \( "$LOGO" -resize 280x280 \) -gravity center -composite "$RES/$dir/splash.png"
@@ -932,7 +879,6 @@ jobs:
           convert -size 1080x1920 xc:"#0E0C15" \( "$LOGO" -resize 280x280 \) -gravity center -composite "$RES/drawable-night/splash.png"
           convert -size 1080x1920 xc:"#F7F6FB" \( "$LOGO" -resize 280x280 \) -gravity center -composite "$RES/drawable/splash.png"
 
-          # ── Styles
           STYLES="$RES/values/styles.xml"
           [ -f "$STYLES" ] && sed -i \
             -e 's|parent="Theme\.AppCompat\.Light\.NoActionBar"|parent="Theme.AppCompat.DayNight.NoActionBar"|g' \
@@ -984,7 +930,6 @@ jobs:
           ]
           for perm in perms:
               if perm not in existing: ET.SubElement(root,'uses-permission').set(a('name'),perm)
-          # Only need WRITE for export to Gallery on Android < 10
           for perm,sdk in [('android.permission.WRITE_EXTERNAL_STORAGE','28'),('android.permission.READ_EXTERNAL_STORAGE','32')]:
               if perm not in existing:
                   el=ET.SubElement(root,'uses-permission'); el.set(a('name'),perm); el.set(a('maxSdkVersion'),sdk)
@@ -1034,15 +979,15 @@ jobs:
           python3 << 'PYEOF'
           import re, os
 
-          # ── 1. Patch variables.gradle — the correct place for SDK versions ──────
-          # Capacitor's app/build.gradle reads from rootProject.ext.* (variables.gradle).
-          # Patching here avoids ever touching rootProject.ext references in app/build.gradle.
+          # ── 1. Patch variables.gradle ──────────────────────────────────────────
+          # FIX 3: targetSdkVersion = 34 for Android 15 WebView compatibility
+          # compileSdkVersion stays 36 so build tools work fine
           var_path = 'android/variables.gradle'
           if os.path.exists(var_path):
               with open(var_path, 'r') as f:
                   var = f.read()
               var = re.sub(r'(compileSdkVersion\s*=\s*)\d+', r'\g<1>36', var)
-              var = re.sub(r'(targetSdkVersion\s*=\s*)\d+',  r'\g<1>36', var)
+              var = re.sub(r'(targetSdkVersion\s*=\s*)\d+',  r'\g<1>34', var)  # FIX 3
               with open(var_path, 'w') as f:
                   f.write(var)
               print("variables.gradle patched OK")
@@ -1051,7 +996,6 @@ jobs:
           with open('android/app/build.gradle', 'r') as f:
               app = f.read()
 
-          # Add Firebase + splashscreen inside the first dependencies { } block
           extra_deps = (
               '\n'
               '    implementation platform("com.google.firebase:firebase-bom:34.11.0")\n'
@@ -1065,7 +1009,6 @@ jobs:
               insert_at = idx + len(marker)
               app = app[:insert_at] + extra_deps + app[insert_at:]
 
-          # Apply google-services at bottom of file
           if 'com.google.gms.google-services' not in app:
               app += "\napply plugin: 'com.google.gms.google-services'\n"
 
