@@ -1029,20 +1029,61 @@ jobs:
 
       - name: Add dependencies & generate keystore
         run: |
-          sed -i '/dependencies {/a\    implementation "androidx.core:core-splashscreen:1.0.1"' android/app/build.gradle
-          sed -i '/dependencies {/a\    implementation "com.google.firebase:firebase-messaging"' android/app/build.gradle
-          sed -i '/dependencies {/a\    implementation "com.google.firebase:firebase-inappmessaging-display"' android/app/build.gradle
-          sed -i '/dependencies {/a\    implementation platform("com.google.firebase:firebase-bom:34.11.0")' android/app/build.gradle
-          # Apply google-services via legacy method appended to bottom of file (safe with Capacitor's plugins DSL)
-          echo "" >> android/app/build.gradle
-          echo "apply plugin: 'com.google.gms.google-services'" >> android/app/build.gradle
-          sed -i "/classpath 'com.android.tools.build:gradle/a\\        classpath 'com.google.gms:google-services:4.4.4'" android/build.gradle
-          # ── Patch compileSdkVersion and targetSdkVersion to 36 ──
-          sed -i 's/compileSdkVersion [0-9]*/compileSdkVersion 36/g' android/app/build.gradle
-          sed -i 's/compileSdk = [0-9]*/compileSdk = 36/g' android/app/build.gradle
-          sed -i 's/targetSdkVersion [0-9]*/targetSdkVersion 36/g' android/app/build.gradle
-          sed -i 's/targetSdk = [0-9]*/targetSdk = 36/g' android/app/build.gradle
-          sed -i "s/buildToolsVersion \"[^\"]*\"/buildToolsVersion \"35.0.0\"/g" android/app/build.gradle
+          python3 << 'PYEOF'
+          import re
+
+          # ── Patch android/app/build.gradle ─────────────────────────────────────
+          with open('android/app/build.gradle', 'r') as f:
+              app = f.read()
+
+          # 1. Force compileSdk / compileSdkVersion to 36 (handles rootProject.ext.* and plain numbers)
+          app = re.sub(r'compileSdkVersion\s+\S+', 'compileSdkVersion 36', app)
+          app = re.sub(r'compileSdk\s*=\s*\S+',    'compileSdk = 36',       app)
+          # 2. Force targetSdk / targetSdkVersion to 36
+          app = re.sub(r'targetSdkVersion\s+\S+',  'targetSdkVersion 36',   app)
+          app = re.sub(r'targetSdk\s*=\s*\S+',     'targetSdk = 36',        app)
+          # 3. buildToolsVersion
+          app = re.sub(r'buildToolsVersion\s+"[^"]*"', 'buildToolsVersion "35.0.0"', app)
+
+          # 4. Add Firebase + splashscreen deps inside the first dependencies { } block
+          extra_deps = [
+              '    implementation platform("com.google.firebase:firebase-bom:34.11.0")',
+              '    implementation "com.google.firebase:firebase-messaging"',
+              '    implementation "com.google.firebase:firebase-inappmessaging-display"',
+              '    implementation "androidx.core:core-splashscreen:1.0.1"',
+          ]
+          dep_marker = 'dependencies {'
+          idx = app.find(dep_marker)
+          if idx != -1:
+              insert_at = idx + len(dep_marker)
+              app = app[:insert_at] + '\n' + '\n'.join(extra_deps) + '\n' + app[insert_at:]
+
+          # 5. Apply google-services at end of file (works regardless of plugins DSL style)
+          if 'com.google.gms.google-services' not in app:
+              app += "\napply plugin: 'com.google.gms.google-services'\n"
+
+          with open('android/app/build.gradle', 'w') as f:
+              f.write(app)
+          print("app/build.gradle patched OK")
+
+          # ── Patch android/build.gradle ──────────────────────────────────────────
+          with open('android/build.gradle', 'r') as f:
+              root = f.read()
+
+          # Inject google-services classpath after the AGP classpath line
+          gs_classpath = "        classpath 'com.google.gms:google-services:4.4.4'"
+          if 'google-services' not in root:
+              root = re.sub(
+                  r"(classpath\s+'com\.android\.tools\.build:gradle[^']*')",
+                  r"\1\n" + gs_classpath,
+                  root
+              )
+
+          with open('android/build.gradle', 'w') as f:
+              f.write(root)
+          print("build.gradle patched OK")
+          PYEOF
+
           keytool -genkeypair -v -keystore walls.keystore \
             -alias walls -keyalg RSA -keysize 2048 -validity 10000 \
             -storepass ${{ secrets.KEYSTORE_PASSWORD }} -keypass ${{ secrets.KEYSTORE_PASSWORD }} \
