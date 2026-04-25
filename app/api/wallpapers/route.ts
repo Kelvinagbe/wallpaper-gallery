@@ -5,8 +5,8 @@ import { createClient } from '@/lib/supabase/server';
 
 // ─── Allowed Origins ──────────────────────────────────────────────────────────
 const ALLOWED_ORIGINS = [
-  'https://walls.com',
-  'https://www.walls.com',
+  'https://walls.ovrica.name.ng',
+  'https://www.walls.ovrica.name.ng',
 ];
 
 function getCorsHeaders(request: NextRequest) {
