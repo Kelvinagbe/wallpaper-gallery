@@ -49,23 +49,40 @@ function isRateLimited(ip: string): boolean {
   return false;
 }
 
-// ─── Transform DB row to clean JSON ───────────────────────────────────────────
+// ─── Transform normal query row ───────────────────────────────────────────────
 const transform = (wp: any) => ({
   id:          wp.id,
   title:       wp.title,
-  description: wp.description  || '',
+  description: wp.description   || '',
   url:         wp.image_url,
-  thumbnail:   wp.thumbnail_url || wp.image_url,
+  thumbnail:   wp.thumbnail_url || wp.thumbnail || wp.image_url,
   category:    wp.category      || 'Other',
   tags:        wp.tags          || [],
-  likes:       wp.likes         || 0,
   views:       wp.views         || 0,
   downloads:   wp.downloads     || 0,
-  aspectRatio: wp.aspect_ratio  || 1.5,
+  type:        wp.type          || 'mobile',
   createdAt:   wp.created_at,
   uploadedBy:  wp.profiles?.full_name || wp.profiles?.username || 'Unknown',
   userAvatar:  wp.profiles?.avatar_url || '',
   verified:    wp.profiles?.verified   || false,
+});
+
+// ─── Transform RPC search row (flat, no nested profiles) ─────────────────────
+const transformRpc = (row: any) => ({
+  id:          row.id,
+  title:       row.title,
+  description: row.description   || '',
+  url:         row.image_url,
+  thumbnail:   row.thumbnail_url || row.thumbnail || row.image_url,
+  category:    row.category      || 'Other',
+  tags:        row.tags          || [],
+  views:       row.views         || 0,
+  downloads:   row.downloads     || 0,
+  type:        row.type          || 'mobile',
+  createdAt:   row.created_at,
+  uploadedBy:  row.full_name || row.username || 'Unknown',
+  userAvatar:  row.avatar_url || '',
+  verified:    row.verified   || false,
 });
 
 // ─── OPTIONS ──────────────────────────────────────────────────────────────────
@@ -132,10 +149,37 @@ export async function GET(request: NextRequest) {
                    .trim()
                    .replace(/[%_\\]/g, '');
 
-    // ─── Build query ──────────────────────────────────────────────────────────
     const supabase = await createClient();
-    const start    = page * limit;
-    const end      = start + limit - 1;
+
+    // ─── Search via RPC (includes uploader name search) ───────────────────────
+    if (search) {
+      const { data, error } = await supabase
+        .rpc('search_wallpapers', { search_term: search });
+
+      if (error) throw new Error(error.message);
+
+      const wallpapers = (data ?? []).map(transformRpc);
+
+      return NextResponse.json({
+        wallpapers,
+        pagination: {
+          page,
+          limit,
+          total:   wallpapers.length,
+          hasMore: false,
+        },
+      }, {
+        status: 200,
+        headers: {
+          ...CORS,
+          'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
+        },
+      });
+    }
+
+    // ─── Normal query (no search) ─────────────────────────────────────────────
+    const start = page * limit;
+    const end   = start + limit - 1;
 
     let query = supabase
       .from('wallpapers')
@@ -147,9 +191,6 @@ export async function GET(request: NextRequest) {
 
     if (category) query = query.eq('category', category);
     if (userId)   query = query.eq('user_id', userId);
-    if (search)   query = query.or(
-      `title.ilike.%${search}%,description.ilike.%${search}%`
-    );
 
     if (filter === 'trending') {
       const since = new Date();
