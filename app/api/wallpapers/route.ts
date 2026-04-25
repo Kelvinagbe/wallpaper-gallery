@@ -1,3 +1,4 @@
+
 // app/api/wallpapers/route.ts
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -60,6 +61,9 @@ const transform = (wp: any) => ({
   tags:        wp.tags          || [],
   views:       wp.views         || 0,
   downloads:   wp.downloads     || 0,
+  likes:       0,
+  aspectRatio: 1.5,
+  userId:      wp.user_id,
   type:        wp.type          || 'mobile',
   createdAt:   wp.created_at,
   uploadedBy:  wp.profiles?.full_name || wp.profiles?.username || 'Unknown',
@@ -78,6 +82,9 @@ const transformRpc = (row: any) => ({
   tags:        row.tags          || [],
   views:       row.views         || 0,
   downloads:   row.downloads     || 0,
+  likes:       0,
+  aspectRatio: 1.5,
+  userId:      row.user_id,
   type:        row.type          || 'mobile',
   createdAt:   row.created_at,
   uploadedBy:  row.full_name || row.username || 'Unknown',
