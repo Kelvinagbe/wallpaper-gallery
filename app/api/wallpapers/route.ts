@@ -14,7 +14,7 @@ function getCorsHeaders(request: NextRequest) {
   return {
     'Access-Control-Allow-Origin': ALLOWED_ORIGINS.includes(origin)
       ? origin
-      : 'https://walls.com',
+      : 'https://walls.ovrica.name.ng',
     'Access-Control-Allow-Methods': 'GET, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
   };
