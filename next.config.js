@@ -6,7 +6,7 @@ const nextConfig = {
   httpAgentOptions: { keepAlive: true },
 
   images: {
-     unoptimized: true,
+    unoptimized: true,
     remotePatterns: [
       { protocol: 'https', hostname: 'images.unsplash.com' },
       { protocol: 'https', hostname: 'ui-avatars.com' },
@@ -22,6 +22,7 @@ const nextConfig = {
   experimental: {
     optimizePackageImports: ['lucide-react'],
     staleTimes: { dynamic: 0 },
+    serverComponentsExternalPackages: ['sharp'],
   },
 }
 
