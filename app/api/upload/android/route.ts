@@ -14,12 +14,12 @@ const THUMB_WIDTH           = 400;
 const IMAGE_QUALITY         = 82;
 const THUMB_QUALITY         = 75;
 
-const IP_MAX_UPLOADS        = 10;   // max uploads per IP per window
-const USER_MAX_UPLOADS      = 5;    // max uploads per user per window
-const RATE_LIMIT_HOURS      = 6;    // window in hours
-const AUTO_BLOCK_VIOLATIONS = 3;    // violations before auto-block
-const VIOLATION_WINDOW_DAYS = 1;    // look-back days for violations
-const IP_CACHE_TTL_MINUTES  = 5;    // blocked IP cache refresh interval
+const IP_MAX_UPLOADS        = 10;
+const USER_MAX_UPLOADS      = 5;
+const RATE_LIMIT_HOURS      = 6;
+const AUTO_BLOCK_VIOLATIONS = 3;
+const VIOLATION_WINDOW_DAYS = 1;
+const IP_CACHE_TTL_MINUTES  = 5;
 
 const NUDITY_THRESHOLD      = 0.45;
 const SUGGESTIVE_THRESHOLD  = 0.65;
@@ -36,7 +36,6 @@ const VALID_CATEGORIES = [
 
 const VALID_TYPES = ['mobile', 'desktop'] as const;
 
-// Flutter http package always sends Dart/ in user agent
 const ALLOWED_USER_AGENTS = ['Dart/', 'okhttp'];
 
 // ─── Derived ──────────────────────────────────────────────────────────────────
@@ -84,12 +83,10 @@ const userUploadMap = new Map<string, { count: number; resetAt: number }>();
 function isIpRateLimited(ip: string): boolean {
   const now   = Date.now();
   const entry = uploadRateMap.get(ip);
-
   if (!entry || now > entry.resetAt) {
     uploadRateMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
     return false;
   }
-
   if (entry.count >= IP_MAX_UPLOADS) return true;
   entry.count++;
   return false;
@@ -98,12 +95,10 @@ function isIpRateLimited(ip: string): boolean {
 function isUserRateLimited(userId: string): boolean {
   const now   = Date.now();
   const entry = userUploadMap.get(userId);
-
   if (!entry || now > entry.resetAt) {
     userUploadMap.set(userId, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
     return false;
   }
-
   if (entry.count >= USER_MAX_UPLOADS) return true;
   entry.count++;
   return false;
@@ -115,41 +110,31 @@ let   cacheLoadedAt  = 0;
 
 async function isIpBlocked(ip: string): Promise<boolean> {
   const now = Date.now();
-
   if (now - cacheLoadedAt > IP_CACHE_TTL_MS) {
     const { data } = await supabaseAdmin
       .from('blocked_ips')
       .select('ip');
-
     if (data) {
       blockedIpCache.clear();
       data.forEach((row: any) => blockedIpCache.add(row.ip));
     }
     cacheLoadedAt = now;
   }
-
   return blockedIpCache.has(ip);
 }
 
 async function checkAndAutoBlock(ip: string, userId: string) {
   const since = new Date();
   since.setDate(since.getDate() - VIOLATION_WINDOW_DAYS);
-
   const { count } = await supabaseAdmin
     .from('violations')
     .select('*', { count: 'exact', head: true })
     .eq('user_id', userId)
     .gte('created_at', since.toISOString());
-
   if ((count ?? 0) >= AUTO_BLOCK_VIOLATIONS) {
     await supabaseAdmin
       .from('blocked_ips')
-      .upsert({
-        ip,
-        reason:     'Auto-blocked: repeated violations',
-        blocked_by: 'system',
-      });
-
+      .upsert({ ip, reason: 'Auto-blocked: repeated violations', blocked_by: 'system' });
     blockedIpCache.add(ip);
   }
 }
@@ -159,10 +144,8 @@ async function verifyUser(req: NextRequest): Promise<{ id: string } | null> {
   const auth  = req.headers.get('authorization') || '';
   const token = auth.replace('Bearer ', '').trim();
   if (!token) return null;
-
   const { data, error } = await supabaseAuth.auth.getUser(token);
   if (error || !data.user) return null;
-
   return { id: data.user.id };
 }
 
@@ -188,13 +171,11 @@ async function moderateImage(
       method: 'POST', body: fd,
     });
     const data = await res.json();
-
     if (!res.ok || data.status === 'failure') return { safe: true };
 
     const scores:     Record<string, number> = {};
     const violations: string[]               = [];
 
-    // ── Nudity ───────────────────────────────────────────────────────────────
     const n = data.nudity;
     if (n) {
       scores.sexual_activity = n.sexual_activity ?? 0;
@@ -208,35 +189,30 @@ async function moderateImage(
         violations.push('suggestive_nudity');
     }
 
-    // ── Offensive ────────────────────────────────────────────────────────────
     const off = data.offensive;
     if (off?.prob > OFFENSIVE_THRESHOLD) {
       scores.offensive = off.prob;
       violations.push('offensive');
     }
 
-    // ── Gore ─────────────────────────────────────────────────────────────────
     const gore = data.gore;
     if (gore?.prob > GORE_THRESHOLD) {
       scores.gore = gore.prob;
       violations.push('gore');
     }
 
-    // ── Weapon ───────────────────────────────────────────────────────────────
     const weapon = data.weapon;
     if ((weapon?.classes?.firearm ?? 0) > WEAPON_THRESHOLD) {
       scores.firearm = weapon.classes.firearm;
       violations.push('weapon');
     }
 
-    // ── Drugs ────────────────────────────────────────────────────────────────
     const drugs = data.drug;
     if (drugs?.prob > DRUG_THRESHOLD) {
       scores.drugs = drugs.prob;
       violations.push('drugs');
     }
 
-    // ── Hate symbols ──────────────────────────────────────────────────────────
     const hate = data['hate-symbols'];
     if (hate?.prob > HATE_THRESHOLD) {
       scores.hate_symbols = hate.prob;
@@ -246,56 +222,35 @@ async function moderateImage(
     if (violations.length === 0) return { safe: true, scores };
 
     const messages: Record<string, { reason: string; details: string }> = {
-      explicit_nudity: {
-        reason:  '🚫 Explicit nudity or sexual content detected',
-        details: 'This image contains explicit content which violates our Community Guidelines.',
-      },
-      suggestive_nudity: {
-        reason:  '🚫 Suggestive content detected',
-        details: 'Please upload images appropriate for a general audience.',
-      },
-      offensive: {
-        reason:  '🚫 Offensive or hateful imagery detected',
-        details: 'This image contains offensive content that violates our Community Guidelines.',
-      },
-      gore: {
-        reason:  '🚫 Graphic violence or gore detected',
-        details: 'This image contains violent or gory content which violates our Community Guidelines.',
-      },
-      weapon: {
-        reason:  '🚫 Illegal weapon imagery detected',
-        details: 'This image prominently features firearms or illegal weapons.',
-      },
-      drugs: {
-        reason:  '🚫 Drug-related content detected',
-        details: 'This image appears to contain drug paraphernalia or drug use.',
-      },
-      hate_symbol: {
-        reason:  '🚫 Hate symbol detected',
-        details: 'This image contains symbols associated with hate groups.',
-      },
+      explicit_nudity:   { reason: '🚫 Explicit nudity or sexual content detected',  details: 'This image contains explicit content which violates our Community Guidelines.' },
+      suggestive_nudity: { reason: '🚫 Suggestive content detected',                 details: 'Please upload images appropriate for a general audience.' },
+      offensive:         { reason: '🚫 Offensive or hateful imagery detected',        details: 'This image contains offensive content that violates our Community Guidelines.' },
+      gore:              { reason: '🚫 Graphic violence or gore detected',            details: 'This image contains violent or gory content which violates our Community Guidelines.' },
+      weapon:            { reason: '🚫 Illegal weapon imagery detected',              details: 'This image prominently features firearms or illegal weapons.' },
+      drugs:             { reason: '🚫 Drug-related content detected',               details: 'This image appears to contain drug paraphernalia or drug use.' },
+      hate_symbol:       { reason: '🚫 Hate symbol detected',                        details: 'This image contains symbols associated with hate groups.' },
     };
 
     const primary = violations[0];
-    const msg     = messages[primary] ?? {
-      reason:  '🚫 Content policy violation',
-      details: 'This image violates our Community Guidelines.',
-    };
-
+    const msg     = messages[primary] ?? { reason: '🚫 Content policy violation', details: 'This image violates our Community Guidelines.' };
     return { safe: false, violation: primary, scores, ...msg };
 
   } catch (err) {
     console.error('[Moderation] Error:', err);
-    return { safe: true }; // fail open
+    return { safe: true };
   }
 }
 
 // ─── Process image ────────────────────────────────────────────────────────────
 async function processImage(buffer: Buffer) {
-  const img  = sharp(buffer).rotate();
-  const meta = await img.metadata();
-  const w    = meta.width  ?? IMAGE_MAX_WIDTH;
-  const h    = meta.height ?? IMAGE_MAX_HEIGHT;
+  const meta = await sharp(buffer).rotate().metadata();
+
+  const w = meta.width;
+  const h = meta.height;
+
+  if (!w || !h) {
+    throw new Error(`sharp could not read image dimensions — width: ${w}, height: ${h}`);
+  }
 
   const ratio  = Math.min(IMAGE_MAX_WIDTH / w, IMAGE_MAX_HEIGHT / h, 1);
   const newW   = Math.round(w * ratio);
@@ -442,7 +397,7 @@ export async function POST(req: NextRequest) {
     const title       = form.get('title')       as string | null;
     const description = form.get('description') as string ?? '';
     const rawCategory = form.get('category')    as string ?? '';
-    const rawWallType = form.get('wallType')    as string ?? 'mobile';
+    const rawWallType = form.get('wallType')     as string ?? 'mobile';
 
     // ── 7. Validate ───────────────────────────────────────────────────────────
     if (!file || !title?.trim()) {
@@ -481,19 +436,22 @@ export async function POST(req: NextRequest) {
     }
 
     // ── 8. Sanitize + whitelist ───────────────────────────────────────────────
-    const category = VALID_CATEGORIES.includes(rawCategory as any)
-                     ? rawCategory
-                     : 'Other';
+    const category = VALID_CATEGORIES.includes(rawCategory as any) ? rawCategory : 'Other';
+    const wallType = VALID_TYPES.includes(rawWallType as any)       ? rawWallType : 'mobile';
+    const userId   = verifiedUser.id;
 
-    const wallType = VALID_TYPES.includes(rawWallType as any)
-                     ? rawWallType
-                     : 'mobile';
-
-    // ✅ Always use verified user ID — never trust client
-    const userId = verifiedUser.id;
+    // ── 9. Read buffer + debug ────────────────────────────────────────────────
     const buffer = Buffer.from(await file.arrayBuffer());
+    console.log('[debug] buffer size:', buffer.length, '| file.type:', file.type, '| file.name:', file.name);
 
-    // ── 9. Moderate ───────────────────────────────────────────────────────────
+    if (buffer.length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'Received empty file. Please try again.' },
+        { status: 400 },
+      );
+    }
+
+    // ── 10. Moderate ──────────────────────────────────────────────────────────
     const mod = await moderateImage(buffer, file.type);
     if (!mod.safe) {
       await reportViolation(userId, mod.violation ?? 'policy');
@@ -507,16 +465,16 @@ export async function POST(req: NextRequest) {
       }, { status: 422 });
     }
 
-    // ── 10. Process ───────────────────────────────────────────────────────────
+    // ── 11. Process ───────────────────────────────────────────────────────────
     const { main, thumb } = await processImage(buffer);
 
-    // ── 11. Upload to blob ────────────────────────────────────────────────────
+    // ── 12. Upload to blob ────────────────────────────────────────────────────
     const [imageUrl, thumbnailUrl] = await Promise.all([
-      blobUpload(main,  file.name,            userId, 'wallpapers'),
-      blobUpload(thumb, `thumb_${file.name}`, userId, 'wallpapers/thumbnails'),
+      blobUpload(main,  'upload.jpg',       userId, 'wallpapers'),
+      blobUpload(thumb, 'thumb_upload.jpg', userId, 'wallpapers/thumbnails'),
     ]);
 
-    // ── 12. Save to DB ────────────────────────────────────────────────────────
+    // ── 13. Save to DB ────────────────────────────────────────────────────────
     await saveToDatabase({
       userId,
       title:       title.trim(),
