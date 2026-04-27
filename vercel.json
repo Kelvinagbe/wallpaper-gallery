@@ -1,0 +1,3 @@
+{
+  "installCommand": "npm install --arch=x64 --platform=linux sharp"
+}
