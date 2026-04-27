@@ -2,7 +2,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient }              from '@supabase/supabase-js';
-import sharp                         from 'sharp';
+import sharp from '@img/sharp-wasm32';
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
 const MAX_FILE_SIZE_MB      = 30;
