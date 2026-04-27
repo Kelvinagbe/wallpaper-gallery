@@ -5,6 +5,8 @@ const nextConfig = {
   poweredByHeader: false,
   httpAgentOptions: { keepAlive: true },
 
+  serverExternalPackages: ['sharp'],
+
   images: {
     unoptimized: true,
     remotePatterns: [
@@ -22,7 +24,6 @@ const nextConfig = {
   experimental: {
     optimizePackageImports: ['lucide-react'],
     staleTimes: { dynamic: 0 },
-    serverComponentsExternalPackages: ['sharp'],
   },
 }
 
