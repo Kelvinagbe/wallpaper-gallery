@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -14,24 +15,20 @@ import type { Wallpaper, Filter } from './types';
 
 const ITEMS_PER_PAGE = 10;
 
-type Props = { initialWallpapers: Wallpaper[]; initialHasMore: boolean };
-
-export default function WallpaperGallery({ initialWallpapers, initialHasMore }: Props) {
+export default function WallpaperGallery() {
   const router = useRouter();
 
-  const INITIAL_PAGE = Math.ceil(initialWallpapers.length / ITEMS_PER_PAGE);
-
-  const [wallpapers,    setWallpapers]    = useState<Wallpaper[]>(feedCache.populated ? feedCache.wallpapers : initialWallpapers);
-  const [hasMore,       setHasMore]       = useState(feedCache.populated ? feedCache.hasMore : initialHasMore);
+  const [wallpapers,    setWallpapers]    = useState<Wallpaper[]>(feedCache.populated ? feedCache.wallpapers : []);
+  const [hasMore,       setHasMore]       = useState(feedCache.populated ? feedCache.hasMore : true);
   const [filter,        setFilter]        = useState<Filter>(feedCache.filter);
-  const [isInitialLoad, setIsInitialLoad] = useState(false);
+  const [isInitialLoad, setIsInitialLoad] = useState(!feedCache.populated);
 
   const loadingMoreRef   = useRef(false);
   const filterChangedRef = useRef(false);
   const isScrollingRef   = useRef(false);
   const scrollTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const seenIdsRef       = useRef<Set<string>>(new Set(initialWallpapers.map(w => w.id)));
-  const pageRef          = useRef<number>(feedCache.populated ? (feedCache.page ?? INITIAL_PAGE) : INITIAL_PAGE);
+  const seenIdsRef       = useRef<Set<string>>(new Set(feedCache.populated ? feedCache.wallpapers.map(w => w.id) : []));
+  const pageRef          = useRef<number>(feedCache.populated ? (feedCache.page ?? 0) : 0);
 
   // ── Track scrolling state ─────────────────────────────────────
   useEffect(() => {
@@ -44,7 +41,7 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  // ── Restore scroll / seed cache ───────────────────────────────
+  // ── Initial load / restore scroll ────────────────────────────
   useEffect(() => {
     if (feedCache.populated) {
       requestAnimationFrame(() =>
@@ -54,8 +51,27 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
       );
       return;
     }
-    Object.assign(feedCache, { wallpapers: initialWallpapers, page: INITIAL_PAGE, hasMore: initialHasMore, filter, populated: true });
-    pageRef.current = INITIAL_PAGE;
+
+    let cancelled = false;
+    fetchWallpapers(0, ITEMS_PER_PAGE, filter)
+      .then(data => {
+        if (cancelled) return;
+        seenIdsRef.current = new Set(data.wallpapers.map((w: Wallpaper) => w.id));
+        pageRef.current    = 1;
+        setWallpapers(data.wallpapers);
+        setHasMore(data.hasMore);
+        Object.assign(feedCache, {
+          wallpapers: data.wallpapers,
+          page: 1,
+          hasMore: data.hasMore,
+          filter,
+          populated: true,
+        });
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setIsInitialLoad(false); });
+
+    return () => { cancelled = true; };
   }, []); // eslint-disable-line
 
   // ── Filter change ─────────────────────────────────────────────
@@ -76,7 +92,13 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
         pageRef.current    = 1;
         setWallpapers(data.wallpapers);
         setHasMore(data.hasMore);
-        Object.assign(feedCache, { wallpapers: data.wallpapers, page: 1, hasMore: data.hasMore, filter, populated: true });
+        Object.assign(feedCache, {
+          wallpapers: data.wallpapers,
+          page: 1,
+          hasMore: data.hasMore,
+          filter,
+          populated: true,
+        });
       })
       .catch(() => {})
       .finally(() => { if (!cancelled) setIsInitialLoad(false); });
@@ -84,10 +106,15 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
     return () => { cancelled = true; };
   }, [filter]); // eslint-disable-line
 
-  // ── Real-time refetch on reconnect / visibility / poll ────────
+  // ── Real-time refetch on reconnect / visibility ───────────────
   useEffect(() => {
+    const lastRefetchRef = { current: 0 };
+
     const refetch = async () => {
       if (isScrollingRef.current) return;
+      const now = Date.now();
+      if (now - lastRefetchRef.current < 300_000) return; // 5 min cooldown
+      lastRefetchRef.current = now;
       try {
         const data  = await fetchWallpapers(0, ITEMS_PER_PAGE, feedCache.filter);
         const fresh = data.wallpapers.filter((w: Wallpaper) => !seenIdsRef.current.has(w.id));
@@ -103,14 +130,14 @@ export default function WallpaperGallery({ initialWallpapers, initialHasMore }: 
 
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
-        loadingMoreRef.current = false; // unstick any frozen load
+        loadingMoreRef.current = false;
         if (navigator.onLine) refetch();
       }
     };
 
     window.addEventListener('online', refetch);
     document.addEventListener('visibilitychange', handleVisibility);
-    const poll = setInterval(() => { if (navigator.onLine) refetch(); }, 60_000);
+    const poll = setInterval(() => { if (navigator.onLine) refetch(); }, 600_000); // 10 min
 
     return () => {
       window.removeEventListener('online', refetch);
