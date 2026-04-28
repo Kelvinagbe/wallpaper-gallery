@@ -7,7 +7,7 @@ import { put }                       from '@vercel/blob';
 import FormData                      from 'form-data';
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
-const MAX_FILE_SIZE_MB      = 30;
+const MAX_FILE_SIZE_MB      = 5;
 const MAX_TITLE_LENGTH      = 100;
 const MAX_DESC_LENGTH       = 500;
 
@@ -24,7 +24,6 @@ const OFFENSIVE_THRESHOLD  = 0.60;
 const GORE_THRESHOLD       = 0.60;
 const WEAPON_THRESHOLD     = 0.80;
 const DRUG_THRESHOLD       = 0.75;
-const HATE_THRESHOLD       = 0.60;
 
 const VALID_CATEGORIES = [
   'Nature', 'Space', 'Abstract', 'Animals',
@@ -154,7 +153,7 @@ async function moderateImage(buffer: Buffer): Promise<ModerationResult> {
     const form = new FormData();
     form.append('api_user',   SE_USER);
     form.append('api_secret', SE_SECRET);
-    form.append('models', 'nudity-2.1,wad,offensive,gore-2.0');
+    form.append('models',     'nudity-2.1,wad,offensive,gore-2.0,type');
     form.append('media',      buffer, { filename: 'image.jpg', contentType: 'image/jpeg' });
 
     const res  = await fetch('https://api.sightengine.com/1.0/check.json', {
@@ -164,7 +163,8 @@ async function moderateImage(buffer: Buffer): Promise<ModerationResult> {
     });
     const data = await res.json() as any;
 
-    console.log('[Moderation] nudity scores:', JSON.stringify(data.nudity));
+    console.log('[Moderation] nudity:', JSON.stringify(data.nudity));
+    console.log('[Moderation] type:',   JSON.stringify(data.type));
 
     if (!res.ok || data.status === 'failure') {
       console.error('[Moderation] API rejected:', JSON.stringify(data));
@@ -204,38 +204,44 @@ async function moderateImage(buffer: Buffer): Promise<ModerationResult> {
       violations.push('gore');
     }
 
-    // ── Weapons ───────────────────────────────────────────────────────────────
+    // ── Weapons / Alcohol / Drugs (wad) ───────────────────────────────────────
     const weapon = data.weapon;
     if ((weapon?.classes?.firearm ?? 0) > WEAPON_THRESHOLD) {
       scores.firearm = weapon.classes.firearm;
       violations.push('weapon');
     }
 
-    // ── Drugs ─────────────────────────────────────────────────────────────────
     const drugs = data.drug;
     if (drugs?.prob > DRUG_THRESHOLD) {
       scores.drugs = drugs.prob;
       violations.push('drugs');
     }
 
-    // ── Hate symbols ──────────────────────────────────────────────────────────
-    const hate = data['hate-symbols'];
-    if (hate?.prob > HATE_THRESHOLD) {
-      scores.hate_symbols = hate.prob;
-      violations.push('hate_symbol');
+    // ── Not a wallpaper (type check) ──────────────────────────────────────────
+    // Only block if clearly not a photo or illustration
+    // Allows: photos, illustrations, art, abstract
+    // Blocks: screenshots of apps/UI, selfie-only shots with no background
+    const type = data.type;
+    if (type) {
+      const isPhoto       = (type.photo        ?? 0) > 0.5;
+      const isIllustration = (type.illustration ?? 0) > 0.5;
+      if (!isPhoto && !isIllustration) {
+        scores.not_wallpaper = 1;
+        violations.push('not_wallpaper');
+      }
     }
 
     if (violations.length === 0) return { safe: true, scores };
 
     const messages: Record<string, { reason: string; details: string }> = {
-      explicit_nudity:   { reason: 'Explicit nudity or sexual content detected',  details: 'This image contains explicit content which violates our Community Guidelines.' },
-      suggestive_nudity: { reason: 'Suggestive content detected',                 details: 'Please upload images appropriate for a general audience.' },
-      offensive:         { reason: 'Offensive or hateful imagery detected',        details: 'This image contains offensive content that violates our Community Guidelines.' },
-      gore:              { reason: 'Graphic violence or gore detected',            details: 'This image contains violent or gory content which violates our Community Guidelines.' },
-      weapon:            { reason: 'Illegal weapon imagery detected',              details: 'This image prominently features firearms or illegal weapons.' },
-      drugs:             { reason: 'Drug-related content detected',                details: 'This image appears to contain drug paraphernalia or drug use.' },
-      hate_symbol:       { reason: 'Hate symbol detected',                        details: 'This image contains symbols associated with hate groups.' },
-      moderation_error:  { reason: 'Moderation check failed',                     details: 'We could not verify this image. Please try again.' },
+      explicit_nudity:   { reason: 'Explicit nudity or sexual content detected',   details: 'This image contains explicit content which violates our Community Guidelines.' },
+      suggestive_nudity: { reason: 'Suggestive content detected',                  details: 'Please upload images appropriate for a general audience.' },
+      offensive:         { reason: 'Offensive or hateful imagery detected',         details: 'This image contains offensive content that violates our Community Guidelines.' },
+      gore:              { reason: 'Graphic violence or gore detected',             details: 'This image contains violent or gory content which violates our Community Guidelines.' },
+      weapon:            { reason: 'Illegal weapon imagery detected',               details: 'This image prominently features firearms or illegal weapons.' },
+      drugs:             { reason: 'Drug-related content detected',                 details: 'This image appears to contain drug paraphernalia or drug use.' },
+      not_wallpaper:     { reason: 'Image does not appear to be a wallpaper',       details: 'Please upload high quality photos or illustrations suitable for use as wallpapers.' },
+      moderation_error:  { reason: 'Moderation check failed',                       details: 'We could not verify this image. Please try again.' },
     };
 
     const primary = violations[0];
