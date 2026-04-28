@@ -7,7 +7,7 @@ import { put }                       from '@vercel/blob';
 import FormData                      from 'form-data';
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
-const MAX_FILE_SIZE_MB      = 30;
+const MAX_FILE_SIZE_MB      = 5;
 const MAX_TITLE_LENGTH      = 100;
 const MAX_DESC_LENGTH       = 500;
 
