@@ -7,7 +7,7 @@ import { put }                       from '@vercel/blob';
 import FormData                      from 'form-data';
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
-const MAX_FILE_SIZE_MB      = 5;
+const MAX_FILE_SIZE_MB      = 30;
 const MAX_TITLE_LENGTH      = 100;
 const MAX_DESC_LENGTH       = 500;
 
@@ -18,13 +18,13 @@ const AUTO_BLOCK_VIOLATIONS = 3;
 const VIOLATION_WINDOW_DAYS = 1;
 const IP_CACHE_TTL_MINUTES  = 5;
 
-const NUDITY_THRESHOLD      = 0.45;
-const SUGGESTIVE_THRESHOLD  = 0.65;
-const OFFENSIVE_THRESHOLD   = 0.60;
-const GORE_THRESHOLD        = 0.60;
-const WEAPON_THRESHOLD      = 0.80;
-const DRUG_THRESHOLD        = 0.75;
-const HATE_THRESHOLD        = 0.60;
+const NUDITY_THRESHOLD     = 0.45;
+const SUGGESTIVE_THRESHOLD = 0.65;
+const OFFENSIVE_THRESHOLD  = 0.60;
+const GORE_THRESHOLD       = 0.60;
+const WEAPON_THRESHOLD     = 0.80;
+const DRUG_THRESHOLD       = 0.75;
+const HATE_THRESHOLD       = 0.60;
 
 const VALID_CATEGORIES = [
   'Nature', 'Space', 'Abstract', 'Animals',
@@ -146,37 +146,40 @@ async function verifyUser(req: NextRequest): Promise<{ id: string } | null> {
 // ─── Moderation ───────────────────────────────────────────────────────────────
 async function moderateImage(buffer: Buffer): Promise<ModerationResult> {
   if (!SE_USER || !SE_SECRET) {
-    console.warn('[Moderation] Missing credentials — skipping');
-    return { safe: true };
+    console.warn('[Moderation] Missing credentials — blocking upload');
+    return { safe: false, reason: 'Moderation unavailable', violation: 'moderation_error' };
   }
 
   try {
     const form = new FormData();
-    form.append('media',      buffer, { filename: 'image.jpg', contentType: 'image/jpeg' });
     form.append('api_user',   SE_USER);
     form.append('api_secret', SE_SECRET);
     form.append('models',     'nudity-2.0,offensive,gore,weapon,drugs,hate-symbols');
+    form.append('media',      buffer, { filename: 'image.jpg', contentType: 'image/jpeg' });
 
     const res  = await fetch('https://api.sightengine.com/1.0/check.json', {
       method:  'POST',
-      body:    form as any,
+      body:    form.getBuffer(),
       headers: form.getHeaders(),
     });
-    const data = await res.json();
+    const data = await res.json() as any;
 
     console.log('[Moderation] nudity scores:', JSON.stringify(data.nudity));
 
     if (!res.ok || data.status === 'failure') {
       console.error('[Moderation] API rejected:', JSON.stringify(data));
-      return { safe: false, reason: '🚫 Moderation check failed', violation: 'moderation_error' };
+      return { safe: false, reason: 'Moderation check failed', violation: 'moderation_error' };
     }
 
     const scores:     Record<string, number> = {};
     const violations: string[]               = [];
 
+    // ── Nudity ────────────────────────────────────────────────────────────────
     const n = data.nudity;
     if (n) {
       scores.sexual_activity = n.sexual_activity ?? 0;
+      scores.sexual_display  = n.sexual_display  ?? 0;
+      scores.erotica         = n.erotica         ?? 0;
       scores.very_suggestive = n.very_suggestive ?? 0;
       if (
         n.sexual_activity > NUDITY_THRESHOLD ||
@@ -187,41 +190,61 @@ async function moderateImage(buffer: Buffer): Promise<ModerationResult> {
         violations.push('suggestive_nudity');
     }
 
+    // ── Offensive ─────────────────────────────────────────────────────────────
     const off = data.offensive;
-    if (off?.prob > OFFENSIVE_THRESHOLD) { scores.offensive = off.prob; violations.push('offensive'); }
+    if (off?.prob > OFFENSIVE_THRESHOLD) {
+      scores.offensive = off.prob;
+      violations.push('offensive');
+    }
 
+    // ── Gore ──────────────────────────────────────────────────────────────────
     const gore = data.gore;
-    if (gore?.prob > GORE_THRESHOLD) { scores.gore = gore.prob; violations.push('gore'); }
+    if (gore?.prob > GORE_THRESHOLD) {
+      scores.gore = gore.prob;
+      violations.push('gore');
+    }
 
+    // ── Weapons ───────────────────────────────────────────────────────────────
     const weapon = data.weapon;
-    if ((weapon?.classes?.firearm ?? 0) > WEAPON_THRESHOLD) { scores.firearm = weapon.classes.firearm; violations.push('weapon'); }
+    if ((weapon?.classes?.firearm ?? 0) > WEAPON_THRESHOLD) {
+      scores.firearm = weapon.classes.firearm;
+      violations.push('weapon');
+    }
 
+    // ── Drugs ─────────────────────────────────────────────────────────────────
     const drugs = data.drug;
-    if (drugs?.prob > DRUG_THRESHOLD) { scores.drugs = drugs.prob; violations.push('drugs'); }
+    if (drugs?.prob > DRUG_THRESHOLD) {
+      scores.drugs = drugs.prob;
+      violations.push('drugs');
+    }
 
+    // ── Hate symbols ──────────────────────────────────────────────────────────
     const hate = data['hate-symbols'];
-    if (hate?.prob > HATE_THRESHOLD) { scores.hate_symbols = hate.prob; violations.push('hate_symbol'); }
+    if (hate?.prob > HATE_THRESHOLD) {
+      scores.hate_symbols = hate.prob;
+      violations.push('hate_symbol');
+    }
 
     if (violations.length === 0) return { safe: true, scores };
 
     const messages: Record<string, { reason: string; details: string }> = {
-      explicit_nudity:   { reason: '🚫 Explicit nudity or sexual content detected',  details: 'This image contains explicit content which violates our Community Guidelines.' },
-      suggestive_nudity: { reason: '🚫 Suggestive content detected',                 details: 'Please upload images appropriate for a general audience.' },
-      offensive:         { reason: '🚫 Offensive or hateful imagery detected',        details: 'This image contains offensive content that violates our Community Guidelines.' },
-      gore:              { reason: '🚫 Graphic violence or gore detected',            details: 'This image contains violent or gory content which violates our Community Guidelines.' },
-      weapon:            { reason: '🚫 Illegal weapon imagery detected',              details: 'This image prominently features firearms or illegal weapons.' },
-      drugs:             { reason: '🚫 Drug-related content detected',               details: 'This image appears to contain drug paraphernalia or drug use.' },
-      hate_symbol:       { reason: '🚫 Hate symbol detected',                        details: 'This image contains symbols associated with hate groups.' },
-      moderation_error:  { reason: '🚫 Moderation check failed',                     details: 'We could not verify this image. Please try again.' },
+      explicit_nudity:   { reason: 'Explicit nudity or sexual content detected',  details: 'This image contains explicit content which violates our Community Guidelines.' },
+      suggestive_nudity: { reason: 'Suggestive content detected',                 details: 'Please upload images appropriate for a general audience.' },
+      offensive:         { reason: 'Offensive or hateful imagery detected',        details: 'This image contains offensive content that violates our Community Guidelines.' },
+      gore:              { reason: 'Graphic violence or gore detected',            details: 'This image contains violent or gory content which violates our Community Guidelines.' },
+      weapon:            { reason: 'Illegal weapon imagery detected',              details: 'This image prominently features firearms or illegal weapons.' },
+      drugs:             { reason: 'Drug-related content detected',                details: 'This image appears to contain drug paraphernalia or drug use.' },
+      hate_symbol:       { reason: 'Hate symbol detected',                        details: 'This image contains symbols associated with hate groups.' },
+      moderation_error:  { reason: 'Moderation check failed',                     details: 'We could not verify this image. Please try again.' },
     };
 
     const primary = violations[0];
-    const msg     = messages[primary] ?? { reason: '🚫 Content policy violation', details: 'This image violates our Community Guidelines.' };
+    const msg     = messages[primary] ?? { reason: 'Content policy violation', details: 'This image violates our Community Guidelines.' };
     return { safe: false, violation: primary, scores, ...msg };
 
   } catch (err) {
     console.error('[Moderation] Error:', err);
-    return { safe: false, reason: '🚫 Moderation check failed', violation: 'moderation_error' };
+    return { safe: false, reason: 'Moderation check failed', violation: 'moderation_error' };
   }
 }
 
@@ -323,8 +346,7 @@ export async function POST(req: NextRequest) {
     }
 
     // ── 6. Parse form ─────────────────────────────────────────────────────────
-    const form = await req.formData();
-
+    const form        = await req.formData();
     const file        = form.get('file')        as File   | null;
     const thumbnail   = form.get('thumbnail')   as File   | null;
     const title       = form.get('title')       as string | null;
