@@ -2,17 +2,11 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient }              from '@supabase/supabase-js';
-import sharp from '@img/sharp-wasm32';
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
 const MAX_FILE_SIZE_MB      = 30;
 const MAX_TITLE_LENGTH      = 100;
 const MAX_DESC_LENGTH       = 500;
-const IMAGE_MAX_WIDTH       = 1920;
-const IMAGE_MAX_HEIGHT      = 1080;
-const THUMB_WIDTH           = 400;
-const IMAGE_QUALITY         = 82;
-const THUMB_QUALITY         = 75;
 
 const IP_MAX_UPLOADS        = 10;
 const USER_MAX_UPLOADS      = 5;
@@ -111,9 +105,7 @@ let   cacheLoadedAt  = 0;
 async function isIpBlocked(ip: string): Promise<boolean> {
   const now = Date.now();
   if (now - cacheLoadedAt > IP_CACHE_TTL_MS) {
-    const { data } = await supabaseAdmin
-      .from('blocked_ips')
-      .select('ip');
+    const { data } = await supabaseAdmin.from('blocked_ips').select('ip');
     if (data) {
       blockedIpCache.clear();
       data.forEach((row: any) => blockedIpCache.add(row.ip));
@@ -190,34 +182,19 @@ async function moderateImage(
     }
 
     const off = data.offensive;
-    if (off?.prob > OFFENSIVE_THRESHOLD) {
-      scores.offensive = off.prob;
-      violations.push('offensive');
-    }
+    if (off?.prob > OFFENSIVE_THRESHOLD) { scores.offensive = off.prob; violations.push('offensive'); }
 
     const gore = data.gore;
-    if (gore?.prob > GORE_THRESHOLD) {
-      scores.gore = gore.prob;
-      violations.push('gore');
-    }
+    if (gore?.prob > GORE_THRESHOLD) { scores.gore = gore.prob; violations.push('gore'); }
 
     const weapon = data.weapon;
-    if ((weapon?.classes?.firearm ?? 0) > WEAPON_THRESHOLD) {
-      scores.firearm = weapon.classes.firearm;
-      violations.push('weapon');
-    }
+    if ((weapon?.classes?.firearm ?? 0) > WEAPON_THRESHOLD) { scores.firearm = weapon.classes.firearm; violations.push('weapon'); }
 
     const drugs = data.drug;
-    if (drugs?.prob > DRUG_THRESHOLD) {
-      scores.drugs = drugs.prob;
-      violations.push('drugs');
-    }
+    if (drugs?.prob > DRUG_THRESHOLD) { scores.drugs = drugs.prob; violations.push('drugs'); }
 
     const hate = data['hate-symbols'];
-    if (hate?.prob > HATE_THRESHOLD) {
-      scores.hate_symbols = hate.prob;
-      violations.push('hate_symbol');
-    }
+    if (hate?.prob > HATE_THRESHOLD) { scores.hate_symbols = hate.prob; violations.push('hate_symbol'); }
 
     if (violations.length === 0) return { safe: true, scores };
 
@@ -239,38 +216,6 @@ async function moderateImage(
     console.error('[Moderation] Error:', err);
     return { safe: true };
   }
-}
-
-// ─── Process image ────────────────────────────────────────────────────────────
-async function processImage(buffer: Buffer) {
-  const meta = await sharp(buffer).rotate().metadata();
-
-  const w = meta.width;
-  const h = meta.height;
-
-  if (!w || !h) {
-    throw new Error(`sharp could not read image dimensions — width: ${w}, height: ${h}`);
-  }
-
-  const ratio  = Math.min(IMAGE_MAX_WIDTH / w, IMAGE_MAX_HEIGHT / h, 1);
-  const newW   = Math.round(w * ratio);
-  const newH   = Math.round(h * ratio);
-  const thumbH = Math.round((THUMB_WIDTH / w) * h);
-
-  const [main, thumb] = await Promise.all([
-    sharp(buffer)
-      .rotate()
-      .resize(newW, newH, { fit: 'inside', withoutEnlargement: true })
-      .jpeg({ quality: IMAGE_QUALITY, progressive: true, mozjpeg: true })
-      .toBuffer(),
-    sharp(buffer)
-      .rotate()
-      .resize(THUMB_WIDTH, thumbH, { fit: 'inside', withoutEnlargement: true })
-      .jpeg({ quality: THUMB_QUALITY, progressive: true })
-      .toBuffer(),
-  ]);
-
-  return { main, thumb };
 }
 
 // ─── Blob upload ──────────────────────────────────────────────────────────────
@@ -346,10 +291,7 @@ export async function POST(req: NextRequest) {
 
     // ── 0. Android check ──────────────────────────────────────────────────────
     if (!isAndroidRequest(req)) {
-      return NextResponse.json(
-        { success: false, error: 'Forbidden.' },
-        { status: 403 },
-      );
+      return NextResponse.json({ success: false, error: 'Forbidden.' }, { status: 403 });
     }
 
     // ── 1. Get IP ─────────────────────────────────────────────────────────────
@@ -359,10 +301,7 @@ export async function POST(req: NextRequest) {
 
     // ── 2. Check blocked IP ───────────────────────────────────────────────────
     if (await isIpBlocked(ip)) {
-      return NextResponse.json(
-        { success: false, error: 'Access denied.' },
-        { status: 403 },
-      );
+      return NextResponse.json({ success: false, error: 'Access denied.' }, { status: 403 });
     }
 
     // ── 3. IP rate limit ──────────────────────────────────────────────────────
@@ -376,10 +315,7 @@ export async function POST(req: NextRequest) {
     // ── 4. Verify JWT ─────────────────────────────────────────────────────────
     const verifiedUser = await verifyUser(req);
     if (!verifiedUser) {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized. Please log in.' },
-        { status: 401 },
-      );
+      return NextResponse.json({ success: false, error: 'Unauthorized. Please log in.' }, { status: 401 });
     }
 
     // ── 5. User rate limit ────────────────────────────────────────────────────
@@ -394,24 +330,22 @@ export async function POST(req: NextRequest) {
     const form = await req.formData();
 
     const file        = form.get('file')        as File   | null;
+    const thumbnail   = form.get('thumbnail')   as File   | null;
     const title       = form.get('title')       as string | null;
     const description = form.get('description') as string ?? '';
     const rawCategory = form.get('category')    as string ?? '';
     const rawWallType = form.get('wallType')     as string ?? 'mobile';
 
     // ── 7. Validate ───────────────────────────────────────────────────────────
-    if (!file || !title?.trim()) {
+    if (!file || !thumbnail || !title?.trim()) {
       return NextResponse.json(
-        { success: false, error: 'Missing required fields: file, title' },
+        { success: false, error: 'Missing required fields: file, thumbnail, title' },
         { status: 400 },
       );
     }
 
     if (!file.type.startsWith('image/')) {
-      return NextResponse.json(
-        { success: false, error: 'File must be an image.' },
-        { status: 400 },
-      );
+      return NextResponse.json({ success: false, error: 'File must be an image.' }, { status: 400 });
     }
 
     if (file.size > MAX_FILE_SIZE_BYTES) {
@@ -435,24 +369,21 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ── 8. Sanitize + whitelist ───────────────────────────────────────────────
+    // ── 8. Sanitize ───────────────────────────────────────────────────────────
     const category = VALID_CATEGORIES.includes(rawCategory as any) ? rawCategory : 'Other';
     const wallType = VALID_TYPES.includes(rawWallType as any)       ? rawWallType : 'mobile';
     const userId   = verifiedUser.id;
 
-    // ── 9. Read buffer + debug ────────────────────────────────────────────────
-    const buffer = Buffer.from(await file.arrayBuffer());
-    console.log('[debug] buffer size:', buffer.length, '| file.type:', file.type, '| file.name:', file.name);
+    // ── 9. Read buffers ───────────────────────────────────────────────────────
+    const mainBuffer  = Buffer.from(await file.arrayBuffer());
+    const thumbBuffer = Buffer.from(await thumbnail.arrayBuffer());
 
-    if (buffer.length === 0) {
-      return NextResponse.json(
-        { success: false, error: 'Received empty file. Please try again.' },
-        { status: 400 },
-      );
+    if (mainBuffer.length === 0) {
+      return NextResponse.json({ success: false, error: 'Received empty file.' }, { status: 400 });
     }
 
-    // ── 10. Moderate ──────────────────────────────────────────────────────────
-    const mod = await moderateImage(buffer, file.type);
+    // ── 10. Moderate main image ───────────────────────────────────────────────
+    const mod = await moderateImage(mainBuffer, file.type);
     if (!mod.safe) {
       await reportViolation(userId, mod.violation ?? 'policy');
       await checkAndAutoBlock(ip, userId);
@@ -465,16 +396,13 @@ export async function POST(req: NextRequest) {
       }, { status: 422 });
     }
 
-    // ── 11. Process ───────────────────────────────────────────────────────────
-    const { main, thumb } = await processImage(buffer);
-
-    // ── 12. Upload to blob ────────────────────────────────────────────────────
+    // ── 11. Upload both to blob ───────────────────────────────────────────────
     const [imageUrl, thumbnailUrl] = await Promise.all([
-      blobUpload(main,  'upload.jpg',       userId, 'wallpapers'),
-      blobUpload(thumb, 'thumb_upload.jpg', userId, 'wallpapers/thumbnails'),
+      blobUpload(mainBuffer,  'upload.jpg',       userId, 'wallpapers'),
+      blobUpload(thumbBuffer, 'thumb_upload.jpg', userId, 'wallpapers/thumbnails'),
     ]);
 
-    // ── 13. Save to DB ────────────────────────────────────────────────────────
+    // ── 12. Save to DB ────────────────────────────────────────────────────────
     await saveToDatabase({
       userId,
       title:       title.trim(),
@@ -489,10 +417,7 @@ export async function POST(req: NextRequest) {
 
   } catch (err: any) {
     console.error('[/api/upload/android]', err);
-    return NextResponse.json(
-      { success: false, error: 'Internal server error' },
-      { status: 500 },
-    );
+    return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 });
   }
 }
 
