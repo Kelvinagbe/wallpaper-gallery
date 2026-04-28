@@ -19,11 +19,11 @@ const VIOLATION_WINDOW_DAYS = 1;
 const IP_CACHE_TTL_MINUTES  = 5;
 
 const NUDITY_THRESHOLD     = 0.20;
-const SUGGESTIVE_THRESHOLD = 0.65;
-const OFFENSIVE_THRESHOLD  = 0.60;
-const GORE_THRESHOLD       = 0.60;
-const WEAPON_THRESHOLD     = 0.80;
-const DRUG_THRESHOLD       = 0.75;
+const SUGGESTIVE_THRESHOLD = 0.20;
+const OFFENSIVE_THRESHOLD  = 0.20;
+const GORE_THRESHOLD       = 0.20;
+const WEAPON_THRESHOLD     = 0.20;
+const DRUG_THRESHOLD       = 0.20;
 
 const VALID_CATEGORIES = [
   'Nature', 'Space', 'Abstract', 'Animals',
