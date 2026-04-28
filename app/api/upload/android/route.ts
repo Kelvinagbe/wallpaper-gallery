@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient }              from '@supabase/supabase-js';
 import { put }                       from '@vercel/blob';
+import FormData                      from 'form-data';
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
 const MAX_FILE_SIZE_MB      = 30;
@@ -17,13 +18,13 @@ const AUTO_BLOCK_VIOLATIONS = 3;
 const VIOLATION_WINDOW_DAYS = 1;
 const IP_CACHE_TTL_MINUTES  = 5;
 
-const NUDITY_THRESHOLD      = 0.01;
-const SUGGESTIVE_THRESHOLD  = 0.01;
-const OFFENSIVE_THRESHOLD   = 0.01;
-const GORE_THRESHOLD        = 0.01;
-const WEAPON_THRESHOLD      = 0.01;
-const DRUG_THRESHOLD        = 0.01;
-const HATE_THRESHOLD        = 0.01;
+const NUDITY_THRESHOLD      = 0.45;
+const SUGGESTIVE_THRESHOLD  = 0.65;
+const OFFENSIVE_THRESHOLD   = 0.60;
+const GORE_THRESHOLD        = 0.60;
+const WEAPON_THRESHOLD      = 0.80;
+const DRUG_THRESHOLD        = 0.75;
+const HATE_THRESHOLD        = 0.60;
 
 const VALID_CATEGORIES = [
   'Nature', 'Space', 'Abstract', 'Animals',
@@ -143,28 +144,32 @@ async function verifyUser(req: NextRequest): Promise<{ id: string } | null> {
 }
 
 // ─── Moderation ───────────────────────────────────────────────────────────────
-async function moderateImage(
-  buffer:   Buffer,
-  mimeType: string,
-): Promise<ModerationResult> {
-  if (!SE_USER || !SE_SECRET) return { safe: true };
+async function moderateImage(buffer: Buffer): Promise<ModerationResult> {
+  if (!SE_USER || !SE_SECRET) {
+    console.warn('[Moderation] Missing credentials — skipping');
+    return { safe: true };
+  }
 
   try {
-    const fd   = new FormData();
-    const blob = new Blob([buffer], { type: mimeType });
-    fd.append('media',      blob, 'image.jpg');
-    fd.append('api_user',   SE_USER);
-    fd.append('api_secret', SE_SECRET);
-    fd.append('models', [
-      'nudity-2.0', 'offensive',
-      'gore', 'weapon', 'drugs', 'hate-symbols',
-    ].join(','));
+    const form = new FormData();
+    form.append('media',      buffer, { filename: 'image.jpg', contentType: 'image/jpeg' });
+    form.append('api_user',   SE_USER);
+    form.append('api_secret', SE_SECRET);
+    form.append('models',     'nudity-2.0,offensive,gore,weapon,drugs,hate-symbols');
 
     const res  = await fetch('https://api.sightengine.com/1.0/check.json', {
-      method: 'POST', body: fd,
+      method:  'POST',
+      body:    form as any,
+      headers: form.getHeaders(),
     });
     const data = await res.json();
-    if (!res.ok || data.status === 'failure') return { safe: true };
+
+    console.log('[Moderation] nudity scores:', JSON.stringify(data.nudity));
+
+    if (!res.ok || data.status === 'failure') {
+      console.error('[Moderation] API rejected:', JSON.stringify(data));
+      return { safe: false, reason: '🚫 Moderation check failed', violation: 'moderation_error' };
+    }
 
     const scores:     Record<string, number> = {};
     const violations: string[]               = [];
@@ -207,6 +212,7 @@ async function moderateImage(
       weapon:            { reason: '🚫 Illegal weapon imagery detected',              details: 'This image prominently features firearms or illegal weapons.' },
       drugs:             { reason: '🚫 Drug-related content detected',               details: 'This image appears to contain drug paraphernalia or drug use.' },
       hate_symbol:       { reason: '🚫 Hate symbol detected',                        details: 'This image contains symbols associated with hate groups.' },
+      moderation_error:  { reason: '🚫 Moderation check failed',                     details: 'We could not verify this image. Please try again.' },
     };
 
     const primary = violations[0];
@@ -215,7 +221,7 @@ async function moderateImage(
 
   } catch (err) {
     console.error('[Moderation] Error:', err);
-    return { safe: true };
+    return { safe: false, reason: '🚫 Moderation check failed', violation: 'moderation_error' };
   }
 }
 
@@ -374,7 +380,7 @@ export async function POST(req: NextRequest) {
     }
 
     // ── 10. Moderate main image ───────────────────────────────────────────────
-    const mod = await moderateImage(mainBuffer, file.type);
+    const mod = await moderateImage(mainBuffer);
     if (!mod.safe) {
       await reportViolation(userId, mod.violation ?? 'policy');
       await checkAndAutoBlock(ip, userId);
@@ -387,7 +393,7 @@ export async function POST(req: NextRequest) {
       }, { status: 422 });
     }
 
-    // ── 11. Upload directly to Vercel Blob ────────────────────────────────────
+    // ── 11. Upload to Vercel Blob ─────────────────────────────────────────────
     const [imageUrl, thumbnailUrl] = await Promise.all([
       uploadToBlob(mainBuffer,  `wallpapers/${userId}/${ts}-main.jpg`,  'image/jpeg'),
       uploadToBlob(thumbBuffer, `wallpapers/${userId}/${ts}-thumb.jpg`, 'image/jpeg'),
