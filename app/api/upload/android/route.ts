@@ -1,7 +1,9 @@
+
 // app/api/upload/android/route.ts
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient }              from '@supabase/supabase-js';
+import { put }                       from '@vercel/blob';
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
 const MAX_FILE_SIZE_MB      = 30;
@@ -50,7 +52,6 @@ const supabaseAuth = createClient(
 );
 
 // ─── Env ──────────────────────────────────────────────────────────────────────
-const BLOB_URL  = process.env.BLOB_UPLOAD_URL!;
 const SE_USER   = process.env.SIGHTENGINE_USER!;
 const SE_SECRET = process.env.SIGHTENGINE_SECRET!;
 const APP_URL   = process.env.NEXT_PUBLIC_APP_URL!;
@@ -219,27 +220,16 @@ async function moderateImage(
 }
 
 // ─── Blob upload ──────────────────────────────────────────────────────────────
-async function blobUpload(
+async function uploadToBlob(
   buffer:   Buffer,
   filename: string,
-  userId:   string,
-  folder:   string,
+  mimeType: string,
 ): Promise<string> {
-  const fd   = new FormData();
-  const blob = new Blob([buffer], { type: 'image/jpeg' });
-  fd.append('file',   blob, filename);
-  fd.append('userId', userId);
-  fd.append('folder', folder);
-
-  const res = await fetch(BLOB_URL, { method: 'POST', body: fd });
-  if (!res.ok) {
-    const e = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(e.error || 'Blob upload failed');
-  }
-
-  const data = await res.json();
-  if (!data.success || !data.url) throw new Error('No URL from blob store');
-  return data.url as string;
+  const blob = await put(filename, buffer, {
+    access:      'public',
+    contentType: mimeType,
+  });
+  return blob.url;
 }
 
 // ─── Report violation ─────────────────────────────────────────────────────────
@@ -373,6 +363,7 @@ export async function POST(req: NextRequest) {
     const category = VALID_CATEGORIES.includes(rawCategory as any) ? rawCategory : 'Other';
     const wallType = VALID_TYPES.includes(rawWallType as any)       ? rawWallType : 'mobile';
     const userId   = verifiedUser.id;
+    const ts       = Date.now();
 
     // ── 9. Read buffers ───────────────────────────────────────────────────────
     const mainBuffer  = Buffer.from(await file.arrayBuffer());
@@ -396,10 +387,10 @@ export async function POST(req: NextRequest) {
       }, { status: 422 });
     }
 
-    // ── 11. Upload both to blob ───────────────────────────────────────────────
+    // ── 11. Upload directly to Vercel Blob ────────────────────────────────────
     const [imageUrl, thumbnailUrl] = await Promise.all([
-      blobUpload(mainBuffer,  'upload.jpg',       userId, 'wallpapers'),
-      blobUpload(thumbBuffer, 'thumb_upload.jpg', userId, 'wallpapers/thumbnails'),
+      uploadToBlob(mainBuffer,  `wallpapers/${userId}/${ts}-main.jpg`,  'image/jpeg'),
+      uploadToBlob(thumbBuffer, `wallpapers/${userId}/${ts}-thumb.jpg`, 'image/jpeg'),
     ]);
 
     // ── 12. Save to DB ────────────────────────────────────────────────────────
