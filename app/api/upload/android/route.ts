@@ -154,7 +154,7 @@ async function moderateImage(buffer: Buffer): Promise<ModerationResult> {
     const form = new FormData();
     form.append('api_user',   SE_USER);
     form.append('api_secret', SE_SECRET);
-    form.append('models',     'nudity-2.0,offensive,gore,weapon,drug,hate-symbols');
+    form.append('models', 'nudity-2.1,wad,offensive,gore-2.0,hate-symbols');
     form.append('media',      buffer, { filename: 'image.jpg', contentType: 'image/jpeg' });
 
     const res  = await fetch('https://api.sightengine.com/1.0/check.json', {
