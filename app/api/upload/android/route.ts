@@ -10,8 +10,8 @@ const MAX_FILE_SIZE_MB      = 5;
 const MAX_TITLE_LENGTH      = 100;
 const MAX_DESC_LENGTH       = 500;
 
-const IP_MAX_UPLOADS        = 7;
-const USER_MAX_UPLOADS      = 4;
+const IP_MAX_UPLOADS        = 10;
+const USER_MAX_UPLOADS      = 5;
 const RATE_LIMIT_HOURS      = 6;
 const AUTO_BLOCK_VIOLATIONS = 3;
 const VIOLATION_WINDOW_DAYS = 1;
@@ -25,7 +25,8 @@ const GORE_THRESHOLD        = 0.20;
 const WEAPON_THRESHOLD      = 0.20;
 const DRUG_THRESHOLD        = 0.20;
 const QUALITY_THRESHOLD     = 0.55; // below = low quality / blurry / pixelated (raised for stricter gate)
-const SCREENSHOT_THRESHOLD  = 0.40; // above = app/UI screenshot
+const SCREENSHOT_THRESHOLD  = 0.25; // lowered — catches more UI/app screenshots
+const CHAT_SCREENSHOT_SCORE = 0.15; // weak screenshot signal + heavy text = chat screenshot
 const TEXT_HEAVY_THRESHOLD  = 0.50; // above = image is primarily text (books, chats)
 const SELFIE_FACE_RATIO     = 0.50; // face covers >50% width AND height = casual selfie
 
@@ -236,13 +237,20 @@ async function moderateImage(buffer: Buffer): Promise<ModerationResult> {
     const type           = data.type;
     const isPhoto        = (type?.photo        ?? 0) > 0.5;
     const isIllustration = (type?.illustration ?? 0) > 0.5;
-    const isScreenshot   = (type?.screenshot   ?? 0) > SCREENSHOT_THRESHOLD;
-    const isTextHeavy    = (type?.text         ?? 0) > TEXT_HEAVY_THRESHOLD;
+    const screenshotScore = type?.screenshot ?? 0;
+    const textScore       = type?.text       ?? 0;
+    const isTextHeavy     = textScore > TEXT_HEAVY_THRESHOLD;
 
     // ── Screenshot ────────────────────────────────────────────────────────────
-    // Blocks app UI dumps, chat screenshots, status bar visible images
-    if (isScreenshot) {
-      scores.screenshot = type.screenshot;
+    // Two signals:
+    //   1. Direct: screenshot score above threshold (UI dumps, browser tabs, etc.)
+    //   2. Chat-like: weak screenshot signal + heavy text = Telegram/WhatsApp/Discord
+    //      (background wallpaper drags down the screenshot score but text is heavy)
+    const isScreenshot = screenshotScore > SCREENSHOT_THRESHOLD;
+    const isChatLike   = screenshotScore > CHAT_SCREENSHOT_SCORE && textScore > 0.35;
+
+    if (isScreenshot || isChatLike) {
+      scores.screenshot = screenshotScore;
       violations.push('screenshot');
     }
 
@@ -469,7 +477,6 @@ export async function POST(req: NextRequest) {
     const userId   = verifiedUser.id;
     const ts       = Date.now();
 
-    
     // ── 9. Read buffers ───────────────────────────────────────────────────────
     const mainBuffer  = Buffer.from(await file.arrayBuffer());
     const thumbBuffer = Buffer.from(await thumbnail.arrayBuffer());
