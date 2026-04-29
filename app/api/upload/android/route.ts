@@ -159,7 +159,7 @@ async function moderateImage(buffer: Buffer): Promise<ModerationResult> {
     const form = new FormData();
     form.append('api_user',   SE_USER);
     form.append('api_secret', SE_SECRET);
-    form.append('models', 'nudity-2.1,wad,offensive,gore-2.0,type,quality,face-attributes,ocr');
+    form.append('models', 'nudity-2.1,wad,offensive,gore-2.0,type,quality,face-attributes,text-content');
     form.append('media',      buffer, { filename: 'image.jpg', contentType: 'image/jpeg' });
 
     const res  = await fetch('https://api.sightengine.com/1.0/check.json', {
@@ -173,7 +173,7 @@ async function moderateImage(buffer: Buffer): Promise<ModerationResult> {
     console.log('[Moderation] type:',     JSON.stringify(data.type));
     console.log('[Moderation] quality:',  JSON.stringify(data.quality));
     console.log('[Moderation] faces:',    JSON.stringify(data.faces?.length));
-    console.log('[Moderation] ocr:',      JSON.stringify(data.text?.extracted?.slice(0, 100)));
+    console.log('[Moderation] ocr text:', JSON.stringify(data.text?.raw?.slice(0, 150)));
 
     if (!res.ok || data.status === 'failure') {
       console.error('[Moderation] API rejected:', JSON.stringify(data));
@@ -245,19 +245,23 @@ async function moderateImage(buffer: Buffer): Promise<ModerationResult> {
     // ── Screenshot ────────────────────────────────────────────────────────────
     // Two-layer detection:
     //   Layer 1 — Sightengine type score: catches clean UI/browser screenshots
-    //   Layer 2 — OCR pattern match: catches chat screenshots where a decorative
-    //             background wallpaper fools the type model into a low score.
-    //             Status bars always contain time, network, battery % — dead giveaways.
+    //   Layer 2 — OCR pattern match on extracted text (text-content model):
+    //             catches chat screenshots where a decorative background wallpaper
+    //             fools the type model. Status bars always leak time, network,
+    //             battery % into the OCR — dead giveaways.
+    //
+    // NOTE: text-content returns extracted text at data.text.raw
+    //       This avoids the data.text collision with the type model's text score
     const isScreenshot = screenshotScore > SCREENSHOT_THRESHOLD;
 
-    const ocrText   = (data.text?.extracted ?? '').toLowerCase();
+    const ocrText    = (data.text?.raw ?? '').toLowerCase();
     const uiPatterns = [
-      /\d{1,2}:\d{2}\s?(am|pm)/i,         // time → 7:08 PM
-      /\b(lte|4g|5g|3g|wifi|wi-fi)\b/i,   // network indicators
-      /\b\d{1,3}%/,                         // battery percentage
-      /\b(delivered|seen|read)\b/i,         // chat delivery status
-      /\b(yesterday|today)\b/i,             // chat date separators
-      /\b(typing\.\.\.|online)\b/i,         // chat presence indicators
+      /\d{1,2}:\d{2}\s?(am|pm)/i,          // time → 7:08 PM
+      /\b(lte|4g|5g|3g|wifi|wi-fi)\b/i,    // network indicators
+      /\b\d{1,3}%/,                          // battery percentage
+      /\b(delivered|seen|read)\b/i,          // chat delivery status
+      /\b(yesterday|today)\b/i,              // chat date separators
+      /\b(typing\.\.\.|online)\b/i,          // chat presence indicators
       /\b(reply|forward|delete|message)\b/i, // chat action labels
     ];
     const uiMatchCount = uiPatterns.filter(p => p.test(ocrText)).length;
