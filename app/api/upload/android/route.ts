@@ -1,4 +1,3 @@
-
 // app/api/upload/android/route.ts
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -18,16 +17,22 @@ const AUTO_BLOCK_VIOLATIONS = 3;
 const VIOLATION_WINDOW_DAYS = 1;
 const IP_CACHE_TTL_MINUTES  = 5;
 
-const NUDITY_THRESHOLD     = 0.20;
-const SUGGESTIVE_THRESHOLD = 0.20;
-const OFFENSIVE_THRESHOLD  = 0.20;
-const GORE_THRESHOLD       = 0.20;
-const WEAPON_THRESHOLD     = 0.20;
-const DRUG_THRESHOLD       = 0.20;
+// ─── Moderation thresholds ────────────────────────────────────────────────────
+const NUDITY_THRESHOLD      = 0.20;
+const SUGGESTIVE_THRESHOLD  = 0.20;
+const OFFENSIVE_THRESHOLD   = 0.20;
+const GORE_THRESHOLD        = 0.20;
+const WEAPON_THRESHOLD      = 0.20;
+const DRUG_THRESHOLD        = 0.20;
+const QUALITY_THRESHOLD     = 0.55; // below = low quality / blurry / pixelated (raised for stricter gate)
+const SCREENSHOT_THRESHOLD  = 0.40; // above = app/UI screenshot
+const TEXT_HEAVY_THRESHOLD  = 0.50; // above = image is primarily text (books, chats)
+const SELFIE_FACE_RATIO     = 0.50; // face covers >50% width AND height = casual selfie
 
 const VALID_CATEGORIES = [
   'Nature', 'Space', 'Abstract', 'Animals',
-  'Architecture', 'City', 'Dark', 'Minimal', 'Other',
+  'Architecture', 'City', 'Dark', 'Minimal',
+  'Celebrity', 'Other',                        // ← Celebrity added
 ] as const;
 
 const VALID_TYPES = ['mobile', 'desktop'] as const;
@@ -153,7 +158,7 @@ async function moderateImage(buffer: Buffer): Promise<ModerationResult> {
     const form = new FormData();
     form.append('api_user',   SE_USER);
     form.append('api_secret', SE_SECRET);
-    form.append('models',     'nudity-2.1,wad,offensive,gore-2.0,type');
+    form.append('models',     'nudity-2.1,wad,offensive,gore-2.0,type,quality,face-attributes');
     form.append('media',      buffer, { filename: 'image.jpg', contentType: 'image/jpeg' });
 
     const res  = await fetch('https://api.sightengine.com/1.0/check.json', {
@@ -163,8 +168,10 @@ async function moderateImage(buffer: Buffer): Promise<ModerationResult> {
     });
     const data = await res.json() as any;
 
-    console.log('[Moderation] nudity:', JSON.stringify(data.nudity));
-    console.log('[Moderation] type:',   JSON.stringify(data.type));
+    console.log('[Moderation] nudity:',   JSON.stringify(data.nudity));
+    console.log('[Moderation] type:',     JSON.stringify(data.type));
+    console.log('[Moderation] quality:',  JSON.stringify(data.quality));
+    console.log('[Moderation] faces:',    JSON.stringify(data.faces?.length));
 
     if (!res.ok || data.status === 'failure') {
       console.error('[Moderation] API rejected:', JSON.stringify(data));
@@ -204,7 +211,7 @@ async function moderateImage(buffer: Buffer): Promise<ModerationResult> {
       violations.push('gore');
     }
 
-    // ── Weapons / Alcohol / Drugs (wad) ───────────────────────────────────────
+    // ── Weapons / Drugs ───────────────────────────────────────────────────────
     const weapon = data.weapon;
     if ((weapon?.classes?.firearm ?? 0) > WEAPON_THRESHOLD) {
       scores.firearm = weapon.classes.firearm;
@@ -217,31 +224,94 @@ async function moderateImage(buffer: Buffer): Promise<ModerationResult> {
       violations.push('drugs');
     }
 
-    // ── Not a wallpaper (type check) ──────────────────────────────────────────
-    // Only block if clearly not a photo or illustration
-    // Allows: photos, illustrations, art, abstract
-    // Blocks: screenshots of apps/UI, selfie-only shots with no background
-    const type = data.type;
-    if (type) {
-      const isPhoto       = (type.photo        ?? 0) > 0.5;
-      const isIllustration = (type.illustration ?? 0) > 0.5;
-      if (!isPhoto && !isIllustration) {
-        scores.not_wallpaper = 1;
-        violations.push('not_wallpaper');
+    // ── Quality ───────────────────────────────────────────────────────────────
+    // Catches blurry, pixelated, or low-res images regardless of content
+    const quality = data.quality;
+    if (quality?.score !== undefined && quality.score < QUALITY_THRESHOLD) {
+      scores.quality = quality.score;
+      violations.push('low_quality');
+    }
+
+    // ── Type checks ───────────────────────────────────────────────────────────
+    const type           = data.type;
+    const isPhoto        = (type?.photo        ?? 0) > 0.5;
+    const isIllustration = (type?.illustration ?? 0) > 0.5;
+    const isScreenshot   = (type?.screenshot   ?? 0) > SCREENSHOT_THRESHOLD;
+    const isTextHeavy    = (type?.text         ?? 0) > TEXT_HEAVY_THRESHOLD;
+
+    // ── Screenshot ────────────────────────────────────────────────────────────
+    // Blocks app UI dumps, chat screenshots, status bar visible images
+    if (isScreenshot) {
+      scores.screenshot = type.screenshot;
+      violations.push('screenshot');
+    }
+
+    // ── Meme ──────────────────────────────────────────────────────────────────
+    // Memes score high on "text" + often low on photo/illustration quality
+    // We treat high text + low quality as a meme signal
+    else if (
+      isTextHeavy &&
+      (quality?.score ?? 1) < 0.60 &&
+      !isIllustration
+    ) {
+      scores.meme = type?.text ?? 0;
+      violations.push('meme');
+    }
+
+    // ── Text-heavy image ──────────────────────────────────────────────────────
+    // Book pages, WhatsApp chats, notes screenshots, essays
+    // Exception: quote/typography wallpapers score high on photo or illustration too
+    else if (isTextHeavy && !isPhoto && !isIllustration) {
+      scores.text_image = type.text;
+      violations.push('text_image');
+    }
+
+    // ── Not a wallpaper ───────────────────────────────────────────────────────
+    // Catch-all for anything that doesn't look like a photo or illustration
+    else if (!isPhoto && !isIllustration) {
+      scores.not_wallpaper = 1;
+      violations.push('not_wallpaper');
+    }
+
+    // ── People / Selfie ───────────────────────────────────────────────────────
+    // Option B: quality score does the gatekeeping
+    //   • Illustrated characters → always pass (anime, fan art, portraits)
+    //   • Real photo, dominant face, low quality → blocked (bad selfie)
+    //   • Real photo, dominant face, high quality → passes (studio, celebrity)
+    //   • Small face in scene (landscape with person) → passes
+    const faces = data.faces;
+    if (Array.isArray(faces) && faces.length > 0 && !isIllustration) {
+      const qualityScore    = quality?.score ?? 1;
+      const hasDominantFace = faces.some((face: any) => {
+        const box = face.bounding_box ?? {};
+        return (
+          ((box.xmax ?? 0) - (box.xmin ?? 0)) > SELFIE_FACE_RATIO &&
+          ((box.ymax ?? 0) - (box.ymin ?? 0)) > SELFIE_FACE_RATIO
+        );
+      });
+      if (hasDominantFace && qualityScore < QUALITY_THRESHOLD) {
+        scores.selfie = faces.length;
+        violations.push('selfie');
       }
+      // High quality dominant face = good studio shot / celebrity → let through
     }
 
     if (violations.length === 0) return { safe: true, scores };
 
     const messages: Record<string, { reason: string; details: string }> = {
-      explicit_nudity:   { reason: 'Explicit nudity or sexual content detected',   details: 'This image contains explicit content which violates our Community Guidelines.' },
-      suggestive_nudity: { reason: 'Suggestive content detected',                  details: 'Please upload images appropriate for a general audience.' },
-      offensive:         { reason: 'Offensive or hateful imagery detected',         details: 'This image contains offensive content that violates our Community Guidelines.' },
-      gore:              { reason: 'Graphic violence or gore detected',             details: 'This image contains violent or gory content which violates our Community Guidelines.' },
-      weapon:            { reason: 'Illegal weapon imagery detected',               details: 'This image prominently features firearms or illegal weapons.' },
-      drugs:             { reason: 'Drug-related content detected',                 details: 'This image appears to contain drug paraphernalia or drug use.' },
-      not_wallpaper:     { reason: 'Image does not appear to be a wallpaper',       details: 'Please upload high quality photos or illustrations suitable for use as wallpapers.' },
-      moderation_error:  { reason: 'Moderation check failed',                       details: 'We could not verify this image. Please try again.' },
+      explicit_nudity:   { reason: 'Explicit nudity or sexual content detected',        details: 'This image contains explicit content which violates our Community Guidelines.' },
+      suggestive_nudity: { reason: 'Suggestive content detected',                       details: 'Please upload images appropriate for a general audience.' },
+      offensive:         { reason: 'Offensive or hateful imagery detected',              details: 'This image contains offensive content that violates our Community Guidelines.' },
+      gore:              { reason: 'Graphic violence or gore detected',                  details: 'This image contains violent or gory content which violates our Community Guidelines.' },
+      weapon:            { reason: 'Illegal weapon imagery detected',                    details: 'This image prominently features firearms or illegal weapons.' },
+      drugs:             { reason: 'Drug-related content detected',                      details: 'This image appears to contain drug paraphernalia or drug use.' },
+      low_quality:       { reason: 'Image quality is too low',                           details: 'Please upload a clear, high-resolution photo. Blurry or pixelated images are not accepted.' },
+      screenshot:        { reason: 'Screenshots are not allowed',                        details: 'Please upload original photos or illustrations, not screenshots of apps or UI.' },
+      meme:              { reason: 'Memes are not allowed',                              details: 'Meme images are not accepted. Please upload original photos, artwork, or illustrations.' },
+      text_image:        { reason: 'Text-only images are not allowed',                   details: 'Images that are primarily text, writings, or documents are not accepted. Upload photos or illustrations instead.' },
+      not_wallpaper:     { reason: 'Image does not appear to be a wallpaper',            details: 'Please upload high quality photos or illustrations suitable for use as wallpapers.' },
+      selfie:            { reason: 'Personal photos or selfies are not allowed',         details: 'Wallpapers featuring casual selfies or low-quality people photos are not accepted. Upload landscapes, abstract art, architecture, or illustrations instead.' },
+      moderation_error:  { reason: 'Moderation check failed',                            details: 'We could not verify this image. Please try again.' },
     };
 
     const primary = violations[0];
@@ -399,6 +469,7 @@ export async function POST(req: NextRequest) {
     const userId   = verifiedUser.id;
     const ts       = Date.now();
 
+    
     // ── 9. Read buffers ───────────────────────────────────────────────────────
     const mainBuffer  = Buffer.from(await file.arrayBuffer());
     const thumbBuffer = Buffer.from(await thumbnail.arrayBuffer());
