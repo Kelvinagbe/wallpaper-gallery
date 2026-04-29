@@ -10,7 +10,7 @@ const MAX_FILE_SIZE_MB      = 5;
 const MAX_TITLE_LENGTH      = 100;
 const MAX_DESC_LENGTH       = 500;
 
-const IP_MAX_UPLOADS        = 6;
+const IP_MAX_UPLOADS        = 10;
 const USER_MAX_UPLOADS      = 5;
 const RATE_LIMIT_HOURS      = 6;
 const AUTO_BLOCK_VIOLATIONS = 3;
@@ -24,10 +24,10 @@ const OFFENSIVE_THRESHOLD   = 0.20;
 const GORE_THRESHOLD        = 0.20;
 const WEAPON_THRESHOLD      = 0.20;
 const DRUG_THRESHOLD        = 0.20;
-const QUALITY_THRESHOLD     = 0.40; // below = low quality / blurry / pixelated (raised for stricter gate)
-const SCREENSHOT_THRESHOLD  = 0.25; // lowered — catches more UI/app screenshots
-const CHAT_SCREENSHOT_SCORE = 0.15; // weak screenshot signal + heavy text = chat screenshot
+const QUALITY_THRESHOLD     = 0.55; // below = low quality / blurry / pixelated (raised for stricter gate)
+const SCREENSHOT_THRESHOLD  = 0.25; // above = direct UI/app screenshot
 const TEXT_HEAVY_THRESHOLD  = 0.50; // above = image is primarily text (books, chats)
+const UI_OCR_MIN_MATCHES    = 2;    // how many UI patterns must match in OCR text to flag as screenshot
 const SELFIE_FACE_RATIO     = 0.50; // face covers >50% width AND height = casual selfie
 
 const VALID_CATEGORIES = [
@@ -159,7 +159,7 @@ async function moderateImage(buffer: Buffer): Promise<ModerationResult> {
     const form = new FormData();
     form.append('api_user',   SE_USER);
     form.append('api_secret', SE_SECRET);
-    form.append('models',     'nudity-2.1,wad,offensive,gore-2.0,type,quality,face-attributes');
+    form.append('models', 'nudity-2.1,wad,offensive,gore-2.0,type,quality,face-attributes,ocr');
     form.append('media',      buffer, { filename: 'image.jpg', contentType: 'image/jpeg' });
 
     const res  = await fetch('https://api.sightengine.com/1.0/check.json', {
@@ -173,6 +173,7 @@ async function moderateImage(buffer: Buffer): Promise<ModerationResult> {
     console.log('[Moderation] type:',     JSON.stringify(data.type));
     console.log('[Moderation] quality:',  JSON.stringify(data.quality));
     console.log('[Moderation] faces:',    JSON.stringify(data.faces?.length));
+    console.log('[Moderation] ocr:',      JSON.stringify(data.text?.extracted?.slice(0, 100)));
 
     if (!res.ok || data.status === 'failure') {
       console.error('[Moderation] API rejected:', JSON.stringify(data));
@@ -234,23 +235,39 @@ async function moderateImage(buffer: Buffer): Promise<ModerationResult> {
     }
 
     // ── Type checks ───────────────────────────────────────────────────────────
-    const type           = data.type;
-    const isPhoto        = (type?.photo        ?? 0) > 0.5;
-    const isIllustration = (type?.illustration ?? 0) > 0.5;
+    const type            = data.type;
+    const isPhoto         = (type?.photo        ?? 0) > 0.5;
+    const isIllustration  = (type?.illustration ?? 0) > 0.5;
     const screenshotScore = type?.screenshot ?? 0;
     const textScore       = type?.text       ?? 0;
     const isTextHeavy     = textScore > TEXT_HEAVY_THRESHOLD;
 
     // ── Screenshot ────────────────────────────────────────────────────────────
-    // Two signals:
-    //   1. Direct: screenshot score above threshold (UI dumps, browser tabs, etc.)
-    //   2. Chat-like: weak screenshot signal + heavy text = Telegram/WhatsApp/Discord
-    //      (background wallpaper drags down the screenshot score but text is heavy)
+    // Two-layer detection:
+    //   Layer 1 — Sightengine type score: catches clean UI/browser screenshots
+    //   Layer 2 — OCR pattern match: catches chat screenshots where a decorative
+    //             background wallpaper fools the type model into a low score.
+    //             Status bars always contain time, network, battery % — dead giveaways.
     const isScreenshot = screenshotScore > SCREENSHOT_THRESHOLD;
-    const isChatLike   = screenshotScore > CHAT_SCREENSHOT_SCORE && textScore > 0.35;
+
+    const ocrText   = (data.text?.extracted ?? '').toLowerCase();
+    const uiPatterns = [
+      /\d{1,2}:\d{2}\s?(am|pm)/i,         // time → 7:08 PM
+      /\b(lte|4g|5g|3g|wifi|wi-fi)\b/i,   // network indicators
+      /\b\d{1,3}%/,                         // battery percentage
+      /\b(delivered|seen|read)\b/i,         // chat delivery status
+      /\b(yesterday|today)\b/i,             // chat date separators
+      /\b(typing\.\.\.|online)\b/i,         // chat presence indicators
+      /\b(reply|forward|delete|message)\b/i, // chat action labels
+    ];
+    const uiMatchCount = uiPatterns.filter(p => p.test(ocrText)).length;
+    const isChatLike   = uiMatchCount >= UI_OCR_MIN_MATCHES;
+
+    console.log('[Moderation] screenshot score:', screenshotScore, '| ui ocr matches:', uiMatchCount);
 
     if (isScreenshot || isChatLike) {
-      scores.screenshot = screenshotScore;
+      scores.screenshot     = screenshotScore;
+      scores.ui_match_count = uiMatchCount;
       violations.push('screenshot');
     }
 
@@ -429,7 +446,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ── 6. Parse form ─────────────────────────────────────────────────────────
+   // ── 6. Parse form ─────────────────────────────────────────────────────────
     const form        = await req.formData();
     const file        = form.get('file')        as File   | null;
     const thumbnail   = form.get('thumbnail')   as File   | null;
