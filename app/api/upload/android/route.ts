@@ -24,7 +24,7 @@ const OFFENSIVE_THRESHOLD   = 0.20;
 const GORE_THRESHOLD        = 0.20;
 const WEAPON_THRESHOLD      = 0.20;
 const DRUG_THRESHOLD        = 0.20;
-const QUALITY_THRESHOLD     = 0.55; // below = low quality / blurry / pixelated (raised for stricter gate)
+const QUALITY_THRESHOLD     = 0.40; // below = low quality / blurry / pixelated (raised for stricter gate)
 const SCREENSHOT_THRESHOLD  = 0.25; // lowered — catches more UI/app screenshots
 const CHAT_SCREENSHOT_SCORE = 0.15; // weak screenshot signal + heavy text = chat screenshot
 const TEXT_HEAVY_THRESHOLD  = 0.50; // above = image is primarily text (books, chats)
