@@ -10,8 +10,8 @@ const MAX_FILE_SIZE_MB      = 5;
 const MAX_TITLE_LENGTH      = 100;
 const MAX_DESC_LENGTH       = 500;
 
-const IP_MAX_UPLOADS        = 10;
-const USER_MAX_UPLOADS      = 5;
+const IP_MAX_UPLOADS        = 7;
+const USER_MAX_UPLOADS      = 4;
 const RATE_LIMIT_HOURS      = 6;
 const AUTO_BLOCK_VIOLATIONS = 3;
 const VIOLATION_WINDOW_DAYS = 1;
