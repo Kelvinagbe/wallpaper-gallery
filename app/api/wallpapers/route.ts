@@ -1,6 +1,4 @@
 
-// app/api/wallpapers/route.ts
-
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
@@ -22,7 +20,7 @@ function getCorsHeaders(request: NextRequest) {
 }
 
 // ─── Whitelists ───────────────────────────────────────────────────────────────
-const VALID_FILTERS    = ['recent', 'trending', 'popular'] as const;
+const VALID_FILTERS = ['recent', 'trending', 'popular'] as const;
 const VALID_CATEGORIES = [
   'Nature', 'Space', 'Abstract', 'Animals',
   'Architecture', 'City', 'Dark', 'Minimal', 'Other',
@@ -33,30 +31,34 @@ const UUID_REGEX = /^[0-9a-f-]{36}$/i;
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 
 function isRateLimited(ip: string): boolean {
-  const now        = Date.now();
-  const windowMs   = 60 * 1000;
-  const maxRequest = 30;
-
-  const entry = rateLimitMap.get(ip);
+  const now      = Date.now();
+  const windowMs = 60 * 1000;
+  const maxReqs  = 30;
+  const entry    = rateLimitMap.get(ip);
 
   if (!entry || now > entry.resetAt) {
     rateLimitMap.set(ip, { count: 1, resetAt: now + windowMs });
     return false;
   }
-
-  if (entry.count >= maxRequest) return true;
-
+  if (entry.count >= maxReqs) return true;
   entry.count++;
   return false;
 }
 
-// ─── Transform normal query row ───────────────────────────────────────────────
+// ─── Columns ──────────────────────────────────────────────────────────────────
+const WALLPAPER_COLUMNS = `
+  id, title, description, image_url, thumbnail_url, category,
+  tags, views, downloads, user_id, type, created_at,
+  profiles:user_id(username, full_name, avatar_url, verified)
+`;
+
+// ─── Transforms ───────────────────────────────────────────────────────────────
 const transform = (wp: any) => ({
   id:          wp.id,
   title:       wp.title,
-  description: wp.description   || '',
+  description: wp.description || '',
   url:         wp.image_url,
-  thumbnail:   wp.thumbnail_url || wp.thumbnail || wp.image_url,
+  thumbnail:   wp.thumbnail_url || wp.image_url,
   category:    wp.category      || 'Other',
   tags:        wp.tags          || [],
   views:       wp.views         || 0,
@@ -71,13 +73,12 @@ const transform = (wp: any) => ({
   verified:    wp.profiles?.verified   || false,
 });
 
-// ─── Transform RPC search row (flat, no nested profiles) ─────────────────────
 const transformRpc = (row: any) => ({
   id:          row.id,
   title:       row.title,
-  description: row.description   || '',
+  description: row.description || '',
   url:         row.image_url,
-  thumbnail:   row.thumbnail_url || row.thumbnail || row.image_url,
+  thumbnail:   row.thumbnail_url || row.image_url,
   category:    row.category      || 'Other',
   tags:        row.tags          || [],
   views:       row.views         || 0,
@@ -101,7 +102,7 @@ export async function OPTIONS(request: NextRequest) {
 }
 
 // ─── GET /api/wallpapers ──────────────────────────────────────────────────────
-// Query params:
+// Params:
 //   page     = 0, 1, 2...               (default: 0)
 //   limit    = 1-50                     (default: 20)
 //   filter   = recent|trending|popular  (default: recent)
@@ -112,11 +113,10 @@ export async function GET(request: NextRequest) {
   const CORS = getCorsHeaders(request);
 
   try {
-
-    // ─── Rate limiting ────────────────────────────────────────────────────────
+    // ── Rate limit ────────────────────────────────────────────────────────────
     const ip = request.headers.get('x-forwarded-for')
-               ?? request.headers.get('x-real-ip')
-               ?? 'unknown';
+            ?? request.headers.get('x-real-ip')
+            ?? 'unknown';
 
     if (isRateLimited(ip)) {
       return NextResponse.json(
@@ -125,7 +125,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // ─── Parse & validate params ──────────────────────────────────────────────
+    // ── Parse params ──────────────────────────────────────────────────────────
     const { searchParams } = request.nextUrl;
 
     const page  = Math.max(0, parseInt(searchParams.get('page')  || '0'));
@@ -139,61 +139,53 @@ export async function GET(request: NextRequest) {
     const rawUserId   = searchParams.get('userId')   || '';
     const rawSearch   = searchParams.get('search')   || '';
 
-    const filter = VALID_FILTERS.includes(rawFilter as any)
-                   ? rawFilter
-                   : 'recent';
-
-    const category = VALID_CATEGORIES.includes(rawCategory)
-                     ? rawCategory
-                     : '';
-
-    const userId = UUID_REGEX.test(rawUserId)
-                   ? rawUserId
-                   : '';
-
-    const search = rawSearch
-                   .slice(0, 50)
-                   .trim()
-                   .replace(/[%_\\]/g, '');
+    const filter   = VALID_FILTERS.includes(rawFilter as any) ? rawFilter : 'recent';
+    const category = VALID_CATEGORIES.includes(rawCategory) ? rawCategory : '';
+    const userId   = UUID_REGEX.test(rawUserId) ? rawUserId : '';
+    const search   = rawSearch.slice(0, 50).trim().replace(/[%_\\]/g, '');
 
     const supabase = await createClient();
 
-    // ─── Search via RPC (includes uploader name search) ───────────────────────
+    // ── Search path ───────────────────────────────────────────────────────────
     if (search) {
       const { data, error } = await supabase
-        .rpc('search_wallpapers', { search_term: search });
+        .rpc('search_wallpapers', {
+          search_term:  search,
+          page_limit:   limit,
+          page_offset:  page * limit,
+        });
 
       if (error) throw new Error(error.message);
 
       const wallpapers = (data ?? []).map(transformRpc);
 
-      return NextResponse.json({
-        wallpapers,
-        pagination: {
-          page,
-          limit,
-          total:   wallpapers.length,
-          hasMore: false,
+      return NextResponse.json(
+        {
+          wallpapers,
+          pagination: {
+            page,
+            limit,
+            total:   wallpapers.length,
+            hasMore: wallpapers.length === limit,
+          },
         },
-      }, {
-        status: 200,
-        headers: {
-          ...CORS,
-          'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
-        },
-      });
+        {
+          status: 200,
+          headers: {
+            ...CORS,
+            'Cache-Control': 'no-store',
+          },
+        }
+      );
     }
 
-    // ─── Normal query (no search) ─────────────────────────────────────────────
+    // ── Normal feed ───────────────────────────────────────────────────────────
     const start = page * limit;
     const end   = start + limit - 1;
 
     let query = supabase
       .from('wallpapers')
-      .select(`
-        *,
-        profiles:user_id(username, full_name, avatar_url, verified)
-      `, { count: 'exact' })
+      .select(WALLPAPER_COLUMNS, { count: 'exact' })
       .eq('is_public', true);
 
     if (category) query = query.eq('category', category);
@@ -215,7 +207,6 @@ export async function GET(request: NextRequest) {
 
     if (error) throw new Error(error.message);
 
-    // ─── Safe transform ───────────────────────────────────────────────────────
     const wallpapers = [];
     for (const row of data ?? []) {
       try {
@@ -226,22 +217,24 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // ─── Response ─────────────────────────────────────────────────────────────
-    return NextResponse.json({
-      wallpapers,
-      pagination: {
-        page,
-        limit,
-        total:   count || 0,
-        hasMore: end < (count || 0) - 1,
+    return NextResponse.json(
+      {
+        wallpapers,
+        pagination: {
+          page,
+          limit,
+          total:   count || 0,
+          hasMore: end < (count || 0) - 1,
+        },
       },
-    }, {
-      status: 200,
-      headers: {
-        ...CORS,
-        'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
-      },
-    });
+      {
+        status: 200,
+        headers: {
+          ...CORS,
+          'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
+        },
+      }
+    );
 
   } catch (error: any) {
     console.error('[wallpapers API]', error);
