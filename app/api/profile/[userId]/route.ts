@@ -1,17 +1,19 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
 
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
 const PAGE_SIZE = 18;
 
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ userId: string }> }
 ) {
+  // ── Create client inside handler — never at module level ───────
+  // Prevents "supabaseUrl is required" error during Vercel build
+  const supabase = createClient(
+    process.env.SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+
   const { userId } = await params;
 
   if (!userId) {
@@ -113,4 +115,5 @@ export async function GET(
     console.error('[profile] error:', err);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
-}
+    }
+          
