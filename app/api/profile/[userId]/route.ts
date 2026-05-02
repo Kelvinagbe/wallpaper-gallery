@@ -36,7 +36,7 @@ export async function GET(
     // ── Wallpapers ───────────────────────────────────────────────────────────
     const selectFields =
       'id, thumbnail_url, title, description, tags, ' +
-      'downloads, likes, views, user_id, aspect_ratio, created_at, category, ' +
+      'downloads, views, user_id, aspect_ratio, created_at, category, ' +
       (isAuthenticated ? 'image_url, ' : '') +
       'profiles:user_id(username, full_name, avatar_url, verified)';
 
@@ -119,4 +119,4 @@ export async function GET(
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
       }
-              
+        
