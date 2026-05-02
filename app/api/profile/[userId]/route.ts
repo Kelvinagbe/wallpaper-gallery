@@ -7,13 +7,17 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ userId: string }> }
 ) {
-  // ── Create client inside handler — never at module level ───────
-  // Prevents "supabaseUrl is required" error during Vercel build
-  const supabase = createClient(
-    process.env.SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
+  // ── Use NEXT_PUBLIC_ vars — consistent with the rest of the project ─────────
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
+  if (!supabaseUrl || !supabaseKey) {
+    console.error('[profile] Missing Supabase env vars');
+    return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 });
+  }
+
+  const supabase = createClient(supabaseUrl, supabaseKey);
   const { userId } = await params;
 
   if (!userId) {
@@ -23,13 +27,13 @@ export async function GET(
   const { searchParams } = req.nextUrl;
   const page = Math.max(0, parseInt(searchParams.get('page') ?? '0', 10));
   const from = page * PAGE_SIZE;
-  const to = from + PAGE_SIZE - 1;
+  const to   = from + PAGE_SIZE - 1;
 
-  // ── Auth: proxy.ts injects x-user-id header if token is valid ──
+  // proxy.ts injects x-user-id if JWT was valid
   const isAuthenticated = req.headers.get('x-user-id') !== null;
 
   try {
-    // ── Wallpapers (every page) ────────────────────────────────
+    // ── Wallpapers ───────────────────────────────────────────────────────────
     const selectFields =
       'id, thumbnail_url, title, description, tags, ' +
       'downloads, likes, views, user_id, aspect_ratio, created_at, category, ' +
@@ -47,13 +51,12 @@ export async function GET(
 
     const items = (wallpaperData ?? []).map((w: any) => ({
       ...w,
-      // Guests only get thumbnail — authenticated users get full image
       image_url: isAuthenticated
         ? (w.image_url ?? w.thumbnail_url)
         : w.thumbnail_url,
     }));
 
-    // ── Profile (page 0 only — no need to re-fetch on scroll) ──
+    // ── Profile (page 0 only) ────────────────────────────────────────────────
     let profile = null;
     if (page === 0) {
       const [profileRes, followersRes, followingRes, postsRes] =
@@ -83,15 +86,15 @@ export async function GET(
       }
 
       profile = {
-        id: profileRes.data.id,
-        full_name: profileRes.data.full_name ?? '',
-        username: profileRes.data.username ?? '',
-        bio: profileRes.data.bio ?? '',
-        verified: profileRes.data.verified ?? false,
-        avatar_url: profileRes.data.avatar_url ?? '',
-        followers: followersRes.count ?? 0,
-        following: followingRes.count ?? 0,
-        posts: postsRes.count ?? 0,
+        id:          profileRes.data.id,
+        full_name:   profileRes.data.full_name  ?? '',
+        username:    profileRes.data.username   ?? '',
+        bio:         profileRes.data.bio        ?? '',
+        verified:    profileRes.data.verified   ?? false,
+        avatar_url:  profileRes.data.avatar_url ?? '',
+        followers:   followersRes.count ?? 0,
+        following:   followingRes.count ?? 0,
+        posts:       postsRes.count    ?? 0,
       };
     }
 
@@ -99,8 +102,8 @@ export async function GET(
       {
         profile,
         page,
-        page_size: PAGE_SIZE,
-        has_more: items.length === PAGE_SIZE,
+        page_size:        PAGE_SIZE,
+        has_more:         items.length === PAGE_SIZE,
         is_authenticated: isAuthenticated,
         items,
       },
@@ -115,5 +118,5 @@ export async function GET(
     console.error('[profile] error:', err);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
-    }
-          
+      }
+              
