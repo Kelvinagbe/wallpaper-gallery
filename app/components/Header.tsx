@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Mail, UserPlus, ArrowRight, X, Check, Search, ListFilter, Home, Bell, User, Plus } from 'lucide-react';
+import { Mail, UserPlus, X, Check, Search, ListFilter, Bell, User, Home, Menu, Plus, LogOut } from 'lucide-react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/app/components/AuthProvider';
 import { useUploadModal } from '@/app/components/UploadModalProvider';
@@ -20,14 +20,14 @@ const FILTERS: { value: Filter; label: string }[] = [
 ];
 
 const NAV = [
-  { href: '/',        icon: Home,   label: 'Home'    },
-  { href: '/search',  icon: Search, label: 'Search'  },
-  { href: '/alerts',  icon: Bell,   label: 'Alerts'  },
-  { href: '/profile', icon: User,   label: 'Profile' },
+  { href: '/',        icon: Home,  label: 'Home'    },
+  { href: '/search',  icon: Search,label: 'Search'  },
+  { href: '/alerts',  icon: Bell,  label: 'Alerts'  },
+  { href: '/profile', icon: User,  label: 'Profile' },
 ];
 
 const F          = "'Outfit', sans-serif";
-const HDR_BG     = 'rgba(10,10,10,0.9)';
+const HDR_BG     = 'rgba(10,10,10,0.92)';
 const HDR_BORDER = '1px solid rgba(255,255,255,0.07)';
 
 const CSS = `
@@ -44,7 +44,7 @@ const CSS = `
 
   .bd-in{animation:bdIn .2s ease forwards}   .bd-out{animation:bdOut .2s ease forwards}
   .m-in{animation:mIn .28s cubic-bezier(.16,1,.3,1) forwards}  .m-out{animation:mOut .2s ease forwards}
-  .sh-in{animation:shIn .3s cubic-bezier(.16,1,.3,1) forwards} .sh-out{animation:shOut .24s ease forwards}
+  .sh-in{animation:shIn .32s cubic-bezier(.16,1,.3,1) forwards} .sh-out{animation:shOut .24s ease forwards}
   .ms-in{animation:msIn .22s cubic-bezier(.16,1,.3,1) forwards} .ms-out{animation:msOut .18s ease forwards}
 
   .wl-input,.mob-input{
@@ -62,17 +62,18 @@ const CSS = `
   .wl-pill:hover{color:rgba(255,255,255,.75);border-color:rgba(255,255,255,.28)}
   .wl-pill.active{background:#fff;color:#000;border-color:#fff;font-weight:600}
 
+  .hdr-icon-btn{width:34px;height:34px;display:flex;align-items:center;justify-content:center;background:transparent;border:none;border-radius:8px;cursor:pointer;transition:background .15s;flex-shrink:0;-webkit-tap-highlight-color:transparent}
+  .hdr-icon-btn:hover{background:rgba(255,255,255,0.07)}
+  .hdr-icon-btn:active{background:rgba(255,255,255,0.12)}
+
+  .nav-row{width:100%;padding:14px 22px;display:flex;align-items:center;gap:14px;background:transparent;border:none;font-family:'Outfit',sans-serif;font-size:15px;font-weight:500;color:#111;cursor:pointer;transition:background .12s;text-align:left;-webkit-tap-highlight-color:transparent}
+  .nav-row:active{background:rgba(0,0,0,.04)}
+  .nav-row.active{font-weight:700;color:#000}
+  .nav-row + .nav-row{border-top:1px solid rgba(0,0,0,.05)}
+
   .sheet-row{width:100%;padding:15px 22px;display:flex;align-items:center;justify-content:space-between;background:transparent;border:none;border-top:1px solid rgba(0,0,0,.05);font-family:'Outfit',sans-serif;font-size:15px;color:rgba(0,0,0,.55);cursor:pointer;transition:background .12s}
   .sheet-row.active{font-weight:600;color:#000}
   .sheet-row:active{background:rgba(0,0,0,.03)}
-
-  .hdr-icon-btn{width:34px;height:34px;display:flex;align-items:center;justify-content:center;background:transparent;border:none;border-radius:8px;cursor:pointer;transition:background .15s;flex-shrink:0}
-  .hdr-icon-btn:hover{background:rgba(255,255,255,0.07)}
-
-  .bnav-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;flex:1;background:transparent;border:none;cursor:pointer;padding:8px 0;transition:opacity .15s}
-  .bnav-btn span{font-family:'Outfit',sans-serif;font-size:10px;font-weight:500;color:rgba(255,255,255,0.38);transition:color .15s}
-  .bnav-btn.active span{color:#fff;font-weight:600}
-  .bnav-btn:active{opacity:.7}
 
   @media(min-width:768px){.mob{display:none!important}}
   @media(max-width:767px){.desk{display:none!important}}
@@ -93,23 +94,6 @@ const Logo = ({ dark = false }: { dark?: boolean }) => {
   );
 };
 
-const Overlay = ({ closing, onClick }: { closing: boolean; onClick: () => void }) => (
-  <div
-    className={closing ? 'bd-out' : 'bd-in'}
-    onClick={onClick}
-    style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
-  />
-);
-
-const CloseBtn = ({ onClick }: { onClick: () => void }) => (
-  <button
-    onClick={onClick}
-    style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(0,0,0,0.06)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-  >
-    <X size={13} color="rgba(0,0,0,0.4)" />
-  </button>
-);
-
 function useAnimatedToggle(durationMs: number) {
   const [visible, setVisible] = useState(false);
   const [closing, setClosing] = useState(false);
@@ -127,19 +111,21 @@ export const Header = ({ filter, setFilter, startLoader }: HeaderProps) => {
   const { user } = useAuth();
   const { open: openUpload } = useUploadModal();
 
-  const auth  = useAnimatedToggle(220);
-  const sheet = useAnimatedToggle(260);
+  const auth   = useAnimatedToggle(220);
+  const sheet  = useAnimatedToggle(260); // filter sheet
+  const navSheet = useAnimatedToggle(280); // nav menu sheet
 
-  const [searchVal, setSearchVal] = useState('');
-  const [mobOpen,   setMobOpen]   = useState(false);
-  const [mobClosing,setMobClosing]= useState(false);
-  const [mobVal,    setMobVal]    = useState('');
+  const [searchVal,  setSearchVal]  = useState('');
+  const [mobOpen,    setMobOpen]    = useState(false);
+  const [mobClosing, setMobClosing] = useState(false);
+  const [mobVal,     setMobVal]     = useState('');
   const mobRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    document.body.style.overflow = (auth.visible || sheet.visible) ? 'hidden' : '';
+    const anyOpen = auth.visible || sheet.visible || navSheet.visible;
+    document.body.style.overflow = anyOpen ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
-  }, [auth.visible, sheet.visible]);
+  }, [auth.visible, sheet.visible, navSheet.visible]);
 
   useEffect(() => {
     if (mobOpen && !mobClosing) setTimeout(() => mobRef.current?.focus(), 80);
@@ -160,8 +146,10 @@ export const Header = ({ filter, setFilter, startLoader }: HeaderProps) => {
   };
 
   const handleNav = (href: string) => {
-    startLoader?.();
-    router.push(href);
+    navSheet.close(() => {
+      startLoader?.();
+      router.push(href);
+    });
   };
 
   return (
@@ -169,12 +157,16 @@ export const Header = ({ filter, setFilter, startLoader }: HeaderProps) => {
       <style>{CSS}</style>
 
       {/* ── HEADER ── */}
-      <header style={{ position: 'sticky', top: 0, zIndex: 50, background: HDR_BG, backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', borderBottom: HDR_BORDER }}>
-
+      <header style={{
+        position: 'sticky', top: 0, zIndex: 50,
+        background: HDR_BG,
+        backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+        borderBottom: HDR_BORDER,
+      }}>
         {/* Top row */}
         <div style={{ maxWidth: 1300, margin: '0 auto', padding: '0 16px', height: 54, display: 'flex', alignItems: 'center', gap: 10 }}>
 
-          <button onClick={() => router.push('/')} style={{ background: 'none', border: 'none', cursor: 'pointer', flexShrink: 0, padding: '0 2px' }}>
+          <button onClick={() => router.push('/')} style={{ background: 'none', border: 'none', cursor: 'pointer', flexShrink: 0, padding: '0 2px', WebkitTapHighlightColor: 'transparent' }}>
             <Logo />
           </button>
 
@@ -194,17 +186,31 @@ export const Header = ({ filter, setFilter, startLoader }: HeaderProps) => {
           <div style={{ flex: 1 }} />
 
           {/* Mobile icons */}
-          <div className="mob" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div className="mob" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            {/* Search toggle */}
             <button className="hdr-icon-btn" aria-label="Search" onClick={() => mobOpen ? closeMob() : setMobOpen(true)}>
               {mobOpen && !mobClosing
                 ? <X size={18} color="rgba(255,255,255,0.75)" />
                 : <Search size={18} color="rgba(255,255,255,0.65)" />}
             </button>
+
+            {/* Filter */}
             <button className="hdr-icon-btn" onClick={sheet.open} aria-label="Filter" style={{ position: 'relative' }}>
               <ListFilter size={17} color="rgba(255,255,255,0.65)" strokeWidth={2} />
               {filter !== 'all' && (
                 <span style={{ position: 'absolute', top: 6, right: 6, width: 5, height: 5, borderRadius: '50%', background: '#fff', border: '1.5px solid #0a0a0a' }} />
               )}
+            </button>
+
+            {/* Menu / hamburger → opens nav sheet */}
+            <button
+              className="hdr-icon-btn"
+              aria-label="Menu"
+              onClick={navSheet.shown ? () => navSheet.close() : navSheet.open}
+            >
+              {navSheet.shown && !navSheet.closing
+                ? <X size={18} color="rgba(255,255,255,0.75)" />
+                : <Menu size={18} color="rgba(255,255,255,0.65)" />}
             </button>
           </div>
 
@@ -275,69 +281,113 @@ export const Header = ({ filter, setFilter, startLoader }: HeaderProps) => {
         </div>
       </header>
 
-      {/* ── BOTTOM NAV (mobile only) ── */}
-      <nav
-        className="mob"
-        style={{
-          position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 50,
-          background: 'rgba(10,10,10,0.96)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
-          borderTop: HDR_BORDER, borderRadius: '16px 16px 0 0',
-          display: 'flex', alignItems: 'center',
-          padding: '6px 8px max(14px,env(safe-area-inset-bottom)) 8px',
-          boxShadow: '0 -8px 40px rgba(0,0,0,0.4)',
-        }}
-      >
-        {/* Left two nav items */}
-        {NAV.slice(0, 2).map(({ href, icon: Icon, label }) => {
-          const active = pathname === href;
-          return (
-            <button key={href} className={`bnav-btn${active ? ' active' : ''}`} onClick={() => handleNav(href)}>
-              <Icon size={20} strokeWidth={active ? 2.5 : 1.8} color={active ? '#fff' : 'rgba(255,255,255,0.38)'} />
-              <span>{label}</span>
-            </button>
-          );
-        })}
+      {/* ── NAV BOTTOM SHEET (mobile menu) ── */}
+      {navSheet.shown && (
+        <>
+          {/* Backdrop */}
+          <div
+            className={navSheet.closing ? 'bd-out' : 'bd-in'}
+            onClick={() => navSheet.close()}
+            style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }}
+          />
 
-        {/* Center upload / auth button */}
-        <div style={{ flex: 1, display: 'flex', justifyContent: 'center', padding: '0 6px' }}>
-          <button
-            onClick={user ? openUpload : auth.open}
+          {/* Sheet */}
+          <div
+            className={`mob ${navSheet.closing ? 'sh-out' : 'sh-in'}`}
             style={{
-              width: 52, height: 52, borderRadius: 16, border: 'none',
-              background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              cursor: 'pointer', boxShadow: '0 4px 20px rgba(255,255,255,0.15)',
-              transition: 'transform .15s, box-shadow .15s',
+              position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 95,
+              background: '#fff', borderRadius: '22px 22px 0 0',
+              paddingBottom: 'max(24px, env(safe-area-inset-bottom))',
+              boxShadow: '0 -12px 50px rgba(0,0,0,0.22)',
             }}
-            onTouchStart={e => Object.assign((e.currentTarget as HTMLElement).style, { transform: 'scale(0.93)', boxShadow: '0 2px 10px rgba(255,255,255,0.1)' })}
-            onTouchEnd={e => Object.assign((e.currentTarget as HTMLElement).style, { transform: 'scale(1)', boxShadow: '0 4px 20px rgba(255,255,255,0.15)' })}
           >
-            <Plus size={22} color="#000" strokeWidth={2.5} />
-          </button>
-        </div>
+            {/* Handle */}
+            <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 6px' }}>
+              <div style={{ width: 32, height: 3, borderRadius: 2, background: 'rgba(0,0,0,0.1)' }} />
+            </div>
 
-        {/* Right two nav items */}
-        {NAV.slice(2).map(({ href, icon: Icon, label }) => {
-          const active = pathname === href;
-          return (
-            <button key={href} className={`bnav-btn${active ? ' active' : ''}`} onClick={() => handleNav(href)}>
-              <Icon size={20} strokeWidth={active ? 2.5 : 1.8} color={active ? '#fff' : 'rgba(255,255,255,0.38)'} />
-              <span>{label}</span>
-            </button>
-          );
-        })}
-      </nav>
+            {/* Upload / Sign in CTA */}
+            <div style={{ padding: '8px 18px 10px' }}>
+              <button
+                onClick={() => navSheet.close(() => user ? openUpload() : auth.open())}
+                style={{
+                  width: '100%', padding: '13px 18px', borderRadius: 13, border: 'none',
+                  background: '#0a0a0a', color: '#fff', fontFamily: F, fontWeight: 700,
+                  fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center',
+                  justifyContent: 'center', gap: 8, WebkitTapHighlightColor: 'transparent',
+                  transition: 'opacity .15s',
+                }}
+                onTouchStart={e => (e.currentTarget.style.opacity = '0.8')}
+                onTouchEnd={e => (e.currentTarget.style.opacity = '1')}
+              >
+                <Plus size={16} strokeWidth={2.5} />
+                {user ? 'Upload Wallpaper' : 'Sign in to Upload'}
+              </button>
+            </div>
+
+            {/* Divider label */}
+            <div style={{ padding: '6px 22px 4px', fontFamily: F, fontSize: 11, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'rgba(0,0,0,.28)' }}>
+              Navigate
+            </div>
+
+            {/* Nav links */}
+            {NAV.map(({ href, icon: Icon, label }) => {
+              const active = pathname === href;
+              return (
+                <button
+                  key={href}
+                  className={`nav-row${active ? ' active' : ''}`}
+                  onClick={() => handleNav(href)}
+                >
+                  <div style={{
+                    width: 36, height: 36, borderRadius: 10, display: 'flex',
+                    alignItems: 'center', justifyContent: 'center',
+                    background: active ? '#0a0a0a' : 'rgba(0,0,0,0.06)',
+                    flexShrink: 0,
+                  }}>
+                    <Icon size={17} color={active ? '#fff' : '#555'} strokeWidth={active ? 2.5 : 1.8} />
+                  </div>
+                  <span style={{ color: active ? '#000' : '#333' }}>{label}</span>
+                  {active && (
+                    <div style={{ marginLeft: 'auto' }}>
+                      <Check size={15} color="#000" strokeWidth={2.5} />
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+
+            {/* Sign out if logged in */}
+            {user && (
+              <>
+                <div style={{ margin: '8px 18px 0', borderTop: '1px solid rgba(0,0,0,.06)' }} />
+                <button
+                  className="nav-row"
+                  onClick={() => navSheet.close(() => router.push('/auth/logout'))}
+                  style={{ color: '#e53e3e' }}
+                >
+                  <div style={{ width: 36, height: 36, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(229,62,62,0.08)', flexShrink: 0 }}>
+                    <LogOut size={17} color="#e53e3e" strokeWidth={1.8} />
+                  </div>
+                  <span style={{ color: '#e53e3e' }}>Sign out</span>
+                </button>
+              </>
+            )}
+          </div>
+        </>
+      )}
 
       {/* ── FILTER SHEET ── */}
       {sheet.shown && (
         <div
           className={sheet.closing ? 'bd-out' : 'bd-in'}
           onClick={() => sheet.close()}
-          style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
+          style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)', display: 'flex', alignItems: 'flex-end' }}
         >
           <div
             className={sheet.closing ? 'sh-out' : 'sh-in'}
             onClick={e => e.stopPropagation()}
-            style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: '#fff', borderRadius: '20px 20px 0 0', paddingBottom: 'max(20px,env(safe-area-inset-bottom))', boxShadow: '0 -8px 40px rgba(0,0,0,0.18)' }}
+            style={{ width: '100%', background: '#fff', borderRadius: '20px 20px 0 0', paddingBottom: 'max(20px,env(safe-area-inset-bottom))', boxShadow: '0 -8px 40px rgba(0,0,0,0.18)' }}
           >
             <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 4px' }}>
               <div style={{ width: 30, height: 3, borderRadius: 2, background: 'rgba(0,0,0,0.1)' }} />
@@ -359,7 +409,7 @@ export const Header = ({ filter, setFilter, startLoader }: HeaderProps) => {
         </div>
       )}
 
-      {/* ── AUTH MODAL ── */}
+       {/* ── AUTH MODAL ── */}
       {auth.shown && (
         <div
           className={auth.closing ? 'bd-out' : 'bd-in'}
@@ -374,7 +424,12 @@ export const Header = ({ filter, setFilter, startLoader }: HeaderProps) => {
             <div style={{ padding: '28px 26px 30px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
                 <Logo dark />
-                <CloseBtn onClick={() => auth.close()} />
+                <button
+                  onClick={() => auth.close()}
+                  style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(0,0,0,0.06)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <X size={13} color="rgba(0,0,0,0.4)" />
+                </button>
               </div>
               <p style={{ fontFamily: F, fontWeight: 800, fontSize: 22, color: '#0a0a0a', letterSpacing: '-0.4px', margin: '0 0 5px', lineHeight: 1.2 }}>Welcome back</p>
               <p style={{ fontSize: 13, color: 'rgba(0,0,0,.4)', fontFamily: F, lineHeight: 1.6, margin: '0 0 24px' }}>Sign in to save, upload and discover wallpapers.</p>
@@ -386,24 +441,23 @@ export const Header = ({ filter, setFilter, startLoader }: HeaderProps) => {
                   <button
                     key={path}
                     onClick={() => auth.close(() => router.push(path))}
-                    style={{ width: '100%', padding: '13px 18px', borderRadius: 10, cursor: 'pointer', fontFamily: F, fontWeight: 600, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', transition: 'all .2s', background: primary ? '#000' : 'transparent', color: primary ? '#fff' : '#000', border: primary ? 'none' : '1.5px solid rgba(0,0,0,.12)' }}
-                    onMouseEnter={e => Object.assign((e.currentTarget as HTMLElement).style, primary ? { background: '#222' } : { borderColor: 'rgba(0,0,0,.3)', background: 'rgba(0,0,0,.03)' })}
-                    onMouseLeave={e => Object.assign((e.currentTarget as HTMLElement).style, primary ? { background: '#000' } : { borderColor: 'rgba(0,0,0,.12)', background: 'transparent' })}
+                    style={{
+                      width: '100%', padding: '13px 18px', borderRadius: 10, cursor: 'pointer',
+                      fontFamily: F, fontWeight: 600, fontSize: 14,
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      transition: 'all .2s',
+                      background: primary ? '#000' : 'transparent',
+                      color: primary ? '#fff' : '#000',
+                      border: primary ? 'none' : '1px solid rgba(0,0,0,0.1)',
+                    }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <Icon size={15} strokeWidth={2} />
+                      <Icon size={16} />
                       <span>{label}</span>
                     </div>
-                    <ArrowRight size={14} strokeWidth={2} style={{ opacity: 0.4 }} />
                   </button>
                 ))}
               </div>
-              <p style={{ marginTop: 20, textAlign: 'center', fontSize: 11, color: 'rgba(0,0,0,.2)', fontFamily: F, lineHeight: 1.7 }}>
-                By continuing you agree to our{' '}
-                <span style={{ textDecoration: 'underline', cursor: 'pointer', color: 'rgba(0,0,0,.4)' }}>Terms</span>
-                {' '}and{' '}
-                <span style={{ textDecoration: 'underline', cursor: 'pointer', color: 'rgba(0,0,0,.4)' }}>Privacy Policy</span>
-              </p>
             </div>
           </div>
         </div>
