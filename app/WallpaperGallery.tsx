@@ -186,6 +186,7 @@ export default function WallpaperGallery() {
     <BottomSheetProvider>
       <div style={{ minHeight: '100vh', background: '#fff', color: '#0a0a0a' }}>
         <GlobalStyles />
+        <OpenInApp />
         <Header
           filter={filter}
           setFilter={handleFilterChange}
@@ -202,7 +203,6 @@ export default function WallpaperGallery() {
             />
           </div>
         </main>
-        <OpenInApp />
         <MonetizationInfoModal />
       </div>
     </BottomSheetProvider>
