@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -10,6 +9,7 @@ import { GlobalStyles } from './components/GlobalStyles';
 import { HotCarousel } from '@/app/components/HotCarousel';
 import { MonetizationInfoModal } from '@/app/components/MonetizationInfoModal';
 import { BottomSheetProvider } from './components/WallpaperCard';
+import OpenInApp from './components/OpenInApp';
 import { useRouter } from 'next/navigation';
 import type { Wallpaper, Filter } from './types';
 
@@ -113,7 +113,7 @@ export default function WallpaperGallery() {
     const refetch = async () => {
       if (isScrollingRef.current) return;
       const now = Date.now();
-      if (now - lastRefetchRef.current < 300_000) return; // 5 min cooldown
+      if (now - lastRefetchRef.current < 300_000) return;
       lastRefetchRef.current = now;
       try {
         const data  = await fetchWallpapers(0, ITEMS_PER_PAGE, feedCache.filter);
@@ -137,7 +137,7 @@ export default function WallpaperGallery() {
 
     window.addEventListener('online', refetch);
     document.addEventListener('visibilitychange', handleVisibility);
-    const poll = setInterval(() => { if (navigator.onLine) refetch(); }, 600_000); // 10 min
+    const poll = setInterval(() => { if (navigator.onLine) refetch(); }, 600_000);
 
     return () => {
       window.removeEventListener('online', refetch);
@@ -202,6 +202,7 @@ export default function WallpaperGallery() {
             />
           </div>
         </main>
+        <OpenInApp />
         <MonetizationInfoModal />
       </div>
     </BottomSheetProvider>
