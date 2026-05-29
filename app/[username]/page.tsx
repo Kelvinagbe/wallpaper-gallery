@@ -337,6 +337,125 @@ export default function UserProfilePage() {
   if (notFound) return <><style>{CSS}</style><ProfileNotFound username={username} onBack={() => router.push('/')} /></>;
 
 
-  // ── Main ──────────────────────────────────────────────────────────────────
+   // ── Main ──────────────────────────────────────────────────────────────────
   return (
-    <div style={{ fontFamily: font, background: T.bg, minHeight: '100dvh', color: T.ink, maxWidth: 680, margin: '0 auto', paddingBottom: 4
+    <div style={{ fontFamily: font, background: T.bg, minHeight: '100dvh', color: T.ink, maxWidth: 680, margin: '0 auto', paddingBottom: 40 }}>
+      <style>{CSS}</style>
+
+      {/* Offline banner */}
+      {showOffline && (
+        <div style={{ position: 'fixed', top: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 680, zIndex: 200, background: isOnline ? '#16a34a' : T.red, padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 8, animation: 'slideDown .3s ease', fontFamily: font, transition: 'background .4s ease' }}>
+          {isOnline
+            ? reconnecting ? <><Spinner size={13} /><span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: '#fff' }}>Reconnected — refreshing…</span></> : <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: '#fff' }}>✓ Back online</span>
+            : <><WifiOff size={13} color="#fff" /><span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: '#fff' }}>No internet connection</span></>}
+        </div>
+      )}
+
+      {/* Sticky nav — scroll UP only */}
+      {showSticky && (
+        <div className={stickyClass} style={{ position: 'fixed', top: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 680, zIndex: 150, ...navStyle, boxShadow: '0 1px 0 rgba(0,0,0,.06),0 4px 16px rgba(0,0,0,.06)' }}>
+          <NavInner />
+        </div>
+      )}
+
+      {/* Normal nav */}
+      <div ref={navRef} style={navStyle}><NavInner /></div>
+
+      {/* Hero card */}
+      <div className="up" style={{ background: T.surface, borderBottom: `1px solid ${T.border}` }}>
+        <div style={{ padding: '20px 16px 0', display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{ position: 'relative', flexShrink: 0 }}>
+            <div style={{ width: 80, height: 80, borderRadius: '50%', padding: 2.5, background: T.black, boxShadow: '0 0 0 2px #fff' }}>
+              <Image src={profile.avatar} alt={profile.name} width={80} height={80} draggable={false} onContextMenu={e => e.preventDefault()}
+                style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover', display: 'block' }} />
+            </div>
+            <div style={{ position: 'absolute', bottom: 3, right: 2, width: 13, height: 13, borderRadius: '50%', background: isOnline ? T.green : T.amber, border: '2.5px solid #fff', transition: 'background .4s' }} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <span style={{ fontFamily: font, fontSize: 20, fontWeight: 800, color: T.ink, letterSpacing: '-.02em', lineHeight: 1.2 }}>{profile.name}</span>
+              {profile.verified && <VerifiedBadge size="md" />}
+            </div>
+            {profile.username && <p style={{ fontFamily: font, fontSize: 13, color: T.ink2, margin: '3px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>@{profile.username}</p>}
+          </div>
+          {session && !isOwn && (
+            <button className="tap" onClick={handleFollow} disabled={followDisabled}
+              style={{ flexShrink: 0, minWidth: 92, height: 38, padding: '0 16px', borderRadius: 8, border: isFollowing ? `1px solid ${T.border}` : 'none', background: isFollowing ? T.tile : T.black, color: isFollowing ? T.ink : '#fff', fontFamily: font, fontSize: 14, fontWeight: 600, cursor: followDisabled ? 'default' : 'pointer', opacity: (locked || !isOnline) ? 0.4 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, transition: 'all .18s' }}>
+              {followLoading ? <><Spinner color={isFollowing ? T.ink2 : '#fff'} size={13} />{isFollowing ? 'Unfollowing…' : 'Following…'}</> : isFollowing ? 'Following' : 'Follow'}
+            </button>
+          )}
+        </div>
+        {profile.bio && <p style={{ fontFamily: font, fontSize: 14, color: T.ink2, lineHeight: 1.55, margin: '12px 16px 0' }}>{profile.bio}</p>}
+        <div style={{ display: 'flex', borderTop: `1px solid ${T.border}`, margin: '12px 16px 0' }}>
+          {statItems.map(({ label, val }, i, arr) => (
+            <div key={label} style={{ flex: 1, padding: '12px 0', textAlign: 'center', borderRight: i < arr.length - 1 ? `1px solid ${T.border}` : 'none' }}>
+              <p style={{ fontFamily: font, fontSize: 17, fontWeight: 700, color: T.ink, margin: '0 0 2px', letterSpacing: '-.01em' }}>{fmt(val)}</p>
+              <p style={{ fontFamily: font, fontSize: 11, color: T.ink2, margin: 0, fontWeight: 500 }}>{label}</p>
+            </div>
+          ))}
+        </div>
+        <div style={{ height: 16 }} />
+      </div>
+
+      {/* Posts label */}
+      <div className="up d1" style={{ background: T.surface, marginTop: 8, borderTop: `1px solid ${T.border}`, borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: 7, padding: '14px 16px' }}>
+        <Grid size={13} color={T.ink3} />
+        <span style={{ fontFamily: font, fontSize: 10, fontWeight: 700, color: T.ink3, textTransform: 'uppercase', letterSpacing: '.07em' }}>{fmt(stats.posts || posts.length)} Wallpapers</span>
+      </div>
+
+      {/* Grid */}
+      <div className="up d2">
+        {postsLoading ? (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 2 }}>
+            {[...Array(9)].map((_, i) => <Shimmer key={i} w="100%" h={160} r={0} />)}
+          </div>
+        ) : posts.length > 0 ? (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 2 }}>
+              {posts.map(wp => (
+                <button key={wp.id} className="cell" onClick={() => router.push(`/details/${wp.id}`)} onContextMenu={e => e.preventDefault()}
+                  style={{ aspectRatio: '3/4', border: 'none', padding: 0, cursor: 'pointer', background: '#e8e8e8', overflow: 'hidden', display: 'block', position: 'relative', WebkitUserSelect: 'none', userSelect: 'none' }}>
+                  <Image src={wp.thumbnail || wp.url} alt={wp.title} fill sizes="(max-width:680px) 33vw, 226px" loading="lazy" draggable={false} onContextMenu={e => e.preventDefault()} style={{ objectFit: 'cover', display: 'block' } as React.CSSProperties} />
+                </button>
+              ))}
+            </div>
+            {hasMore && (
+              <div style={{ display: 'flex', justifyContent: 'center', padding: '20px 0 40px' }}>
+                <button className="tap" onClick={loadMore} disabled={!isOnline}
+                  style={{ padding: '11px 32px', borderRadius: 10, border: `1px solid ${T.border}`, background: T.surface, color: T.ink2, fontFamily: font, fontSize: 13, fontWeight: 600, cursor: isOnline ? 'pointer' : 'default', opacity: isOnline ? 1 : 0.4 }}>
+                  Load more
+                </button>
+              </div>
+            )}
+          </>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '60px 0', gap: 12, background: T.surface }}>
+            <div style={{ width: 56, height: 56, borderRadius: '50%', background: T.tile, border: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Grid size={22} color={T.ink3} />
+            </div>
+            <p style={{ fontFamily: font, fontSize: 14, color: T.ink3, margin: 0, fontWeight: 500 }}>No posts yet</p>
+          </div>
+        )}
+      </div>
+
+      {/* Warning sheet */}
+      {showWarning && (
+        <div onClick={() => setShowWarning(false)} style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', animation: 'fadeIn .2s' }}>
+          <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 680, background: T.surface, borderRadius: '20px 20px 0 0', padding: '24px 20px 32px', fontFamily: font, animation: 'slideUp .28s cubic-bezier(.16,1,.3,1)' }}>
+            <div style={{ width: 36, height: 4, borderRadius: 2, background: T.border, margin: '0 auto 20px' }} />
+            <div style={{ width: 48, height: 48, borderRadius: 14, background: 'rgba(245,158,11,.08)', border: '1px solid rgba(245,158,11,.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
+              <AlertTriangle size={22} color={T.amber} />
+            </div>
+            <p style={{ fontFamily: font, fontSize: 18, fontWeight: 700, margin: '0 0 7px', color: T.ink }}>Slow down!</p>
+            <p style={{ fontFamily: font, fontSize: 13, color: T.ink2, lineHeight: 1.55, margin: '0 0 6px' }}>You're following and unfollowing too quickly.</p>
+            <p style={{ fontFamily: font, fontSize: 13, color: T.ink2, lineHeight: 1.55, margin: '0 0 22px' }}>Try again in <span style={{ fontWeight: 700, color: T.ink }}>{cooldownLeft}</span>.</p>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="tap" onClick={() => setShowWarning(false)} style={{ flex: 1, padding: '13px 0', borderRadius: 10, border: `1px solid ${T.border}`, background: T.tile, fontFamily: font, fontSize: 14, fontWeight: 600, color: T.ink, cursor: 'pointer' }}>Cancel</button>
+              <button className="tap" onClick={() => setShowWarning(false)} style={{ flex: 1, padding: '13px 0', borderRadius: 10, border: 'none', background: T.black, fontFamily: font, fontSize: 14, fontWeight: 600, color: '#fff', cursor: 'pointer' }}>Got it</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
