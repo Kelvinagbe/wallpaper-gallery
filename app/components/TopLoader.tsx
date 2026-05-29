@@ -4,12 +4,11 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { usePathname, useSearchParams } from 'next/navigation';
 
-// ─── Shared state (module-level so any component can trigger it) ──────────────
+// ─── Shared state ─────────────────────────────────────────────────────────────
 type Listener = () => void;
 const listeners = new Set<Listener>();
 const emit = () => listeners.forEach(fn => fn());
 
-/** Call this before any router.push() / router.replace() to start the loader */
 export const startLoader = () => emit();
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -45,30 +44,59 @@ export const TopLoader = () => {
     timerRef.current = setTimeout(() => { setVisible(false); setProgress(0); }, 400);
   };
 
-  // subscribe to manual startLoader() calls
+  // Subscribe to manual startLoader() calls
   useEffect(() => {
     listeners.add(start);
     return () => { listeners.delete(start); };
   }, []);
 
-  // finish on every route change
+  // Finish on every route change
   useEffect(() => { finish(); }, [pathname, searchParams]);
 
-  // start on internal <a> / <Link> clicks
+  // ─── Patch history.pushState / replaceState (catches router.push) ──────────
+  useEffect(() => {
+    const originalPush    = window.history.pushState.bind(window.history);
+    const originalReplace = window.history.replaceState.bind(window.history);
+
+    window.history.pushState = (...args) => {
+      start();
+      return originalPush(...args);
+    };
+
+    window.history.replaceState = (...args) => {
+      start();
+      return originalReplace(...args);
+    };
+
+    return () => {
+      window.history.pushState    = originalPush;
+      window.history.replaceState = originalReplace;
+    };
+  }, []);
+
+  // ─── Catch <Link> and <a> clicks ──────────────────────────────────────────
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
-      const a = (e.target as HTMLElement).closest('a');
+      const a = (e.target as HTMLElement).closest('a[href]');
       if (!a) return;
       const href = a.getAttribute('href');
-      if (!href || href.startsWith('#') || href.startsWith('mailto:') || a.target === '_blank') return;
+      if (
+        !href ||
+        href.startsWith('#') ||
+        href.startsWith('mailto:') ||
+        href.startsWith('tel:') ||
+        (a as HTMLAnchorElement).target === '_blank'
+      ) return;
       try {
         const url = new URL(href, window.location.origin);
-        if (url.origin === window.location.origin && url.pathname !== pathname) start();
+        if (url.origin === window.location.origin && url.pathname !== window.location.pathname) {
+          start();
+        }
       } catch {}
     };
-    document.addEventListener('click', onClick);
-    return () => document.removeEventListener('click', onClick);
-  }, [pathname]);
+    document.addEventListener('click', onClick, true);
+    return () => document.removeEventListener('click', onClick, true);
+  }, []);
 
   if (!mounted || !visible) return null;
 
