@@ -34,7 +34,7 @@ export default function OpenInApp({ path = '' }: { path?: string }) {
 
     const timer = setTimeout(() => {
       if (!document.hidden) {
-        window.location.href = 'https://www.mediafire.com/file/cy9y549zvw9fwmq/walls_1.0.0.apk';
+        window.location.href = 'https://www.mediafire.com/file/th219ryqdf49ap9/walls-arm64.apk';
       }
     }, 2000);
 
