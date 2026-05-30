@@ -10,6 +10,7 @@ import { HotCarousel } from '@/app/components/HotCarousel';
 import { MonetizationInfoModal } from '@/app/components/MonetizationInfoModal';
 import { BottomSheetProvider } from './components/WallpaperCard';
 import OpenInApp from './components/OpenInApp';
+import CookiesDialog from './components/CookiesDialog';
 import { useRouter } from 'next/navigation';
 import type { Wallpaper, Filter } from './types';
 
@@ -187,6 +188,7 @@ export default function WallpaperGallery() {
       <div style={{ minHeight: '100vh', background: '#fff', color: '#0a0a0a' }}>
         <GlobalStyles />
         <OpenInApp />
+        <CookiesDialog /> 
         <Header
           filter={filter}
           setFilter={handleFilterChange}
