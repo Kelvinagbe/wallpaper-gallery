@@ -1,11 +1,9 @@
-import { createClient } from '@/utils/supabase/server'
+import { createClient } from '@/lib/supabase/server'  // ← fix this line
 import WallpaperGallery from './WallpaperGallery'
 import type { Wallpaper } from './types'
 
-export const dynamic = 'force-dynamic'
-
 export default async function Page() {
-  const supabase = createClient()
+  const supabase = await createClient()
 
   const { data } = await supabase
     .from('wallpapers')
@@ -13,7 +11,5 @@ export default async function Page() {
     .order('created_at', { ascending: false })
     .limit(10)
 
-  const initialWallpapers: Wallpaper[] = data ?? []
-
-  return <WallpaperGallery initialWallpapers={initialWallpapers} />
+  return <WallpaperGallery initialWallpapers={data ?? []} />
 }
