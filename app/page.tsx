@@ -1,15 +1,5 @@
-import { createClient } from '@/lib/supabase/server'  // ← fix this line
-import WallpaperGallery from './WallpaperGallery'
-import type { Wallpaper } from './types'
+import WallpaperGallery from './WallpaperGallery';
 
-export default async function Page() {
-  const supabase = await createClient()
-
-  const { data } = await supabase
-    .from('wallpapers')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .limit(10)
-
-  return <WallpaperGallery initialWallpapers={data ?? []} />
+export default function Page() {
+  return <WallpaperGallery />;
 }
