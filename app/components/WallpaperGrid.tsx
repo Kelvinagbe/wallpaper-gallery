@@ -144,7 +144,7 @@ const AppInstallBanner = () => {
       }}
     >
       <img
-        src="/app_download.png"
+        src="/app_android.png"
         alt="Download Walls app for the best experience"
         draggable={false}
         style={{
