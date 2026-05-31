@@ -6,12 +6,13 @@ import type { Wallpaper, Ad } from '../types';
 
 /* ─── layout ─────────────────────────────────────────────────────────── */
 const getColCount = (w: number) => w >= 1024 ? 5 : w >= 768 ? 4 : w >= 480 ? 3 : 2;
-const GAP          = 6;
-const PAD          = 4;
-const SLOW_AFTER   = 4_000;
-const HARD_TIMEOUT = 10_000;
-const MAX_RETRIES  = 3;
-const SCROLL_THRESHOLD = 500; // px from bottom to trigger load
+const GAP              = 6;
+const PAD              = 4;
+const SLOW_AFTER       = 4_000;
+const HARD_TIMEOUT     = 10_000;
+const MAX_RETRIES      = 3;
+const SCROLL_THRESHOLD = 700;
+const APP_BANNER_AFTER = 4; // show install banner after this many pages loaded
 
 const COLORS = [
   { bg: '#e8eaf0', shimmer: '#d0d4e8' },
@@ -35,7 +36,7 @@ const ShimmerCard = ({ i, o = 1 }: { i: number; o?: number }) => {
       </div>
       <div style={{ padding: '6px 0 0', display: 'flex', flexDirection: 'column', gap: 5 }}>
         <div style={{ height: 10, borderRadius: 6, background: c.bg, width: '75%', ...sweep }} />
-        <div style={{ height: 8, borderRadius: 6, background: c.bg, width: '45%', ...sweep, animationDelay: '.12s' }} />
+        <div style={{ height: 8,  borderRadius: 6, background: c.bg, width: '45%', ...sweep, animationDelay: '.12s' }} />
       </div>
     </div>
   );
@@ -96,29 +97,207 @@ const NetworkBanner = ({ status, retryCount, onRetry }: {
   );
 };
 
+/* ─── install app banner ─────────────────────────────────────────────── */
+const AppInstallBanner = ({ onDismiss }: { onDismiss: () => void }) => {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    // Animate in
+    const t = setTimeout(() => setVisible(true), 50);
+    return () => clearTimeout(t);
+  }, []);
+
+  const handleDismiss = () => {
+    setVisible(false);
+    setTimeout(onDismiss, 300);
+  };
+
+  // Two preview wallpaper placeholders
+  const previews = [
+    { bg: 'linear-gradient(145deg,#0f0c29,#302b63,#24243e)' },
+    { bg: 'linear-gradient(145deg,#1a0533,#2d1b69,#11998e)' },
+  ];
+
+  return (
+    <div style={{
+      margin: `8px ${PAD}px`,
+      borderRadius: 20,
+      overflow: 'hidden',
+      background: 'linear-gradient(135deg,#0f0c29 0%,#302b63 50%,#1a1a2e 100%)',
+      boxShadow: '0 4px 24px rgba(0,0,0,0.18)',
+      transform: visible ? 'translateY(0)' : 'translateY(20px)',
+      opacity: visible ? 1 : 0,
+      transition: 'transform 0.3s cubic-bezier(.34,1.4,.64,1), opacity 0.3s ease',
+    }}>
+      {/* close button */}
+      <button
+        onClick={handleDismiss}
+        style={{
+          position: 'absolute',
+          // sits in top-right of the banner — banner is relative
+          zIndex: 2,
+          marginLeft: 'calc(100% - 32px)',
+          marginTop: 8,
+          width: 24, height: 24, borderRadius: '50%',
+          border: 'none', background: 'rgba(255,255,255,0.15)',
+          color: '#fff', fontSize: 13, fontWeight: 700,
+          cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          lineHeight: 1,
+        }}
+        aria-label="Dismiss"
+      >×</button>
+
+      <div style={{ padding: '18px 16px 16px', position: 'relative' }}>
+        {/* top row: icon + text + cta */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+          {/* app icon */}
+          <div style={{
+            width: 48, height: 48, borderRadius: 14, flexShrink: 0,
+            background: 'linear-gradient(135deg,#6366f1,#8b5cf6)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: '0 4px 12px rgba(99,102,241,0.4)',
+          }}>
+            <span style={{ fontSize: 22 }}>🖼️</span>
+          </div>
+
+          {/* text */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: '#fff', lineHeight: 1.2 }}>
+              Get the App
+            </p>
+            <p style={{ margin: '3px 0 0', fontSize: 11, color: 'rgba(255,255,255,0.6)', lineHeight: 1.3 }}>
+              Faster browsing · offline access · HD downloads
+            </p>
+          </div>
+
+          {/* CTA button */}
+          <a
+            href="/download"
+            style={{
+              flexShrink: 0,
+              padding: '8px 16px',
+              borderRadius: 99,
+              background: '#fff',
+              color: '#302b63',
+              fontSize: 12,
+              fontWeight: 800,
+              textDecoration: 'none',
+              whiteSpace: 'nowrap',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+            }}
+          >
+            Install Free
+          </a>
+        </div>
+
+        {/* two-column wallpaper previews */}
+        <div style={{ display: 'flex', gap: 8 }}>
+          {previews.map((p, i) => (
+            <div key={i} style={{
+              flex: '1 1 0',
+              aspectRatio: '9/14',
+              borderRadius: 12,
+              background: p.bg,
+              overflow: 'hidden',
+              position: 'relative',
+              boxShadow: '0 2px 10px rgba(0,0,0,0.3)',
+            }}>
+              {/* fake card shine overlay */}
+              <div style={{
+                position: 'absolute', inset: 0,
+                background: 'linear-gradient(160deg,rgba(255,255,255,0.08) 0%,transparent 60%)',
+              }} />
+              {/* fake bottom info strip */}
+              <div style={{
+                position: 'absolute', bottom: 0, left: 0, right: 0,
+                padding: '18px 8px 8px',
+                background: 'linear-gradient(to top,rgba(0,0,0,0.7),transparent)',
+              }}>
+                <div style={{ height: 6, borderRadius: 4, background: 'rgba(255,255,255,0.35)', width: '70%', marginBottom: 4 }} />
+                <div style={{ height: 5, borderRadius: 4, background: 'rgba(255,255,255,0.2)', width: '45%' }} />
+              </div>
+            </div>
+          ))}
+
+          {/* right side: feature list */}
+          <div style={{ flex: '1.2 1 0', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 8, paddingLeft: 4 }}>
+            {[
+              { emoji: '⚡', text: '3× faster loading' },
+              { emoji: '📴', text: 'Works offline' },
+              { emoji: '🖼️', text: 'HD wallpapers' },
+              { emoji: '🔔', text: 'New daily walls' },
+            ].map((f, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <span style={{ fontSize: 13 }}>{f.emoji}</span>
+                <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', fontWeight: 500, lineHeight: 1.2 }}>{f.text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* store badges */}
+        <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+          {[
+            { label: '🍎  App Store', href: '/download/ios' },
+            { label: '🤖  Google Play', href: '/download/android' },
+          ].map((s, i) => (
+            <a key={i} href={s.href} style={{
+              flex: 1, textAlign: 'center',
+              padding: '8px 0',
+              borderRadius: 10,
+              background: 'rgba(255,255,255,0.1)',
+              border: '1px solid rgba(255,255,255,0.15)',
+              fontSize: 11, fontWeight: 700, color: '#fff',
+              textDecoration: 'none',
+              backdropFilter: 'blur(6px)',
+            }}>
+              {s.label}
+            </a>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 /* ─── types ──────────────────────────────────────────────────────────── */
-type MasonryItem = { kind: 'wallpaper'; wp: Wallpaper } | { kind: 'native'; ad: Ad };
+type MasonryItem =
+  | { kind: 'wallpaper'; wp: Wallpaper }
+  | { kind: 'native'; ad: Ad }
+  | { kind: 'appbanner' };
 
 /* ─── row ────────────────────────────────────────────────────────────── */
-const Row = memo(({ items, cols, chunkOffset, onWallpaperClick }: {
+const Row = memo(({ items, cols, chunkOffset, onWallpaperClick, onBannerDismiss }: {
   items: MasonryItem[]; cols: number;
-  chunkOffset: number; onWallpaperClick?: (w: Wallpaper) => void;
-}) => (
-  <div style={{ display: 'flex', gap: GAP, padding: `0 ${PAD}px`, alignItems: 'flex-start' }}>
-    {items.map((entry, idx) =>
-      entry.kind === 'native'
-        ? <NativeAdCard key={`native_${entry.ad.id}`} ad={entry.ad} placeholderIndex={idx} />
-        : <WallpaperCard
-            key={entry.wp.id} wp={entry.wp}
-            priority={chunkOffset + idx < 6} placeholderIndex={idx}
-            onClick={onWallpaperClick ? () => onWallpaperClick(entry.wp) : undefined}
-          />
-    )}
-    {Array.from({ length: cols - items.length }, (_, i) => (
-      <div key={`empty_${i}`} style={{ flex: '1 1 0', minWidth: 0 }} />
-    ))}
-  </div>
-));
+  chunkOffset: number;
+  onWallpaperClick?: (w: Wallpaper) => void;
+  onBannerDismiss: () => void;
+}) => {
+  // If this row contains the app banner render it full-width
+  const bannerItem = items.find(e => e.kind === 'appbanner');
+  if (bannerItem) {
+    return <AppInstallBanner onDismiss={onBannerDismiss} />;
+  }
+
+  return (
+    <div style={{ display: 'flex', gap: GAP, padding: `0 ${PAD}px`, alignItems: 'flex-start' }}>
+      {items.map((entry, idx) =>
+        entry.kind === 'native'
+          ? <NativeAdCard key={`native_${entry.ad.id}`} ad={entry.ad} placeholderIndex={idx} />
+          : entry.kind === 'wallpaper'
+            ? <WallpaperCard
+                key={entry.wp.id} wp={entry.wp}
+                priority={chunkOffset + idx < 6} placeholderIndex={idx}
+                onClick={onWallpaperClick ? () => onWallpaperClick(entry.wp) : undefined}
+              />
+            : null
+      )}
+      {Array.from({ length: cols - items.length }, (_, i) => (
+        <div key={`empty_${i}`} style={{ flex: '1 1 0', minWidth: 0 }} />
+      ))}
+    </div>
+  );
+});
 Row.displayName = 'Row';
 
 /* ─── props ──────────────────────────────────────────────────────────── */
@@ -139,13 +318,15 @@ export const WallpaperGrid = ({
   const [cols, setCols] = useState(() =>
     typeof window !== 'undefined' ? getColCount(window.innerWidth) : 2
   );
-  const [hasEverLoaded, setHasEverLoaded] = useState(false);
-  const [isFetching,    setIsFetching]    = useState(false);
-  const [netStatus,     setNetStatus]     = useState<NetStatus>('idle');
-  const [retryCount,    setRetryCount]    = useState(0);
+  const [hasEverLoaded,   setHasEverLoaded]   = useState(false);
+  const [isFetching,      setIsFetching]       = useState(false);
+  const [netStatus,       setNetStatus]        = useState<NetStatus>('idle');
+  const [retryCount,      setRetryCount]       = useState(0);
+  const [showAppBanner,   setShowAppBanner]    = useState(true);
+  const [bannerDismissed, setBannerDismissed]  = useState(false);
+  // track how many pages have loaded to know when to show banner
+  const pagesLoadedRef = useRef(0);
 
-  // All mutable values that scroll handler reads go in refs
-  // so the scroll listener never becomes stale
   const isFetchingRef = useRef(false);
   const hasMoreRef    = useRef(hasMore);
   const onLoadMoreRef = useRef(onLoadMore);
@@ -153,7 +334,6 @@ export const WallpaperGrid = ({
   const slowTimer     = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hardTimer     = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Keep refs in sync with latest props/state
   useEffect(() => { hasMoreRef.current    = hasMore;    }, [hasMore]);
   useEffect(() => { onLoadMoreRef.current = onLoadMore; }, [onLoadMore]);
   useEffect(() => { retryCountRef.current = retryCount; }, [retryCount]);
@@ -165,9 +345,12 @@ export const WallpaperGrid = ({
     return () => window.removeEventListener('resize', fn);
   }, []);
 
-  /* track first load */
+  /* track first load — counts as page 1 */
   useEffect(() => {
-    if (wallpapers.length > 0 && !hasEverLoaded) setHasEverLoaded(true);
+    if (wallpapers.length > 0 && !hasEverLoaded) {
+      setHasEverLoaded(true);
+      pagesLoadedRef.current = 1;
+    }
   }, [wallpapers.length, hasEverLoaded]);
 
   /* online/offline */
@@ -215,6 +398,7 @@ export const WallpaperGrid = ({
       clearTimers();
       setNetStatus('idle');
       setRetryCount(0);
+      pagesLoadedRef.current += 1;
     } catch {
       clearTimers();
       setNetStatus(navigator.onLine ? 'error' : 'offline');
@@ -224,33 +408,20 @@ export const WallpaperGrid = ({
     }
   };
 
-  /* ── scroll-based infinite scroll ──
-     Uses window scroll instead of IntersectionObserver.
-     Fires when user is within SCROLL_THRESHOLD px of the bottom.
-     Reads from refs so it never goes stale.                       */
+  /* ── scroll-based infinite scroll ── */
   useEffect(() => {
     if (!onLoadMore) return;
-
     const onScroll = () => {
       if (!hasMoreRef.current || isFetchingRef.current) return;
       const distanceFromBottom =
-        document.documentElement.scrollHeight -
-        window.scrollY -
-        window.innerHeight;
-      if (distanceFromBottom < SCROLL_THRESHOLD) {
-        doFetch();
-      }
+        document.documentElement.scrollHeight - window.scrollY - window.innerHeight;
+      if (distanceFromBottom < SCROLL_THRESHOLD) doFetch();
     };
-
     window.addEventListener('scroll', onScroll, { passive: true });
-
-    // Also check immediately in case content doesn't fill the screen yet
-    onScroll();
-
+    onScroll(); // check immediately
     return () => window.removeEventListener('scroll', onScroll);
-  }, [onLoadMore]); // only depends on onLoadMore — everything else via refs
+  }, [onLoadMore]);
 
-  /* ── retry ── */
   const handleRetry = () => {
     if (retryCountRef.current >= MAX_RETRIES) return;
     setRetryCount(c => c + 1);
@@ -258,7 +429,7 @@ export const WallpaperGrid = ({
     doFetch();
   };
 
-  /* ── build rows ── */
+  /* ── build rows with banner injection ── */
   const nativeAds = useMemo<Ad[]>(() =>
     typeof window === 'undefined'
       ? []
@@ -268,16 +439,39 @@ export const WallpaperGrid = ({
   const rows = useMemo<MasonryItem[][]>(() => {
     const items: MasonryItem[] = [];
     let nativeIdx = 0;
+    let bannerInserted = false;
+
     wallpapers.forEach((wp, i) => {
       items.push({ kind: 'wallpaper', wp });
+
+      // inject native ad
       if (nativeAds.length && (i + 1) % nativeEvery === 0)
         items.push({ kind: 'native', ad: nativeAds[nativeIdx++ % nativeAds.length] });
+
+      // inject app banner after APP_BANNER_AFTER pages worth of items
+      // (APP_BANNER_AFTER * 10 items, since ITEMS_PER_PAGE=10)
+      const bannerAt = APP_BANNER_AFTER * 10;
+      if (!bannerInserted && showAppBanner && !bannerDismissed && i + 1 === bannerAt) {
+        items.push({ kind: 'appbanner' });
+        bannerInserted = true;
+      }
     });
+
+    // Split flat list into rows of `cols`
+    // But app banner rows span full width — treat as a single-item row
     const result: MasonryItem[][] = [];
-    for (let i = 0; i < items.length; i += cols)
-      result.push(items.slice(i, i + cols));
+    let i = 0;
+    while (i < items.length) {
+      if (items[i].kind === 'appbanner') {
+        result.push([items[i]]);
+        i++;
+      } else {
+        result.push(items.slice(i, i + cols));
+        i += cols;
+      }
+    }
     return result;
-  }, [wallpapers, nativeAds, nativeEvery, cols]);
+  }, [wallpapers, nativeAds, nativeEvery, cols, showAppBanner, bannerDismissed]);
 
   /* ─── early states ─── */
   if (!hasEverLoaded && isLoading)
@@ -304,9 +498,12 @@ export const WallpaperGrid = ({
   /* ─── main render ─── */
   return (
     <div style={{ paddingTop: 12, display: 'flex', flexDirection: 'column', gap: GAP }}>
-
       {rows.map((row, i) => (
-        <Row key={i} items={row} cols={cols} chunkOffset={i * cols} onWallpaperClick={onWallpaperClick} />
+        <Row
+          key={i} items={row} cols={cols} chunkOffset={i * cols}
+          onWallpaperClick={onWallpaperClick}
+          onBannerDismiss={() => { setShowAppBanner(false); setBannerDismissed(true); }}
+        />
       ))}
 
       {isFetching && <DotLoader />}
