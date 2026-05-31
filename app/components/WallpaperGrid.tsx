@@ -11,7 +11,7 @@ const PAD          = 4;
 const SLOW_AFTER   = 4_000;
 const HARD_TIMEOUT = 10_000;
 const MAX_RETRIES  = 3;
-const SCROLL_THRESHOLD = 400; // px from bottom to trigger load
+const SCROLL_THRESHOLD = 500; // px from bottom to trigger load
 
 const COLORS = [
   { bg: '#e8eaf0', shimmer: '#d0d4e8' },
