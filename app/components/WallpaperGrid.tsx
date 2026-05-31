@@ -4,14 +4,16 @@ import { useState, useEffect, useRef, useMemo, memo } from 'react';
 import { WallpaperCard, NativeAdCard } from './WallpaperCard';
 import type { Wallpaper, Ad } from '../types';
 
-/* ─── fixed layout ───────────────────────────────────────────────────── */
+/* ─── layout helpers ─────────────────────────────────────────────────── */
 const getColCount = (w: number) => w >= 1024 ? 5 : w >= 768 ? 4 : w >= 480 ? 3 : 2;
 const GAP = 6;
 const PAD = 4;
 
 const COLORS = [
-  { bg: '#e8eaf0', shimmer: '#d0d4e8' }, { bg: '#ede8f0', shimmer: '#d8cce8' },
-  { bg: '#e8f0ea', shimmer: '#cce0d0' }, { bg: '#f0e8e8', shimmer: '#e8cccc' },
+  { bg: '#e8eaf0', shimmer: '#d0d4e8' },
+  { bg: '#ede8f0', shimmer: '#d8cce8' },
+  { bg: '#e8f0ea', shimmer: '#cce0d0' },
+  { bg: '#f0e8e8', shimmer: '#e8cccc' },
   { bg: '#f0ede8', shimmer: '#e8dcc8' },
 ];
 
@@ -35,7 +37,7 @@ const Shimmer = ({ i, o = 1 }: { i: number; o?: number }) => {
   );
 };
 
-const ShimmerGrid = ({ count, opacity, cols }: { count: number; opacity?: number; cols: number }) => (
+const ShimmerGrid = ({ opacity, cols }: { opacity?: number; cols: number }) => (
   <div style={{ display: 'flex', gap: GAP, padding: `12px ${PAD}px`, alignItems: 'flex-start' }}>
     {Array.from({ length: cols }, (_, i) => (
       <Shimmer key={i} i={i} o={opacity} />
@@ -48,10 +50,17 @@ type MasonryItem = { kind: 'wallpaper'; wp: Wallpaper } | { kind: 'native'; ad: 
 
 /* ─── row ────────────────────────────────────────────────────────────── */
 const Row = memo(({ items, cols, chunkOffset, onWallpaperClick }: {
-  items: MasonryItem[]; cols: number;
-  chunkOffset: number; onWallpaperClick?: (w: Wallpaper) => void;
+  items: MasonryItem[];
+  cols: number;
+  chunkOffset: number;
+  onWallpaperClick?: (w: Wallpaper) => void;
 }) => (
-  <div style={{ display: 'flex', gap: GAP, padding: `0 ${PAD}px`, alignItems: 'stretch' }}>
+  <div style={{
+    display: 'flex',
+    gap: GAP,
+    padding: `0 ${PAD}px`,
+    alignItems: 'flex-start', // ← KEY FIX: was 'stretch', caused white gap below cards
+  }}>
     {items.map((entry, idx) =>
       entry.kind === 'native'
         ? <NativeAdCard key={`native_${entry.ad.id}`} ad={entry.ad} placeholderIndex={idx} />
@@ -83,8 +92,12 @@ type Props = {
 
 /* ─── main ───────────────────────────────────────────────────────────── */
 export const WallpaperGrid = ({
-  wallpapers, isLoading, onWallpaperClick, onLoadMore,
-  hasMore = true, nativeEvery = 7,
+  wallpapers,
+  isLoading,
+  onWallpaperClick,
+  onLoadMore,
+  hasMore = true,
+  nativeEvery = 7,
 }: Props) => {
   const [cols, setCols] = useState(() =>
     typeof window !== 'undefined' ? getColCount(window.innerWidth) : 2
@@ -95,17 +108,19 @@ export const WallpaperGrid = ({
   const sentinelRef = useRef<HTMLDivElement>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  /* responsive cols */
   useEffect(() => {
     const fn = () => setCols(getColCount(window.innerWidth));
     window.addEventListener('resize', fn, { passive: true });
     return () => window.removeEventListener('resize', fn);
   }, []);
 
+  /* track first load */
   useEffect(() => {
     if (wallpapers.length > 0 && !hasEverLoaded) setHasEverLoaded(true);
   }, [wallpapers.length, hasEverLoaded]);
 
-  // ── infinite scroll ───────────────────────────────────────────
+  /* infinite scroll */
   useEffect(() => {
     if (!onLoadMore) return;
     const sentinel = sentinelRef.current;
@@ -117,11 +132,10 @@ export const WallpaperGrid = ({
         loadingRef.current = true;
         setLoadError(false);
 
-        // timeout for slow networks
         timeoutRef.current = setTimeout(() => {
           loadingRef.current = false;
           setLoadError(true);
-        }, 10_000); // 10 second timeout
+        }, 10_000);
 
         try {
           await onLoadMore();
@@ -133,16 +147,18 @@ export const WallpaperGrid = ({
           loadingRef.current = false;
         }
       },
-      { rootMargin: '400px' } // start loading 400px before user hits bottom
+      { rootMargin: '400px' }
     );
 
     observer.observe(sentinel);
     return () => observer.disconnect();
   }, [onLoadMore, hasMore]);
 
-  // ── build items ───────────────────────────────────────────────
+  /* build rows */
   const nativeAds = useMemo<Ad[]>(() =>
-    typeof window === 'undefined' ? [] : ((window as any).MY_ADS ?? []).filter((a: Ad) => a.adType === 'native'),
+    typeof window === 'undefined'
+      ? []
+      : ((window as any).MY_ADS ?? []).filter((a: Ad) => a.adType === 'native'),
   []);
 
   const rows = useMemo<MasonryItem[][]>(() => {
@@ -153,7 +169,6 @@ export const WallpaperGrid = ({
       if (nativeAds.length && (i + 1) % nativeEvery === 0)
         items.push({ kind: 'native', ad: nativeAds[nativeIdx++ % nativeAds.length] });
     });
-    // split into rows of `cols`
     const result: MasonryItem[][] = [];
     for (let i = 0; i < items.length; i += cols)
       result.push(items.slice(i, i + cols));
@@ -162,10 +177,10 @@ export const WallpaperGrid = ({
 
   /* ─── early states ─── */
   if (!hasEverLoaded && isLoading)
-    return <ShimmerGrid count={cols} cols={cols} />;
+    return <ShimmerGrid cols={cols} />;
 
   if (hasEverLoaded && wallpapers.length === 0 && isLoading)
-    return <ShimmerGrid count={cols} opacity={0.5} cols={cols} />;
+    return <ShimmerGrid opacity={0.5} cols={cols} />;
 
   if (!wallpapers.length && !isLoading)
     return (
@@ -189,25 +204,25 @@ export const WallpaperGrid = ({
         />
       ))}
 
-      {/* ── infinite scroll sentinel ── */}
+      {/* infinite scroll sentinel */}
       <div ref={sentinelRef} style={{ height: 1 }} />
 
-      {/* ── loading spinner ── */}
-      {hasMore && (
+      {/* loading spinner — only shown while more pages exist */}
+      {hasMore && !loadError && (
         <div style={{ display: 'flex', justifyContent: 'center', padding: '16px 0' }}>
           <span style={{
             display: 'inline-block', width: 20, height: 20,
             border: '2px solid #d1d5db', borderTopColor: '#6b7280',
-            borderRadius: '50%', animation: 'spin .7s linear infinite'
+            borderRadius: '50%', animation: 'spin .7s linear infinite',
           }} />
         </div>
       )}
 
-      {/* ── network error retry ── */}
+      {/* network error + retry */}
       {loadError && (
         <div style={{ textAlign: 'center', padding: '16px 0' }}>
           <p style={{ color: '#9ca3af', fontSize: 13, marginBottom: 8 }}>
-            Slow connection — 
+            Slow connection — couldn't load more
           </p>
           <button
             onClick={() => { setLoadError(false); onLoadMore?.(); }}
@@ -216,11 +231,13 @@ export const WallpaperGrid = ({
               background: '#fff', color: '#374151', fontSize: 13,
               fontWeight: 600, cursor: 'pointer',
             }}
-          >Retry</button>
+          >
+            Retry
+          </button>
         </div>
       )}
 
-      {/* ── end of feed ── */}
+      {/* end of feed */}
       {!hasMore && wallpapers.length > 0 && (
         <div style={{ textAlign: 'center', padding: '48px 0 32px', color: '#6b7280', fontSize: 15, fontWeight: 500 }}>
           You've seen all wallpapers ✨
