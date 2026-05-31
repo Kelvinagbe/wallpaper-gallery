@@ -25,7 +25,7 @@ const Shimmer = ({ i, o = 1 }: { i: number; o?: number }) => {
     animation: 'shimmerSweep 1.6s ease-in-out infinite',
   };
   return (
-    <div style={{ opacity: o, flex: '1 1 0', minWidth: 0 }}>
+    <div style={{ opacity: o }}>
       <div style={{ position: 'relative', width: '100%', borderRadius: 16, overflow: 'hidden', aspectRatio: '9/16', background: c.bg }}>
         <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(105deg,transparent 40%,${c.shimmer}80 50%,transparent 60%)`, ...anim }} />
       </div>
@@ -37,10 +37,12 @@ const Shimmer = ({ i, o = 1 }: { i: number; o?: number }) => {
   );
 };
 
-const ShimmerGrid = ({ opacity, cols }: { opacity?: number; cols: number }) => (
+const ShimmerGrid = ({ cols, opacity }: { cols: number; opacity?: number }) => (
   <div style={{ display: 'flex', gap: GAP, padding: `12px ${PAD}px`, alignItems: 'flex-start' }}>
     {Array.from({ length: cols }, (_, i) => (
-      <Shimmer key={i} i={i} o={opacity} />
+      <div key={i} style={{ flex: '1 1 0', minWidth: 0 }}>
+        <Shimmer i={i} o={opacity} />
+      </div>
     ))}
   </div>
 );
@@ -48,37 +50,51 @@ const ShimmerGrid = ({ opacity, cols }: { opacity?: number; cols: number }) => (
 /* ─── types ──────────────────────────────────────────────────────────── */
 type MasonryItem = { kind: 'wallpaper'; wp: Wallpaper } | { kind: 'native'; ad: Ad };
 
-/* ─── row ────────────────────────────────────────────────────────────── */
-const Row = memo(({ items, cols, chunkOffset, onWallpaperClick }: {
+/* ─── column-based masonry layout ────────────────────────────────────── */
+// Items are distributed into columns (0,1,2... 0,1,2...) so each column
+// fills top-to-bottom naturally. No row height mismatch, no white gaps.
+const MasonryGrid = memo(({ items, cols, onWallpaperClick }: {
   items: MasonryItem[];
   cols: number;
-  chunkOffset: number;
   onWallpaperClick?: (w: Wallpaper) => void;
-}) => (
-  <div style={{
-    display: 'flex',
-    gap: GAP,
-    padding: `0 ${PAD}px`,
-    alignItems: 'flex-start', // ← KEY FIX: was 'stretch', caused white gap below cards
-  }}>
-    {items.map((entry, idx) =>
-      entry.kind === 'native'
-        ? <NativeAdCard key={`native_${entry.ad.id}`} ad={entry.ad} placeholderIndex={idx} />
-        : <WallpaperCard
-            key={entry.wp.id}
-            wp={entry.wp}
-            priority={chunkOffset + idx < 6}
-            placeholderIndex={idx}
-            onClick={onWallpaperClick ? () => onWallpaperClick(entry.wp) : undefined}
-          />
-    )}
-    {/* fill empty slots so last row stays same width */}
-    {Array.from({ length: cols - items.length }, (_, i) => (
-      <div key={`empty_${i}`} style={{ flex: '1 1 0', minWidth: 0 }} />
-    ))}
-  </div>
-));
-Row.displayName = 'Row';
+}) => {
+  // Distribute items into columns round-robin
+  const columns = useMemo<MasonryItem[][]>(() => {
+    const result: MasonryItem[][] = Array.from({ length: cols }, () => []);
+    items.forEach((item, i) => result[i % cols].push(item));
+    return result;
+  }, [items, cols]);
+
+  return (
+    <div style={{
+      display: 'flex',
+      gap: GAP,
+      padding: `0 ${PAD}px`,
+      alignItems: 'flex-start', // columns start at top, grow independently
+    }}>
+      {columns.map((col, ci) => (
+        <div key={ci} style={{ flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', gap: GAP }}>
+          {col.map((entry, idx) =>
+            entry.kind === 'native'
+              ? <NativeAdCard
+                  key={`native_${entry.ad.id}_${ci}`}
+                  ad={entry.ad}
+                  placeholderIndex={ci}
+                />
+              : <WallpaperCard
+                  key={entry.wp.id}
+                  wp={entry.wp}
+                  priority={idx === 0 && ci < 4}
+                  placeholderIndex={ci}
+                  onClick={onWallpaperClick ? () => onWallpaperClick(entry.wp) : undefined}
+                />
+          )}
+        </div>
+      ))}
+    </div>
+  );
+});
+MasonryGrid.displayName = 'MasonryGrid';
 
 /* ─── props ──────────────────────────────────────────────────────────── */
 type Props = {
@@ -154,14 +170,14 @@ export const WallpaperGrid = ({
     return () => observer.disconnect();
   }, [onLoadMore, hasMore]);
 
-  /* build rows */
+  /* build flat item list with native ads injected */
   const nativeAds = useMemo<Ad[]>(() =>
     typeof window === 'undefined'
       ? []
       : ((window as any).MY_ADS ?? []).filter((a: Ad) => a.adType === 'native'),
   []);
 
-  const rows = useMemo<MasonryItem[][]>(() => {
+  const allItems = useMemo<MasonryItem[]>(() => {
     const items: MasonryItem[] = [];
     let nativeIdx = 0;
     wallpapers.forEach((wp, i) => {
@@ -169,18 +185,15 @@ export const WallpaperGrid = ({
       if (nativeAds.length && (i + 1) % nativeEvery === 0)
         items.push({ kind: 'native', ad: nativeAds[nativeIdx++ % nativeAds.length] });
     });
-    const result: MasonryItem[][] = [];
-    for (let i = 0; i < items.length; i += cols)
-      result.push(items.slice(i, i + cols));
-    return result;
-  }, [wallpapers, nativeAds, nativeEvery, cols]);
+    return items;
+  }, [wallpapers, nativeAds, nativeEvery]);
 
   /* ─── early states ─── */
   if (!hasEverLoaded && isLoading)
     return <ShimmerGrid cols={cols} />;
 
   if (hasEverLoaded && wallpapers.length === 0 && isLoading)
-    return <ShimmerGrid opacity={0.5} cols={cols} />;
+    return <ShimmerGrid cols={cols} opacity={0.5} />;
 
   if (!wallpapers.length && !isLoading)
     return (
@@ -194,20 +207,16 @@ export const WallpaperGrid = ({
   /* ─── main render ─── */
   return (
     <div style={{ paddingTop: 12, display: 'flex', flexDirection: 'column', gap: GAP }}>
-      {rows.map((row, i) => (
-        <Row
-          key={i}
-          items={row}
-          cols={cols}
-          chunkOffset={i * cols}
-          onWallpaperClick={onWallpaperClick}
-        />
-      ))}
+      <MasonryGrid
+        items={allItems}
+        cols={cols}
+        onWallpaperClick={onWallpaperClick}
+      />
 
       {/* infinite scroll sentinel */}
       <div ref={sentinelRef} style={{ height: 1 }} />
 
-      {/* loading spinner — only shown while more pages exist */}
+      {/* loading spinner */}
       {hasMore && !loadError && (
         <div style={{ display: 'flex', justifyContent: 'center', padding: '16px 0' }}>
           <span style={{
