@@ -16,20 +16,31 @@ import type { Wallpaper, Filter } from './types';
 
 const ITEMS_PER_PAGE = 10;
 
-export default function WallpaperGallery() {
+// ── Props ─────────────────────────────────────────────────────────────────────
+type Props = {
+  initialWallpapers?: Wallpaper[];
+};
+
+export default function WallpaperGallery({ initialWallpapers = [] }: Props) {
   const router = useRouter();
 
-  const [wallpapers,    setWallpapers]    = useState<Wallpaper[]>(feedCache.populated ? feedCache.wallpapers : []);
+  const [wallpapers,    setWallpapers]    = useState<Wallpaper[]>(
+    feedCache.populated ? feedCache.wallpapers : initialWallpapers
+  );
   const [hasMore,       setHasMore]       = useState(feedCache.populated ? feedCache.hasMore : true);
   const [filter,        setFilter]        = useState<Filter>(feedCache.filter);
-  const [isInitialLoad, setIsInitialLoad] = useState(!feedCache.populated);
+  const [isInitialLoad, setIsInitialLoad] = useState(
+    !feedCache.populated && initialWallpapers.length === 0
+  );
 
   const loadingMoreRef   = useRef(false);
   const filterChangedRef = useRef(false);
   const isScrollingRef   = useRef(false);
   const scrollTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const seenIdsRef       = useRef<Set<string>>(new Set(feedCache.populated ? feedCache.wallpapers.map(w => w.id) : []));
-  const pageRef          = useRef<number>(feedCache.populated ? (feedCache.page ?? 0) : 0);
+  const seenIdsRef       = useRef<Set<string>>(
+    new Set(feedCache.populated ? feedCache.wallpapers.map(w => w.id) : initialWallpapers.map(w => w.id))
+  );
+  const pageRef = useRef<number>(feedCache.populated ? (feedCache.page ?? 0) : initialWallpapers.length > 0 ? 1 : 0);
 
   // ── Track scrolling state ─────────────────────────────────────
   useEffect(() => {
@@ -44,6 +55,7 @@ export default function WallpaperGallery() {
 
   // ── Initial load / restore scroll ────────────────────────────
   useEffect(() => {
+    // Case 1: feedCache already has data (user navigated back)
     if (feedCache.populated) {
       requestAnimationFrame(() =>
         requestAnimationFrame(() =>
@@ -53,6 +65,22 @@ export default function WallpaperGallery() {
       return;
     }
 
+    // Case 2: server already gave us initial wallpapers — skip fetch
+    if (initialWallpapers.length > 0) {
+      seenIdsRef.current = new Set(initialWallpapers.map(w => w.id));
+      pageRef.current    = 1;
+      Object.assign(feedCache, {
+        wallpapers: initialWallpapers,
+        page:       1,
+        hasMore:    true,
+        filter,
+        populated:  true,
+      });
+      setIsInitialLoad(false);
+      return;
+    }
+
+    // Case 3: fallback fetch (no server data)
     let cancelled = false;
     fetchWallpapers(0, ITEMS_PER_PAGE, filter)
       .then(data => {
@@ -63,10 +91,10 @@ export default function WallpaperGallery() {
         setHasMore(data.hasMore);
         Object.assign(feedCache, {
           wallpapers: data.wallpapers,
-          page: 1,
-          hasMore: data.hasMore,
+          page:       1,
+          hasMore:    data.hasMore,
           filter,
-          populated: true,
+          populated:  true,
         });
       })
       .catch(() => {})
@@ -95,10 +123,10 @@ export default function WallpaperGallery() {
         setHasMore(data.hasMore);
         Object.assign(feedCache, {
           wallpapers: data.wallpapers,
-          page: 1,
-          hasMore: data.hasMore,
+          page:       1,
+          hasMore:    data.hasMore,
           filter,
-          populated: true,
+          populated:  true,
         });
       })
       .catch(() => {})
@@ -188,7 +216,7 @@ export default function WallpaperGallery() {
       <div style={{ minHeight: '100vh', background: '#fff', color: '#0a0a0a' }}>
         <GlobalStyles />
         <OpenInApp />
-        <CookiesDialog /> 
+        <CookiesDialog />
         <Header
           filter={filter}
           setFilter={handleFilterChange}
