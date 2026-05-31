@@ -10,22 +10,22 @@ import { RouterRefresher } from '@/app/components/RouterRefresher';
 import { createClient } from '@/lib/supabase/server';
 
 const inter = Inter({ subsets: ['latin'] });
-const BASE_URL = 'https://walls.ovrica.name.ng';  // ← update to your real domain
+const BASE_URL = 'https://walls.ovrica.name.ng';
 
 export const metadata: Metadata = {
   title: 'Walls – Transform Your Spaces',
-  description: 'Discover and download stunning wallpapers to transform your spaces.',
+  description: 'Download free HD & 4K wallpapers for Android and desktop. New wallpapers uploaded daily.',
   metadataBase: new URL(BASE_URL),
-  manifest: '/manifest.webmanifest',  // ← add this
+  manifest: '/manifest.webmanifest',
 
-  appleWebApp: {                      // ← add this for iOS
+  appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
     title: 'Walls',
   },
   openGraph: {
     title: 'Walls – Transform Your Spaces',
-    description: 'Discover and download stunning wallpapers to transform your spaces.',
+    description: 'Download free HD & 4K wallpapers for Android and desktop. New wallpapers uploaded daily.',
     url: BASE_URL,
     siteName: 'Walls',
     type: 'website',
@@ -34,7 +34,7 @@ export const metadata: Metadata = {
   twitter: {
     card: 'summary_large_image',
     title: 'Walls – Transform Your Spaces',
-    description: 'Discover and download stunning wallpapers to transform your spaces.',
+    description: 'Download free HD & 4K wallpapers for Android and desktop. New wallpapers uploaded daily.',
     images: ['/banner.png'],
   },
 };
