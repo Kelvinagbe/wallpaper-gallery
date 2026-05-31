@@ -1,14 +1,13 @@
 'use client';
 
-import { useState, useEffect, useMemo, memo } from 'react';
+import { useState, useEffect, useRef, useMemo, memo } from 'react';
 import { WallpaperCard, NativeAdCard } from './WallpaperCard';
 import type { Wallpaper, Ad } from '../types';
 
-/* ─── responsive helpers ─────────────────────────────────────────────── */
+/* ─── fixed layout ───────────────────────────────────────────────────── */
 const getColCount = (w: number) => w >= 1024 ? 5 : w >= 768 ? 4 : w >= 480 ? 3 : 2;
-const getGap      = (w: number) => w >= 1024 ? 10 : w >= 768 ? 8 : w >= 480 ? 6 : 5;
-const getPad      = (w: number) => w >= 1024 ? 8 : w >= 768 ? 4 : 0;
-const getItemGap  = (cols: number) => cols >= 4 ? 12 : cols >= 3 ? 10 : 8;
+const GAP = 6;
+const PAD = 4;
 
 const COLORS = [
   { bg: '#e8eaf0', shimmer: '#d0d4e8' }, { bg: '#ede8f0', shimmer: '#d8cce8' },
@@ -19,9 +18,12 @@ const COLORS = [
 /* ─── shimmer ────────────────────────────────────────────────────────── */
 const Shimmer = ({ i, o = 1 }: { i: number; o?: number }) => {
   const c = COLORS[i % COLORS.length];
-  const anim: React.CSSProperties = { backgroundSize: '200% 100%', animation: 'shimmerSweep 1.6s ease-in-out infinite' };
+  const anim: React.CSSProperties = {
+    backgroundSize: '200% 100%',
+    animation: 'shimmerSweep 1.6s ease-in-out infinite',
+  };
   return (
-    <div style={{ opacity: o }}>
+    <div style={{ opacity: o, flex: '1 1 0', minWidth: 0 }}>
       <div style={{ position: 'relative', width: '100%', borderRadius: 16, overflow: 'hidden', aspectRatio: '9/16', background: c.bg }}>
         <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(105deg,transparent 40%,${c.shimmer}80 50%,transparent 60%)`, ...anim }} />
       </div>
@@ -33,86 +35,68 @@ const Shimmer = ({ i, o = 1 }: { i: number; o?: number }) => {
   );
 };
 
-const ShimmerGrid = ({ count, opacity, cols, gap, pad, itemGap }: {
-  count: number; opacity?: number; cols: number; gap: number; pad: number; itemGap: number;
-}) => {
-  const columns: number[][] = Array.from({ length: cols }, () => []);
-  for (let i = 0; i < count; i++) columns[i % cols].push(i);
-  return (
-    <div style={{ width: '100%', boxSizing: 'border-box', display: 'flex', gap: `${gap}px`, padding: `12px ${pad}px`, alignItems: 'flex-start' }}>
-      {columns.map((col, ci) => (
-        <div key={ci} style={{ flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', gap: `${itemGap}px` }}>
-          {col.map(i => <Shimmer key={i} i={i} o={opacity} />)}
-        </div>
-      ))}
-    </div>
-  );
-};
+const ShimmerGrid = ({ count, opacity, cols }: { count: number; opacity?: number; cols: number }) => (
+  <div style={{ display: 'flex', gap: GAP, padding: `12px ${PAD}px`, alignItems: 'flex-start' }}>
+    {Array.from({ length: cols }, (_, i) => (
+      <Shimmer key={i} i={i} o={opacity} />
+    ))}
+  </div>
+);
 
 /* ─── types ──────────────────────────────────────────────────────────── */
 type MasonryItem = { kind: 'wallpaper'; wp: Wallpaper } | { kind: 'native'; ad: Ad };
 
-/* ─── frozen masonry chunk ───────────────────────────────────────────── */
-const MasonryChunk = memo(({ items, cols, gap, pad, itemGap, chunkOffset, onWallpaperClick }: {
-  items: MasonryItem[]; cols: number; gap: number; pad: number; itemGap: number;
+/* ─── row ────────────────────────────────────────────────────────────── */
+const Row = memo(({ items, cols, chunkOffset, onWallpaperClick }: {
+  items: MasonryItem[]; cols: number;
   chunkOffset: number; onWallpaperClick?: (w: Wallpaper) => void;
-}) => {
-  const columns = useMemo(() => {
-    const result: MasonryItem[][] = Array.from({ length: cols }, () => []);
-    items.forEach((item, i) => result[i % cols].push(item));
-    return result;
-  }, [items, cols]);
-
-  return (
-    <div style={{ width: '100%', boxSizing: 'border-box', display: 'flex', gap: `${gap}px`, padding: `0 ${pad}px`, alignItems: 'flex-start' }}>
-      {columns.map((col, ci) => (
-        <div key={ci} style={{ flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', gap: `${itemGap}px` }}>
-          {col.map((entry, idx) =>
-            entry.kind === 'native'
-              ? <NativeAdCard key={`native_${entry.ad.id}_${ci}`} ad={entry.ad} placeholderIndex={ci + idx * cols} />
-              : <WallpaperCard key={entry.wp.id} wp={entry.wp}
-                  priority={chunkOffset + ci + idx * cols < 6}
-                  placeholderIndex={ci + idx * cols}
-                  onClick={onWallpaperClick ? () => onWallpaperClick(entry.wp) : undefined}
-                />
-          )}
-        </div>
-      ))}
-    </div>
-  );
-});
-MasonryChunk.displayName = 'MasonryChunk';
+}) => (
+  <div style={{ display: 'flex', gap: GAP, padding: `0 ${PAD}px`, alignItems: 'stretch' }}>
+    {items.map((entry, idx) =>
+      entry.kind === 'native'
+        ? <NativeAdCard key={`native_${entry.ad.id}`} ad={entry.ad} placeholderIndex={idx} />
+        : <WallpaperCard
+            key={entry.wp.id}
+            wp={entry.wp}
+            priority={chunkOffset + idx < 6}
+            placeholderIndex={idx}
+            onClick={onWallpaperClick ? () => onWallpaperClick(entry.wp) : undefined}
+          />
+    )}
+    {/* fill empty slots so last row stays same width */}
+    {Array.from({ length: cols - items.length }, (_, i) => (
+      <div key={`empty_${i}`} style={{ flex: '1 1 0', minWidth: 0 }} />
+    ))}
+  </div>
+));
+Row.displayName = 'Row';
 
 /* ─── props ──────────────────────────────────────────────────────────── */
 type Props = {
-  wallpapers:        Wallpaper[];
-  isLoading:         boolean;
+  wallpapers: Wallpaper[];
+  isLoading: boolean;
   onWallpaperClick?: (w: Wallpaper) => void;
-  onLoadMore?:       () => Promise<void>;
-  hasMore?:          boolean;
-  nativeEvery?:      number;
-  chunkSize?:        number;
+  onLoadMore?: () => Promise<void>;
+  hasMore?: boolean;
+  nativeEvery?: number;
 };
-
-const CHUNK_SIZE = 10;
 
 /* ─── main ───────────────────────────────────────────────────────────── */
 export const WallpaperGrid = ({
   wallpapers, isLoading, onWallpaperClick, onLoadMore,
-  hasMore = true, nativeEvery = 7, chunkSize = CHUNK_SIZE,
+  hasMore = true, nativeEvery = 7,
 }: Props) => {
-  const [loadingMore, setLoadingMore]     = useState(false);
+  const [cols, setCols] = useState(() =>
+    typeof window !== 'undefined' ? getColCount(window.innerWidth) : 2
+  );
   const [hasEverLoaded, setHasEverLoaded] = useState(false);
-  const [dims, setDims] = useState(() => {
-    const w = typeof window !== 'undefined' ? window.innerWidth : 390;
-    return { cols: getColCount(w), gap: getGap(w), pad: getPad(w) };
-  });
+  const [loadError, setLoadError] = useState(false);
+  const loadingRef = useRef(false);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    const fn = () => {
-      const w = window.innerWidth;
-      setDims({ cols: getColCount(w), gap: getGap(w), pad: getPad(w) });
-    };
+    const fn = () => setCols(getColCount(window.innerWidth));
     window.addEventListener('resize', fn, { passive: true });
     return () => window.removeEventListener('resize', fn);
   }, []);
@@ -121,45 +105,67 @@ export const WallpaperGrid = ({
     if (wallpapers.length > 0 && !hasEverLoaded) setHasEverLoaded(true);
   }, [wallpapers.length, hasEverLoaded]);
 
-  const { cols, gap, pad } = dims;
-  const itemGap = getItemGap(cols);
+  // ── infinite scroll ───────────────────────────────────────────
+  useEffect(() => {
+    if (!onLoadMore) return;
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
 
+    const observer = new IntersectionObserver(
+      async ([entry]) => {
+        if (!entry.isIntersecting || !hasMore || loadingRef.current) return;
+        loadingRef.current = true;
+        setLoadError(false);
+
+        // timeout for slow networks
+        timeoutRef.current = setTimeout(() => {
+          loadingRef.current = false;
+          setLoadError(true);
+        }, 10_000); // 10 second timeout
+
+        try {
+          await onLoadMore();
+          setLoadError(false);
+        } catch {
+          setLoadError(true);
+        } finally {
+          if (timeoutRef.current) clearTimeout(timeoutRef.current);
+          loadingRef.current = false;
+        }
+      },
+      { rootMargin: '400px' } // start loading 400px before user hits bottom
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [onLoadMore, hasMore]);
+
+  // ── build items ───────────────────────────────────────────────
   const nativeAds = useMemo<Ad[]>(() =>
     typeof window === 'undefined' ? [] : ((window as any).MY_ADS ?? []).filter((a: Ad) => a.adType === 'native'),
   []);
 
-  const allItems = useMemo<MasonryItem[]>(() => {
-    const result: MasonryItem[] = [];
+  const rows = useMemo<MasonryItem[][]>(() => {
+    const items: MasonryItem[] = [];
     let nativeIdx = 0;
     wallpapers.forEach((wp, i) => {
-      result.push({ kind: 'wallpaper', wp });
+      items.push({ kind: 'wallpaper', wp });
       if (nativeAds.length && (i + 1) % nativeEvery === 0)
-        result.push({ kind: 'native', ad: nativeAds[nativeIdx++ % nativeAds.length] });
+        items.push({ kind: 'native', ad: nativeAds[nativeIdx++ % nativeAds.length] });
     });
-    return result;
-  }, [wallpapers, nativeAds, nativeEvery]);
-
-  const chunks = useMemo(() => {
+    // split into rows of `cols`
     const result: MasonryItem[][] = [];
-    for (let i = 0; i < allItems.length; i += chunkSize)
-      result.push(allItems.slice(i, i + chunkSize));
+    for (let i = 0; i < items.length; i += cols)
+      result.push(items.slice(i, i + cols));
     return result;
-  }, [allItems, chunkSize]);
-
-  const handleLoadMore = async () => {
-    if (!onLoadMore || loadingMore) return;
-    setLoadingMore(true);
-    try { await onLoadMore(); }
-    catch { /* silent */ }
-    finally { setLoadingMore(false); }
-  };
+  }, [wallpapers, nativeAds, nativeEvery, cols]);
 
   /* ─── early states ─── */
   if (!hasEverLoaded && isLoading)
-    return <ShimmerGrid count={10} cols={cols} gap={gap} pad={pad} itemGap={itemGap} />;
+    return <ShimmerGrid count={cols} cols={cols} />;
 
   if (hasEverLoaded && wallpapers.length === 0 && isLoading)
-    return <ShimmerGrid count={6} opacity={0.5} cols={cols} gap={gap} pad={pad} itemGap={itemGap} />;
+    return <ShimmerGrid count={cols} opacity={0.5} cols={cols} />;
 
   if (!wallpapers.length && !isLoading)
     return (
@@ -172,46 +178,49 @@ export const WallpaperGrid = ({
 
   /* ─── main render ─── */
   return (
-    <div style={{ paddingTop: 12, display: 'flex', flexDirection: 'column', gap: `${itemGap}px` }}>
-
-      {chunks.map((chunk, i) => (
-        <MasonryChunk
+    <div style={{ paddingTop: 12, display: 'flex', flexDirection: 'column', gap: GAP }}>
+      {rows.map((row, i) => (
+        <Row
           key={i}
-          items={chunk}
+          items={row}
           cols={cols}
-          gap={gap}
-          pad={pad}
-          itemGap={itemGap}
-          chunkOffset={i * chunkSize}
+          chunkOffset={i * cols}
           onWallpaperClick={onWallpaperClick}
         />
       ))}
 
-      {/* ── load more button ── */}
-      {hasMore && onLoadMore && (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '24px 0 16px' }}>
-          <button
-            onClick={handleLoadMore}
-            disabled={loadingMore}
-            style={{
-              padding: '12px 36px', borderRadius: 99, border: '1.5px solid #e5e7eb',
-              background: loadingMore ? '#f9fafb' : '#fff', color: loadingMore ? '#9ca3af' : '#374151',
-              fontSize: 14, fontWeight: 600, cursor: loadingMore ? 'not-allowed' : 'pointer',
-              transition: 'all .15s', display: 'flex', alignItems: 'center', gap: 8,
-            }}
-            onMouseEnter={e => { if (!loadingMore) e.currentTarget.style.background = '#f3f4f6'; }}
-            onMouseLeave={e => { e.currentTarget.style.background = loadingMore ? '#f9fafb' : '#fff'; }}
-          >
-            {loadingMore ? (
-              <>
-                <span style={{ display: 'inline-block', width: 14, height: 14, border: '2px solid #d1d5db', borderTopColor: '#6b7280', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
-                Loading…
-              </>
-            ) : 'Load more'}
-          </button>
+      {/* ── infinite scroll sentinel ── */}
+      <div ref={sentinelRef} style={{ height: 1 }} />
+
+      {/* ── loading spinner ── */}
+      {hasMore && (
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '16px 0' }}>
+          <span style={{
+            display: 'inline-block', width: 20, height: 20,
+            border: '2px solid #d1d5db', borderTopColor: '#6b7280',
+            borderRadius: '50%', animation: 'spin .7s linear infinite'
+          }} />
         </div>
       )}
 
+      {/* ── network error retry ── */}
+      {loadError && (
+        <div style={{ textAlign: 'center', padding: '16px 0' }}>
+          <p style={{ color: '#9ca3af', fontSize: 13, marginBottom: 8 }}>
+            Slow connection — 
+          </p>
+          <button
+            onClick={() => { setLoadError(false); onLoadMore?.(); }}
+            style={{
+              padding: '8px 24px', borderRadius: 99, border: '1.5px solid #e5e7eb',
+              background: '#fff', color: '#374151', fontSize: 13,
+              fontWeight: 600, cursor: 'pointer',
+            }}
+          >Retry</button>
+        </div>
+      )}
+
+      {/* ── end of feed ── */}
       {!hasMore && wallpapers.length > 0 && (
         <div style={{ textAlign: 'center', padding: '48px 0 32px', color: '#6b7280', fontSize: 15, fontWeight: 500 }}>
           You've seen all wallpapers ✨
