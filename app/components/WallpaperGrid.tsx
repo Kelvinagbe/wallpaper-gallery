@@ -4,10 +4,15 @@ import { useState, useEffect, useRef, useMemo, memo } from 'react';
 import { WallpaperCard, NativeAdCard } from './WallpaperCard';
 import type { Wallpaper, Ad } from '../types';
 
-/* ─── layout helpers ─────────────────────────────────────────────────── */
+/* ─── layout ─────────────────────────────────────────────────────────── */
 const getColCount = (w: number) => w >= 1024 ? 5 : w >= 768 ? 4 : w >= 480 ? 3 : 2;
-const GAP = 6;
-const PAD = 4;
+const GAP              = 6;
+const PAD              = 4;
+const SLOW_AFTER       = 4_000;
+const HARD_TIMEOUT     = 10_000;
+const MAX_RETRIES      = 3;
+const SCROLL_THRESHOLD = 700;
+const BANNER_EVERY     = 6; // show banner every N rows
 
 const COLORS = [
   { bg: '#e8eaf0', shimmer: '#d0d4e8' },
@@ -18,66 +23,156 @@ const COLORS = [
 ];
 
 /* ─── shimmer ────────────────────────────────────────────────────────── */
-const Shimmer = ({ i, o = 1 }: { i: number; o?: number }) => {
+const ShimmerCard = ({ i, o = 1 }: { i: number; o?: number }) => {
   const c = COLORS[i % COLORS.length];
-  const anim: React.CSSProperties = {
+  const sweep: React.CSSProperties = {
     backgroundSize: '200% 100%',
     animation: 'shimmerSweep 1.6s ease-in-out infinite',
   };
   return (
     <div style={{ opacity: o, flex: '1 1 0', minWidth: 0 }}>
       <div style={{ position: 'relative', width: '100%', borderRadius: 16, overflow: 'hidden', aspectRatio: '9/16', background: c.bg }}>
-        <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(105deg,transparent 40%,${c.shimmer}80 50%,transparent 60%)`, ...anim }} />
+        <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(105deg,transparent 40%,${c.shimmer}80 50%,transparent 60%)`, ...sweep }} />
       </div>
-      <div style={{ padding: '5px 0 0', display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <div style={{ height: 10, borderRadius: 4, background: c.bg, width: '80%', ...anim }} />
-        <div style={{ height: 8, borderRadius: 4, background: c.bg, width: '50%', ...anim, animationDelay: '0.1s' }} />
+      <div style={{ padding: '6px 0 0', display: 'flex', flexDirection: 'column', gap: 5 }}>
+        <div style={{ height: 10, borderRadius: 6, background: c.bg, width: '75%', ...sweep }} />
+        <div style={{ height: 8,  borderRadius: 6, background: c.bg, width: '45%', ...sweep, animationDelay: '.12s' }} />
       </div>
     </div>
   );
 };
 
-const ShimmerGrid = ({ opacity, cols }: { opacity?: number; cols: number }) => (
-  <div style={{ display: 'flex', gap: GAP, padding: `12px ${PAD}px`, alignItems: 'flex-start' }}>
-    {Array.from({ length: cols }, (_, i) => (
-      <Shimmer key={i} i={i} o={opacity} />
+const ShimmerRow = ({ cols, opacity }: { cols: number; opacity?: number }) => (
+  <div style={{ display: 'flex', gap: GAP, padding: `0 ${PAD}px`, alignItems: 'flex-start' }}>
+    {Array.from({ length: cols }, (_, i) => <ShimmerCard key={i} i={i} o={opacity} />)}
+  </div>
+);
+
+/* ─── dot loader ─────────────────────────────────────────────────────── */
+const DotLoader = () => (
+  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6, padding: '20px 0' }}>
+    {[0, 1, 2].map(i => (
+      <span key={i} style={{
+        display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
+        background: '#d1d5db',
+        animation: 'dotPulse 1.2s ease-in-out infinite',
+        animationDelay: `${i * 0.18}s`,
+      }} />
     ))}
   </div>
 );
 
+/* ─── network banner ─────────────────────────────────────────────────── */
+type NetStatus = 'idle' | 'slow' | 'offline' | 'error';
+
+const NetworkBanner = ({ status, retryCount, onRetry }: {
+  status: NetStatus; retryCount: number; onRetry: () => void;
+}) => {
+  if (status === 'idle') return null;
+  const cfg = {
+    slow:    { emoji: '🐢', msg: 'Slow network — still loading…', color: '#92400e', bg: '#fffbeb', border: '#fde68a', btn: false },
+    offline: { emoji: '📵', msg: 'No internet connection',        color: '#991b1b', bg: '#fff1f2', border: '#fecaca', btn: true  },
+    error:   { emoji: '⚠️', msg: 'Failed to load more',           color: '#7c3aed', bg: '#f5f3ff', border: '#ddd6fe', btn: true  },
+  }[status];
+
+  return (
+    <div style={{
+      margin: `4px ${PAD}px 0`, padding: '12px 14px', borderRadius: 14,
+      background: cfg.bg, border: `1px solid ${cfg.border}`,
+      display: 'flex', alignItems: 'center', gap: 10,
+    }}>
+      <span style={{ fontSize: 18, flexShrink: 0 }}>{cfg.emoji}</span>
+      <p style={{ flex: 1, margin: 0, fontSize: 12, fontWeight: 600, color: cfg.color, lineHeight: 1.4 }}>
+        {cfg.msg}
+        {retryCount > 0 && status === 'error' && (
+          <span style={{ opacity: 0.7, fontWeight: 400 }}> · attempt {retryCount}/{MAX_RETRIES}</span>
+        )}
+      </p>
+      {cfg.btn && (
+        retryCount < MAX_RETRIES
+          ? <button onClick={onRetry} style={{ flexShrink: 0, padding: '6px 14px', borderRadius: 99, border: `1.5px solid ${cfg.border}`, background: '#fff', fontSize: 12, fontWeight: 700, color: cfg.color, cursor: 'pointer' }}>Retry</button>
+          : <span style={{ fontSize: 11, color: cfg.color, opacity: 0.7 }}>Check connection</span>
+      )}
+    </div>
+  );
+};
+
+/* ─── app install banner ─────────────────────────────────────────────── */
+const AppInstallBanner = () => {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setVisible(true), 50);
+    return () => clearTimeout(t);
+  }, []);
+
+  return (
+    <a
+      href="/download/android"
+      style={{
+        display: 'block',
+        margin: `4px ${PAD}px`,
+        borderRadius: 16,
+        overflow: 'hidden',
+        textDecoration: 'none',
+        cursor: 'pointer',
+        transform: visible ? 'translateY(0) scale(1)' : 'translateY(12px) scale(0.98)',
+        opacity: visible ? 1 : 0,
+        transition: 'transform 0.35s cubic-bezier(.34,1.4,.64,1), opacity 0.3s ease',
+        WebkitTapHighlightColor: 'transparent',
+      }}
+    >
+      <img
+        src="/app_download.png"
+        alt="Download Walls app for the best experience"
+        draggable={false}
+        style={{
+          display: 'block',
+          width: '100%',
+          height: 'auto',
+          borderRadius: 16,
+          pointerEvents: 'none',
+        }}
+      />
+    </a>
+  );
+};
+
 /* ─── types ──────────────────────────────────────────────────────────── */
-type MasonryItem = { kind: 'wallpaper'; wp: Wallpaper } | { kind: 'native'; ad: Ad };
+type MasonryItem =
+  | { kind: 'wallpaper'; wp: Wallpaper }
+  | { kind: 'native'; ad: Ad }
+  | { kind: 'appbanner'; id: number };
 
 /* ─── row ────────────────────────────────────────────────────────────── */
 const Row = memo(({ items, cols, chunkOffset, onWallpaperClick }: {
-  items: MasonryItem[];
-  cols: number;
+  items: MasonryItem[]; cols: number;
   chunkOffset: number;
   onWallpaperClick?: (w: Wallpaper) => void;
-}) => (
-  <div style={{
-    display: 'flex',
-    gap: GAP,
-    padding: `0 ${PAD}px`,
-    alignItems: 'flex-start', // ← KEY FIX: was 'stretch', caused white gap below cards
-  }}>
-    {items.map((entry, idx) =>
-      entry.kind === 'native'
-        ? <NativeAdCard key={`native_${entry.ad.id}`} ad={entry.ad} placeholderIndex={idx} />
-        : <WallpaperCard
-            key={entry.wp.id}
-            wp={entry.wp}
-            priority={chunkOffset + idx < 6}
-            placeholderIndex={idx}
-            onClick={onWallpaperClick ? () => onWallpaperClick(entry.wp) : undefined}
-          />
-    )}
-    {/* fill empty slots so last row stays same width */}
-    {Array.from({ length: cols - items.length }, (_, i) => (
-      <div key={`empty_${i}`} style={{ flex: '1 1 0', minWidth: 0 }} />
-    ))}
-  </div>
-));
+}) => {
+  // App banner — full width, not a card column
+  if (items.length === 1 && items[0].kind === 'appbanner') {
+    return <AppInstallBanner key={items[0].id} />;
+  }
+
+  return (
+    <div style={{ display: 'flex', gap: GAP, padding: `0 ${PAD}px`, alignItems: 'flex-start' }}>
+      {items.map((entry, idx) =>
+        entry.kind === 'native'
+          ? <NativeAdCard key={`native_${entry.ad.id}`} ad={entry.ad} placeholderIndex={idx} />
+          : entry.kind === 'wallpaper'
+            ? <WallpaperCard
+                key={entry.wp.id} wp={entry.wp}
+                priority={chunkOffset + idx < 6} placeholderIndex={idx}
+                onClick={onWallpaperClick ? () => onWallpaperClick(entry.wp) : undefined}
+              />
+            : null
+      )}
+      {Array.from({ length: cols - items.filter(e => e.kind !== 'appbanner').length }, (_, i) => (
+        <div key={`empty_${i}`} style={{ flex: '1 1 0', minWidth: 0 }} />
+      ))}
+    </div>
+  );
+});
 Row.displayName = 'Row';
 
 /* ─── props ──────────────────────────────────────────────────────────── */
@@ -92,21 +187,27 @@ type Props = {
 
 /* ─── main ───────────────────────────────────────────────────────────── */
 export const WallpaperGrid = ({
-  wallpapers,
-  isLoading,
-  onWallpaperClick,
-  onLoadMore,
-  hasMore = true,
-  nativeEvery = 7,
+  wallpapers, isLoading, onWallpaperClick,
+  onLoadMore, hasMore = true, nativeEvery = 7,
 }: Props) => {
   const [cols, setCols] = useState(() =>
     typeof window !== 'undefined' ? getColCount(window.innerWidth) : 2
   );
   const [hasEverLoaded, setHasEverLoaded] = useState(false);
-  const [loadError, setLoadError] = useState(false);
-  const loadingRef = useRef(false);
-  const sentinelRef = useRef<HTMLDivElement>(null);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isFetching,    setIsFetching]    = useState(false);
+  const [netStatus,     setNetStatus]     = useState<NetStatus>('idle');
+  const [retryCount,    setRetryCount]    = useState(0);
+
+  const isFetchingRef = useRef(false);
+  const hasMoreRef    = useRef(hasMore);
+  const onLoadMoreRef = useRef(onLoadMore);
+  const retryCountRef = useRef(retryCount);
+  const slowTimer     = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hardTimer     = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => { hasMoreRef.current    = hasMore;    }, [hasMore]);
+  useEffect(() => { onLoadMoreRef.current = onLoadMore; }, [onLoadMore]);
+  useEffect(() => { retryCountRef.current = retryCount; }, [retryCount]);
 
   /* responsive cols */
   useEffect(() => {
@@ -120,41 +221,82 @@ export const WallpaperGrid = ({
     if (wallpapers.length > 0 && !hasEverLoaded) setHasEverLoaded(true);
   }, [wallpapers.length, hasEverLoaded]);
 
-  /* infinite scroll */
+  /* online/offline */
+  useEffect(() => {
+    const goOffline = () => setNetStatus('offline');
+    const goOnline  = () => setNetStatus(s => s === 'offline' ? 'idle' : s);
+    window.addEventListener('offline', goOffline);
+    window.addEventListener('online',  goOnline);
+    return () => {
+      window.removeEventListener('offline', goOffline);
+      window.removeEventListener('online',  goOnline);
+    };
+  }, []);
+
+  /* ── core fetch ── */
+  const clearTimers = () => {
+    if (slowTimer.current) { clearTimeout(slowTimer.current); slowTimer.current = null; }
+    if (hardTimer.current) { clearTimeout(hardTimer.current); hardTimer.current = null; }
+  };
+
+  const doFetch = async () => {
+    const fn = onLoadMoreRef.current;
+    if (!fn || isFetchingRef.current || !hasMoreRef.current) return;
+    if (!navigator.onLine) { setNetStatus('offline'); return; }
+
+    isFetchingRef.current = true;
+    setIsFetching(true);
+    setNetStatus('idle');
+
+    slowTimer.current = setTimeout(() => {
+      if (isFetchingRef.current) setNetStatus('slow');
+    }, SLOW_AFTER);
+
+    hardTimer.current = setTimeout(() => {
+      if (isFetchingRef.current) {
+        clearTimers();
+        isFetchingRef.current = false;
+        setIsFetching(false);
+        setNetStatus('error');
+      }
+    }, HARD_TIMEOUT);
+
+    try {
+      await fn();
+      clearTimers();
+      setNetStatus('idle');
+      setRetryCount(0);
+    } catch {
+      clearTimers();
+      setNetStatus(navigator.onLine ? 'error' : 'offline');
+    } finally {
+      isFetchingRef.current = false;
+      setIsFetching(false);
+    }
+  };
+
+  /* ── scroll-based infinite scroll ── */
   useEffect(() => {
     if (!onLoadMore) return;
-    const sentinel = sentinelRef.current;
-    if (!sentinel) return;
+    const onScroll = () => {
+      if (!hasMoreRef.current || isFetchingRef.current) return;
+      const distanceFromBottom =
+        document.documentElement.scrollHeight - window.scrollY - window.innerHeight;
+      if (distanceFromBottom < SCROLL_THRESHOLD) doFetch();
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+    return () => window.removeEventListener('scroll', onScroll);
+  }, [onLoadMore]);
 
-    const observer = new IntersectionObserver(
-      async ([entry]) => {
-        if (!entry.isIntersecting || !hasMore || loadingRef.current) return;
-        loadingRef.current = true;
-        setLoadError(false);
+  const handleRetry = () => {
+    if (retryCountRef.current >= MAX_RETRIES) return;
+    setRetryCount(c => c + 1);
+    setNetStatus('idle');
+    doFetch();
+  };
 
-        timeoutRef.current = setTimeout(() => {
-          loadingRef.current = false;
-          setLoadError(true);
-        }, 10_000);
-
-        try {
-          await onLoadMore();
-          setLoadError(false);
-        } catch {
-          setLoadError(true);
-        } finally {
-          if (timeoutRef.current) clearTimeout(timeoutRef.current);
-          loadingRef.current = false;
-        }
-      },
-      { rootMargin: '400px' }
-    );
-
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [onLoadMore, hasMore]);
-
-  /* build rows */
+  /* ── build rows with banner injected every BANNER_EVERY rows ── */
   const nativeAds = useMemo<Ad[]>(() =>
     typeof window === 'undefined'
       ? []
@@ -162,6 +304,7 @@ export const WallpaperGrid = ({
   []);
 
   const rows = useMemo<MasonryItem[][]>(() => {
+    // 1. Build flat item list
     const items: MasonryItem[] = [];
     let nativeIdx = 0;
     wallpapers.forEach((wp, i) => {
@@ -169,25 +312,44 @@ export const WallpaperGrid = ({
       if (nativeAds.length && (i + 1) % nativeEvery === 0)
         items.push({ kind: 'native', ad: nativeAds[nativeIdx++ % nativeAds.length] });
     });
-    const result: MasonryItem[][] = [];
+
+    // 2. Split into rows of `cols`
+    const rawRows: MasonryItem[][] = [];
     for (let i = 0; i < items.length; i += cols)
-      result.push(items.slice(i, i + cols));
+      rawRows.push(items.slice(i, i + cols));
+
+    // 3. Inject banner row after every BANNER_EVERY rows
+    const result: MasonryItem[][] = [];
+    rawRows.forEach((row, rowIdx) => {
+      result.push(row);
+      // insert after row index BANNER_EVERY-1, then every BANNER_EVERY rows after
+      if ((rowIdx + 1) % BANNER_EVERY === 0) {
+        result.push([{ kind: 'appbanner', id: rowIdx }]);
+      }
+    });
+
     return result;
   }, [wallpapers, nativeAds, nativeEvery, cols]);
 
   /* ─── early states ─── */
   if (!hasEverLoaded && isLoading)
-    return <ShimmerGrid cols={cols} />;
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: GAP, paddingTop: 12 }}>
+        <ShimmerRow cols={cols} />
+        <ShimmerRow cols={cols} opacity={0.6} />
+        <ShimmerRow cols={cols} opacity={0.3} />
+      </div>
+    );
 
   if (hasEverLoaded && wallpapers.length === 0 && isLoading)
-    return <ShimmerGrid opacity={0.5} cols={cols} />;
+    return <ShimmerRow cols={cols} opacity={0.5} />;
 
   if (!wallpapers.length && !isLoading)
     return (
-      <div style={{ textAlign: 'center', padding: '80px 0' }}>
-        <div style={{ fontSize: 64, marginBottom: 16 }}>🔍</div>
-        <h3 style={{ fontSize: 20, fontWeight: 600, color: '#1f2937', marginBottom: 8 }}>No wallpapers found</h3>
-        <p style={{ color: '#9ca3af' }}>Try adjusting your search or filters</p>
+      <div style={{ textAlign: 'center', padding: '80px 20px' }}>
+        <div style={{ fontSize: 56, marginBottom: 12 }}>🔍</div>
+        <h3 style={{ fontSize: 18, fontWeight: 700, color: '#1f2937', margin: '0 0 6px' }}>No wallpapers found</h3>
+        <p style={{ color: '#9ca3af', fontSize: 13, margin: 0 }}>Try adjusting your search or filters</p>
       </div>
     );
 
@@ -196,57 +358,30 @@ export const WallpaperGrid = ({
     <div style={{ paddingTop: 12, display: 'flex', flexDirection: 'column', gap: GAP }}>
       {rows.map((row, i) => (
         <Row
-          key={i}
-          items={row}
-          cols={cols}
-          chunkOffset={i * cols}
+          key={i} items={row} cols={cols} chunkOffset={i * cols}
           onWallpaperClick={onWallpaperClick}
         />
       ))}
 
-      {/* infinite scroll sentinel */}
-      <div ref={sentinelRef} style={{ height: 1 }} />
+      {isFetching && <DotLoader />}
 
-      {/* loading spinner — only shown while more pages exist */}
-      {hasMore && !loadError && (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '16px 0' }}>
-          <span style={{
-            display: 'inline-block', width: 20, height: 20,
-            border: '2px solid #d1d5db', borderTopColor: '#6b7280',
-            borderRadius: '50%', animation: 'spin .7s linear infinite',
-          }} />
-        </div>
-      )}
+      <NetworkBanner status={netStatus} retryCount={retryCount} onRetry={handleRetry} />
 
-      {/* network error + retry */}
-      {loadError && (
-        <div style={{ textAlign: 'center', padding: '16px 0' }}>
-          <p style={{ color: '#9ca3af', fontSize: 13, marginBottom: 8 }}>
-            Slow connection — couldn't load more
-          </p>
-          <button
-            onClick={() => { setLoadError(false); onLoadMore?.(); }}
-            style={{
-              padding: '8px 24px', borderRadius: 99, border: '1.5px solid #e5e7eb',
-              background: '#fff', color: '#374151', fontSize: 13,
-              fontWeight: 600, cursor: 'pointer',
-            }}
-          >
-            Retry
-          </button>
-        </div>
-      )}
-
-      {/* end of feed */}
-      {!hasMore && wallpapers.length > 0 && (
-        <div style={{ textAlign: 'center', padding: '48px 0 32px', color: '#6b7280', fontSize: 15, fontWeight: 500 }}>
-          You've seen all wallpapers ✨
+      {!hasMore && wallpapers.length > 0 && !isFetching && (
+        <div style={{ textAlign: 'center', padding: '40px 0 28px', color: '#9ca3af', fontSize: 13, fontWeight: 500 }}>
+          You're all caught up ✨
         </div>
       )}
 
       <style>{`
-        @keyframes shimmerSweep { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
-        @keyframes spin { to{transform:rotate(360deg)} }
+        @keyframes shimmerSweep {
+          0%   { background-position: -200% 0 }
+          100% { background-position:  200% 0 }
+        }
+        @keyframes dotPulse {
+          0%, 80%, 100% { transform: scale(0.55); opacity: 0.35; }
+          40%           { transform: scale(1);    opacity: 1;    }
+        }
         img { -webkit-user-drag: none }
       `}</style>
     </div>
