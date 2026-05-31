@@ -14,21 +14,22 @@ import CookiesDialog from './components/CookiesDialog';
 import { useRouter } from 'next/navigation';
 import type { Wallpaper, Filter } from './types';
 
-const ITEMS_PER_PAGE = 10;
+const ITEMS_PER_PAGE = 11;
 
-// ── Props ─────────────────────────────────────────────────────────────────────
-type Props = {
-  initialWallpapers?: Wallpaper[];
-};
+type Props = { initialWallpapers?: Wallpaper[] };
 
 export default function WallpaperGallery({ initialWallpapers = [] }: Props) {
   const router = useRouter();
 
+  // ── Initialise from cache or server props ─────────────────────
+  // feedCache.hasMore may be undefined on first render — default to true
   const [wallpapers,    setWallpapers]    = useState<Wallpaper[]>(
     feedCache.populated ? feedCache.wallpapers : initialWallpapers
   );
-  const [hasMore,       setHasMore]       = useState(feedCache.populated ? feedCache.hasMore : true);
-  const [filter,        setFilter]        = useState<Filter>(feedCache.filter);
+  const [hasMore,       setHasMore]       = useState<boolean>(
+    feedCache.populated ? (feedCache.hasMore ?? true) : true   // ← fix: never undefined
+  );
+  const [filter,        setFilter]        = useState<Filter>(feedCache.filter ?? 'all');
   const [isInitialLoad, setIsInitialLoad] = useState(
     !feedCache.populated && initialWallpapers.length === 0
   );
@@ -38,11 +39,20 @@ export default function WallpaperGallery({ initialWallpapers = [] }: Props) {
   const isScrollingRef   = useRef(false);
   const scrollTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seenIdsRef       = useRef<Set<string>>(
-    new Set(feedCache.populated ? feedCache.wallpapers.map(w => w.id) : initialWallpapers.map(w => w.id))
+    new Set(
+      feedCache.populated
+        ? feedCache.wallpapers.map((w: Wallpaper) => w.id)
+        : initialWallpapers.map(w => w.id)
+    )
   );
-  const pageRef = useRef<number>(feedCache.populated ? (feedCache.page ?? 0) : initialWallpapers.length > 0 ? 1 : 0);
+  // pageRef: how many pages have been fetched (page 0 = first batch)
+  const pageRef = useRef<number>(
+    feedCache.populated
+      ? (feedCache.page ?? 1)
+      : initialWallpapers.length > 0 ? 1 : 0
+  );
 
-  // ── Track scrolling state ─────────────────────────────────────
+  // ── Scroll tracking ───────────────────────────────────────────
   useEffect(() => {
     const onScroll = () => {
       isScrollingRef.current = true;
@@ -59,7 +69,7 @@ export default function WallpaperGallery({ initialWallpapers = [] }: Props) {
     if (feedCache.populated) {
       requestAnimationFrame(() =>
         requestAnimationFrame(() =>
-          window.scrollTo({ top: feedCache.scrollY, behavior: 'instant' })
+          window.scrollTo({ top: feedCache.scrollY ?? 0, behavior: 'instant' })
         )
       );
       return;
@@ -80,7 +90,7 @@ export default function WallpaperGallery({ initialWallpapers = [] }: Props) {
       return;
     }
 
-    // Case 3: fallback fetch (no server data)
+    // Case 3: fallback fetch (no server data, no cache)
     let cancelled = false;
     fetchWallpapers(0, ITEMS_PER_PAGE, filter)
       .then(data => {
@@ -107,11 +117,13 @@ export default function WallpaperGallery({ initialWallpapers = [] }: Props) {
   useEffect(() => {
     if (!filterChangedRef.current) { filterChangedRef.current = true; return; }
     let cancelled = false;
+
     setWallpapers([]);
     setHasMore(true);
     setIsInitialLoad(true);
     seenIdsRef.current = new Set();
     pageRef.current    = 0;
+    loadingMoreRef.current = false;
     Object.assign(feedCache, { populated: false, wallpapers: [], scrollY: 0 });
 
     fetchWallpapers(0, ITEMS_PER_PAGE, filter)
@@ -135,17 +147,17 @@ export default function WallpaperGallery({ initialWallpapers = [] }: Props) {
     return () => { cancelled = true; };
   }, [filter]); // eslint-disable-line
 
-  // ── Real-time refetch on reconnect / visibility ───────────────
+  // ── Real-time refetch on reconnect / tab visible ──────────────
   useEffect(() => {
     const lastRefetchRef = { current: 0 };
 
     const refetch = async () => {
       if (isScrollingRef.current) return;
       const now = Date.now();
-      if (now - lastRefetchRef.current < 300_000) return;
+      if (now - lastRefetchRef.current < 300_000) return; // 5 min cooldown
       lastRefetchRef.current = now;
       try {
-        const data  = await fetchWallpapers(0, ITEMS_PER_PAGE, feedCache.filter);
+        const data  = await fetchWallpapers(0, ITEMS_PER_PAGE, feedCache.filter ?? 'all');
         const fresh = data.wallpapers.filter((w: Wallpaper) => !seenIdsRef.current.has(w.id));
         if (!fresh.length) return;
         fresh.forEach((w: Wallpaper) => seenIdsRef.current.add(w.id));
@@ -159,7 +171,7 @@ export default function WallpaperGallery({ initialWallpapers = [] }: Props) {
 
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
-        loadingMoreRef.current = false;
+        loadingMoreRef.current = false; // reset stuck lock on tab focus
         if (navigator.onLine) refetch();
       }
     };
@@ -175,23 +187,30 @@ export default function WallpaperGallery({ initialWallpapers = [] }: Props) {
     };
   }, []);
 
-  // ── Load more ─────────────────────────────────────────────────
+  // ── Load more (called by WallpaperGrid sentinel) ──────────────
   const handleLoadMore = useCallback(async () => {
     if (!hasMore || loadingMoreRef.current) return;
     loadingMoreRef.current = true;
+
     try {
       const data  = await fetchWallpapers(pageRef.current, ITEMS_PER_PAGE, filter);
       const fresh = data.wallpapers.filter((w: Wallpaper) => !seenIdsRef.current.has(w.id));
       fresh.forEach((w: Wallpaper) => seenIdsRef.current.add(w.id));
       pageRef.current += 1;
+
       setWallpapers(prev => {
         const next = [...prev, ...fresh];
-        Object.assign(feedCache, { wallpapers: next, page: pageRef.current, hasMore: data.hasMore });
+        Object.assign(feedCache, {
+          wallpapers: next,
+          page:       pageRef.current,
+          hasMore:    data.hasMore,
+        });
         return next;
       });
       setHasMore(data.hasMore);
     } catch (e) {
       console.error('Load more failed:', e);
+      throw e; // re-throw so WallpaperGrid can show retry UI
     } finally {
       loadingMoreRef.current = false;
     }
