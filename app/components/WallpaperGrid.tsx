@@ -12,7 +12,17 @@ const SLOW_AFTER       = 4_000;
 const HARD_TIMEOUT     = 10_000;
 const MAX_RETRIES      = 3;
 const SCROLL_THRESHOLD = 700;
-const BANNER_EVERY     = 6; // show banner every N rows
+const BANNER_EVERY     = 5; // show banner every N rows (adjust between 4–6 as needed)
+
+/* ─── iOS detection (run once, client-side) ──────────────────────────── */
+const isIOS = (): boolean => {
+  if (typeof navigator === 'undefined') return false;
+  return (
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    // iPad on iOS 13+ reports as MacIntel but has touch
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  );
+};
 
 const COLORS = [
   { bg: '#e8eaf0', shimmer: '#d0d4e8' },
@@ -97,28 +107,40 @@ const NetworkBanner = ({ status, retryCount, onRetry }: {
   );
 };
 
-/* ─── app install banner ─────────────────────────────────────────────── */
+/* ─── app install banner (Android only) ─────────────────────────────── */
 const AppInstallBanner = () => {
   const [visible, setVisible] = useState(false);
+
+  // Don't render at all for iOS users
+  if (isIOS()) return null;
+
+  // eslint-disable-next-line react-hooks/rules-of-hooks
   useEffect(() => {
     const t = setTimeout(() => setVisible(true), 50);
     return () => clearTimeout(t);
   }, []);
 
+  const handleClick = () => {
+    window.location.href = '/download/android';
+  };
+
   return (
-    <a
-      href="/download/android"
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={handleClick}
+      onKeyDown={e => e.key === 'Enter' && handleClick()}
       style={{
         display: 'block',
         margin: `4px ${PAD}px`,
         borderRadius: 16,
         overflow: 'hidden',
-        textDecoration: 'none',
         cursor: 'pointer',
         transform: visible ? 'translateY(0) scale(1)' : 'translateY(12px) scale(0.98)',
         opacity: visible ? 1 : 0,
         transition: 'transform 0.35s cubic-bezier(.34,1.4,.64,1), opacity 0.3s ease',
         WebkitTapHighlightColor: 'transparent',
+        outline: 'none',
       }}
     >
       <img
@@ -131,9 +153,10 @@ const AppInstallBanner = () => {
           height: 'auto',
           borderRadius: 16,
           pointerEvents: 'none',
+          userSelect: 'none',
         }}
       />
-    </a>
+    </div>
   );
 };
 
@@ -151,7 +174,7 @@ const Row = memo(({ items, cols, chunkOffset, onWallpaperClick }: {
 }) => {
   // App banner — full width, not a card column
   if (items.length === 1 && items[0].kind === 'appbanner') {
-    return <AppInstallBanner key={items[0].id} />;
+    return <AppInstallBanner />;
   }
 
   return (
@@ -304,6 +327,9 @@ export const WallpaperGrid = ({
   []);
 
   const rows = useMemo<MasonryItem[][]>(() => {
+    // iOS users never see the app install banner rows
+    const showBanner = !isIOS();
+
     // 1. Build flat item list
     const items: MasonryItem[] = [];
     let nativeIdx = 0;
@@ -318,12 +344,11 @@ export const WallpaperGrid = ({
     for (let i = 0; i < items.length; i += cols)
       rawRows.push(items.slice(i, i + cols));
 
-    // 3. Inject banner row after every BANNER_EVERY rows
+    // 3. Inject banner row after every BANNER_EVERY rows (Android only)
     const result: MasonryItem[][] = [];
     rawRows.forEach((row, rowIdx) => {
       result.push(row);
-      // insert after row index BANNER_EVERY-1, then every BANNER_EVERY rows after
-      if ((rowIdx + 1) % BANNER_EVERY === 0) {
+      if (showBanner && (rowIdx + 1) % BANNER_EVERY === 0) {
         result.push([{ kind: 'appbanner', id: rowIdx }]);
       }
     });
