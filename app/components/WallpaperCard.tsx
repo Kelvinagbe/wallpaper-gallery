@@ -261,16 +261,33 @@ export const WallpaperCard = ({ wp, onClick, priority = false, placeholderIndex 
 
   return (
     <>
-      <div className="relative w-full rounded-2xl overflow-hidden cursor-pointer select-none"
-        style={{ aspectRatio: isPC ? '4/3' : '9/16', background: ph.bg, WebkitUserSelect: 'none', userSelect: 'none', contain: 'layout style paint' }}
-        onClick={handleClick} onTouchStart={onTouchStart} onTouchEnd={clearLong}
-        onTouchMove={clearLong} onContextMenu={noCtx}
-      >
-        {!loaded && (
-          <div className="absolute inset-0 z-[1]"
-            style={{ background: `linear-gradient(105deg,transparent 40%,${ph.shimmer}99 50%,transparent 60%)`, backgroundSize: '200% 100%', animation: 'shimmerSweep 1.8s ease-in-out infinite' }}
-          />
-        )}
+      <div
+  className="relative w-full rounded-2xl overflow-hidden cursor-pointer select-none"
+  style={{
+    flex: '1 1 0',
+    minWidth: 0,
+    aspectRatio: '9/16',
+    background: ph.bg,
+    WebkitUserSelect: 'none',
+    userSelect: 'none',
+    contain: 'layout style paint',
+  }}
+  onClick={handleClick}
+  onTouchStart={onTouchStart}
+  onTouchEnd={clearLong}
+  onTouchMove={clearLong}
+  onContextMenu={noCtx}
+>
+  {!loaded && (
+    <div
+      className="absolute inset-0 z-[1]"
+      style={{
+        background: `linear-gradient(105deg,transparent 40%,${ph.shimmer}99 50%,transparent 60%)`,
+        backgroundSize: '200% 100%',
+        animation: 'shimmerSweep 1.8s ease-in-out infinite',
+      }}
+    />
+  )}
 
         <Image src={imgSrc} alt={wp.title} fill draggable={false}
           sizes={isPC ? '100vw' : '(max-width:480px) 50vw,(max-width:768px) 33vw,(max-width:1024px) 25vw,20vw'}
