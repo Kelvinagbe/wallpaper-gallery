@@ -9,12 +9,12 @@ const supabase = createClient(
   { auth: { autoRefreshToken: false, persistSession: false } },
 );
 
-const BLOB_URL   = process.env.BLOB_UPLOAD_URL!;
-const SE_USER    = process.env.SIGHTENGINE_USER!;
-const SE_SECRET  = process.env.SIGHTENGINE_SECRET!;
-const MAX_W      = 1920;
-const MAX_H      = 1080;
-const THUMB_W    = 400;
+const BLOB_URL  = process.env.BLOB_UPLOAD_URL!;
+const SE_USER   = process.env.SIGHTENGINE_USER!;
+const SE_SECRET = process.env.SIGHTENGINE_SECRET!;
+const MAX_W     = 1920;
+const MAX_H     = 1080;
+const THUMB_W   = 400;
 
 // ── Types ────────────────────────────────────────────────────────
 interface ModerationResult {
@@ -35,14 +35,17 @@ async function moderateImage(buffer: Buffer, mimeType: string): Promise<Moderati
     fd.append('media',      blob, 'image.jpg');
     fd.append('api_user',   SE_USER);
     fd.append('api_secret', SE_SECRET);
-    // Extended model set for better coverage
+    // FIX: corrected model names per Sightengine docs
+    // - 'nudity-2.0'   → 'nudity-2.1'
+    // - 'gore'         → 'gore-2.0'
+    // - 'drugs'        → 'recreational_drug'  (was causing the API failure)
+    // - 'hate-symbols' → removed (covered by 'offensive')
     fd.append('models', [
-      'nudity-2.0',
+      'nudity-2.1',
       'offensive',
-      'gore',
+      'gore-2.0',
       'weapon',
-      'drugs',
-      'hate-symbols',
+      'recreational_drug',
       'face-attributes',
       'text-content',
     ].join(','));
@@ -61,11 +64,11 @@ async function moderateImage(buffer: Buffer, mimeType: string): Promise<Moderati
     // ── Nudity ──────────────────────────────────────────────────
     const n = data.nudity;
     if (n) {
-      scores.sexual_activity  = n.sexual_activity  ?? 0;
-      scores.sexual_display   = n.sexual_display   ?? 0;
-      scores.erotica          = n.erotica          ?? 0;
-      scores.very_suggestive  = n.very_suggestive  ?? 0;
-      scores.suggestive       = n.suggestive       ?? 0;
+      scores.sexual_activity   = n.sexual_activity   ?? 0;
+      scores.sexual_display    = n.sexual_display    ?? 0;
+      scores.erotica           = n.erotica           ?? 0;
+      scores.very_suggestive   = n.very_suggestive   ?? 0;
+      scores.suggestive        = n.suggestive        ?? 0;
       scores.mildly_suggestive = n.mildly_suggestive ?? 0;
 
       if (n.sexual_activity > 0.45 || n.sexual_display > 0.45 || n.erotica > 0.45)
@@ -96,18 +99,11 @@ async function moderateImage(buffer: Buffer, mimeType: string): Promise<Moderati
     }
 
     // ── Drugs ────────────────────────────────────────────────────
-    const drugs = data.drug;
+    // FIX: response key is 'recreational_drug', not 'drug'
+    const drugs = data.recreational_drug;
     if (drugs) {
       scores.drugs = drugs.prob ?? 0;
       if (drugs.prob > 0.75) violations.push('drugs');
-    }
-
-    // ── Hate symbols ─────────────────────────────────────────────
-    const hate = data['hate-symbols'];
-    if (hate) {
-      const hateScore = hate.prob ?? 0;
-      scores.hate_symbols = hateScore;
-      if (hateScore > 0.6) violations.push('hate_symbol');
     }
 
     if (violations.length === 0) return { safe: true, scores };
@@ -138,10 +134,6 @@ async function moderateImage(buffer: Buffer, mimeType: string): Promise<Moderati
       drugs: {
         reason:  '🚫 Drug-related content detected',
         details: 'This image appears to contain drug paraphernalia or drug use, which violates our Community Guidelines.',
-      },
-      hate_symbol: {
-        reason:  '🚫 Hate symbol detected',
-        details: 'This image contains symbols associated with hate groups or ideologies, which is strictly prohibited on our platform.',
       },
     };
 
@@ -289,7 +281,7 @@ export async function POST(req: NextRequest) {
 
     // ── Step 3: Upload both to blob store ────────────────────────
     const [imageUrl, thumbnailUrl] = await Promise.all([
-      blobUpload(main,  file.name,           userId, 'wallpapers'),
+      blobUpload(main,  file.name,            userId, 'wallpapers'),
       blobUpload(thumb, `thumb_${file.name}`, userId, 'wallpapers/thumbnails'),
     ]);
 
