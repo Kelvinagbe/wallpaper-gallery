@@ -227,7 +227,9 @@ async function saveToDatabase(payload: {
   category: string; wallType: string;
   imageUrl: string; thumbnailUrl: string;
 }) {
-  const { data, error } = await getSupabase()
+  // Cast to `any` because Supabase's generated types may not include this
+  // table — the schema types are not required for the insert to work at runtime.
+  const { data, error } = await (getSupabase() as any)
     .from('wallpapers')
     .insert({
       user_id:       payload.userId,
