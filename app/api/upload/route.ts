@@ -3,27 +3,31 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import sharp from 'sharp';
 
-// ── Env validation ───────────────────────────────────────────────
+// ── Env (read lazily at request time, not at build time) ─────────
+// requireEnv() must NOT be called at module level — Vercel only
+// injects env vars at runtime, not during "next build".
 function requireEnv(name: string): string {
   const val = process.env[name];
   if (!val) throw new Error(`Missing required environment variable: ${name}`);
   return val;
 }
 
-const SUPABASE_URL    = requireEnv('NEXT_PUBLIC_SUPABASE_URL');
-const SUPABASE_KEY    = requireEnv('SUPABASE_SERVICE_ROLE_KEY');
-const BLOB_URL        = requireEnv('BLOB_UPLOAD_URL');
-const SE_USER         = process.env.SIGHTENGINE_USER   ?? '';
-const SE_SECRET       = process.env.SIGHTENGINE_SECRET ?? '';
-const APP_URL         = process.env.NEXT_PUBLIC_APP_URL ?? '';
-
 const MAX_W   = 1920;
 const MAX_H   = 1080;
 const THUMB_W = 400;
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
-  auth: { autoRefreshToken: false, persistSession: false },
-});
+// Supabase client is created lazily inside getSupabase() for the same reason.
+let _supabase: ReturnType<typeof createClient> | null = null;
+function getSupabase() {
+  if (!_supabase) {
+    _supabase = createClient(
+      requireEnv('NEXT_PUBLIC_SUPABASE_URL'),
+      requireEnv('SUPABASE_SERVICE_ROLE_KEY'),
+      { auth: { autoRefreshToken: false, persistSession: false } },
+    );
+  }
+  return _supabase;
+}
 
 // ── Types ────────────────────────────────────────────────────────
 interface ModerationResult {
@@ -36,6 +40,8 @@ interface ModerationResult {
 
 // ── Moderation ───────────────────────────────────────────────────
 async function moderateImage(buffer: Buffer, mimeType: string): Promise<ModerationResult> {
+  const SE_USER   = process.env.SIGHTENGINE_USER   ?? '';
+  const SE_SECRET = process.env.SIGHTENGINE_SECRET ?? '';
   if (!SE_USER || !SE_SECRET) {
     console.warn('[Moderation] Skipping — SIGHTENGINE_USER / SIGHTENGINE_SECRET not set');
     return { safe: true };
@@ -45,7 +51,7 @@ async function moderateImage(buffer: Buffer, mimeType: string): Promise<Moderati
     const fd = new FormData();
     fd.append('media',      new Blob([buffer], { type: mimeType }), 'image.jpg');
     fd.append('api_user',   SE_USER);
-    fd.append('api_secret', SE_SECRET);
+    fd.append('api_secret', SE_SECRET); // both set above
     fd.append('models', [
       'nudity-2.1',
       'offensive',
@@ -191,7 +197,7 @@ async function blobUpload(
   fd.append('userId', userId);
   fd.append('folder', folder);
 
-  const res = await fetch(BLOB_URL, { method: 'POST', body: fd });
+  const res = await fetch(requireEnv('BLOB_UPLOAD_URL'), { method: 'POST', body: fd });
   if (!res.ok) {
     const e = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(`Blob upload failed: ${e.error ?? res.statusText}`);
@@ -204,6 +210,7 @@ async function blobUpload(
 
 // ── Report violation ─────────────────────────────────────────────
 async function reportViolation(userId: string, violation: string): Promise<void> {
+  const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? '';
   if (!APP_URL) return;
   try {
     await fetch(`${APP_URL}/api/report-violation`, {
@@ -220,7 +227,7 @@ async function saveToDatabase(payload: {
   category: string; wallType: string;
   imageUrl: string; thumbnailUrl: string;
 }) {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from('wallpapers')
     .insert({
       user_id:       payload.userId,
