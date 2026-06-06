@@ -195,7 +195,10 @@ async function blobUpload(
   if (!filename) throw new Error('blobUpload: filename is empty or undefined');
 
   const pathname = `${folder}/${userId}/${Date.now()}-${filename}`;
-  const { url } = await put(pathname, buffer, {
+  // Ensure the buffer passed to put() is a plain copy — SharedArrayBuffer-backed
+  // buffers cause "@vercel/blob: SharedArrayBuffer is not allowed"
+  const safeBuffer = Buffer.from(buffer);
+  const { url } = await put(pathname, safeBuffer, {
     access: 'public',
     contentType: 'image/jpeg',
   });
@@ -284,10 +287,15 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
 
-    // Guard: arrayBuffer() can return undefined in some Next.js/Node versions
+    // Guard: arrayBuffer() can return undefined in some Next.js/Node versions.
+    // Also force a plain ArrayBuffer copy — some Node versions back the buffer
+    // with a SharedArrayBuffer which @vercel/blob's fetch rejects.
     const arrayBuf = await file.arrayBuffer();
     if (!arrayBuf) throw new Error('Failed to read file: arrayBuffer() returned undefined');
-    const buffer = Buffer.from(arrayBuf);
+    const safeArrayBuf = arrayBuf instanceof SharedArrayBuffer
+      ? arrayBuf.slice(0)           // copies into a plain ArrayBuffer
+      : arrayBuf.slice(0);          // slice(0) always returns a plain ArrayBuffer copy
+    const buffer = Buffer.from(safeArrayBuf);
     if (!buffer || buffer.length === 0) throw new Error('Failed to read file: buffer is empty');
 
     // ── Step 1: Moderation ───────────────────────────────────────
