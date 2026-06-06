@@ -184,6 +184,8 @@ async function processImage(buffer: Buffer): Promise<{ main: Buffer; thumb: Buff
 async function blobUpload(
   buffer: Buffer, filename: string, userId: string, folder: string,
 ): Promise<string> {
+  if (!buffer || buffer.length === 0) throw new Error('blobUpload: buffer is empty or undefined');
+  if (!filename) throw new Error('blobUpload: filename is empty or undefined');
   const fd = new FormData();
   fd.append('file',   new Blob([buffer], { type: 'image/jpeg' }), filename);
   fd.append('userId', userId);
@@ -259,6 +261,13 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
 
+    // Guard: form.get('file') can return a string if client sends wrong content-type
+    if (typeof file === 'string' || typeof (file as any).arrayBuffer !== 'function')
+      return NextResponse.json(
+        { success: false, error: 'Invalid file field — must be a File object' },
+        { status: 400 },
+      );
+
     if (!file.type.startsWith('image/'))
       return NextResponse.json(
         { success: false, error: 'File must be an image' },
@@ -271,7 +280,11 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
 
-    const buffer = Buffer.from(await file.arrayBuffer());
+    // Guard: arrayBuffer() can return undefined in some Next.js/Node versions
+    const arrayBuf = await file.arrayBuffer();
+    if (!arrayBuf) throw new Error('Failed to read file: arrayBuffer() returned undefined');
+    const buffer = Buffer.from(arrayBuf);
+    if (!buffer || buffer.length === 0) throw new Error('Failed to read file: buffer is empty');
 
     // ── Step 1: Moderation ───────────────────────────────────────
     const mod = await moderateImage(buffer, file.type);
