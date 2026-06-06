@@ -9,7 +9,6 @@ import {
   Wifi, WifiOff, RefreshCw, AlertCircle, ChevronDown, ShieldAlert,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
-import { useAuth } from '@/app/components/AuthProvider';
 import { useUpload } from '@/app/hooks/useUpload';
 
 // ── Constants ────────────────────────────────────────────────────
@@ -101,8 +100,8 @@ const Overlay = ({ children, anim='upl-overlay-in .25s ease forwards' }: { child
 
 // ── Upload Modal ─────────────────────────────────────────────────
 const UploadModal = ({ onClose }: { onClose: ()=>void }) => {
-  const { session } = useAuth();
-  const supabase    = createClient();
+  // FIX: removed useAuth() — getUser() is used instead (secure, server-verified)
+  const supabase = createClient();
 
   const [user,        setUser]        = useState<any>(null);
   const [title,       setTitle]       = useState('');
@@ -123,7 +122,7 @@ const UploadModal = ({ onClose }: { onClose: ()=>void }) => {
   const [netRetrying, setNetRetrying] = useState(false);
 
   const fileRef = useRef<HTMLInputElement>(null);
-  const { uploading, progress, status, error, online, speed, canResume, uploadFile, reset, cancel, getCachedData } = useUpload(user?.id);
+  const { uploading, progress, status, error, online, speed, canResume, uploadFile, reset, cancel } = useUpload(user?.id);
 
   // detect desktop
   useEffect(() => {
@@ -134,17 +133,19 @@ const UploadModal = ({ onClose }: { onClose: ()=>void }) => {
     return () => mq.removeEventListener('change', handler);
   }, []);
 
-  // init
+  // init — FIX: use getUser() instead of getSession() to get server-verified user
   useEffect(() => {
     (async () => {
-      const { data: { session: s } } = await supabase.auth.getSession();
-      const u = session?.user || s?.user || null;
+      const { data: { user: u } } = await supabase.auth.getUser();
       setUser(u);
       if (u) {
-        const [count, susp] = await Promise.all([getTodayCount(supabase, u.id), checkSuspension(supabase, u.id)]);
-        setTodayCount(count); setSuspension(susp);
+        const [count, susp] = await Promise.all([
+          getTodayCount(supabase, u.id),
+          checkSuspension(supabase, u.id),
+        ]);
+        setTodayCount(count);
+        setSuspension(susp);
       }
-     
       setAuthLoading(false);
     })();
     document.body.style.overflow = 'hidden';
@@ -156,7 +157,7 @@ const UploadModal = ({ onClose }: { onClose: ()=>void }) => {
     if (!error || !canResume) return;
     const handler = async () => {
       setNetRetrying(true);
-      await new Promise(r => setTimeout(r, 1500)); // brief wait for stable connection
+      await new Promise(r => setTimeout(r, 1500));
       doUpload(true).finally(() => setNetRetrying(false));
     };
     window.addEventListener('online', handler);
@@ -179,17 +180,22 @@ const UploadModal = ({ onClose }: { onClose: ()=>void }) => {
     const url = URL.createObjectURL(f);
     setPreview(url);
     const img = new Image();
-    img.onload = () => { setImgDims({w:img.naturalWidth,h:img.naturalHeight}); setType(img.naturalWidth>img.naturalHeight?'pc':'mobile'); };
+    img.onload = () => {
+      setImgDims({w:img.naturalWidth,h:img.naturalHeight});
+      setType(img.naturalWidth>img.naturalHeight?'pc':'mobile');
+    };
     img.src = url;
   }, []);
 
   const doUpload = async (resume: boolean) => {
     setViolation(null);
     const result = await uploadFile(file!, title, desc, resume, category, type);
-    if (result.success) { setTodayCount(c=>c+1); setTimeout(()=>{resetAll();close();},2000); }
-    else if (result.violation && result.error) {
-      setViolation({reason:result.error,details:result.details});
-      checkSuspension(supabase, user?.id).then(susp=>setSuspension(susp));
+    if (result.success) {
+      setTodayCount(c=>c+1);
+      setTimeout(()=>{ resetAll(); close(); }, 2000);
+    } else if (result.violation && result.error) {
+      setViolation({ reason: result.error, details: result.details });
+      checkSuspension(supabase, user?.id).then(susp => setSuspension(susp));
     }
   };
 
@@ -200,7 +206,6 @@ const UploadModal = ({ onClose }: { onClose: ()=>void }) => {
   const isComplete   = progress >= 100 && !error;
   const isOffline    = speed === 'offline';
 
-  // ── Sheet border radius depends on viewport ──────────────────
   const sheetStyle: React.CSSProperties = isDesktop
     ? { position:'relative', zIndex:71, background:'#fff', borderRadius:20, padding:'0 0 24px', boxShadow:'0 8px 60px rgba(0,0,0,0.18)', width:'100%', maxWidth:520, maxHeight:'90dvh', display:'flex', flexDirection:'column' }
     : { position:'relative', zIndex:71, background:'#fff', borderRadius:'24px 24px 0 0', paddingBottom:'max(20px,env(safe-area-inset-bottom))', boxShadow:'0 -4px 40px rgba(0,0,0,0.1)', maxHeight:'90dvh', display:'flex', flexDirection:'column' };
@@ -220,7 +225,9 @@ const UploadModal = ({ onClose }: { onClose: ()=>void }) => {
         {/* ── Suspension overlay ── */}
         {suspension.suspended && !violation && (
           <Overlay anim="upl-overlay-in .3s ease forwards">
-            <div style={{ width:64,height:64,borderRadius:'50%',background:'rgba(239,68,68,0.08)',display:'flex',alignItems:'center',justifyContent:'center' }}><ShieldAlert size={30} color="#ef4444" /></div>
+            <div style={{ width:64,height:64,borderRadius:'50%',background:'rgba(239,68,68,0.08)',display:'flex',alignItems:'center',justifyContent:'center' }}>
+              <ShieldAlert size={30} color="#ef4444" />
+            </div>
             <div>
               <p style={{ fontSize:17,fontWeight:700,color:'#0a0a0a',marginBottom:6 }}>Upload Suspended</p>
               <p style={{ fontSize:13,color:'rgba(0,0,0,0.5)',lineHeight:1.6,maxWidth:260,margin:'0 auto 16px' }}>
@@ -284,7 +291,9 @@ const UploadModal = ({ onClose }: { onClose: ()=>void }) => {
         {/* ── Violation overlay ── */}
         {violation && (
           <Overlay>
-            <div style={{ width:60,height:60,borderRadius:'50%',background:'rgba(239,68,68,0.08)',display:'flex',alignItems:'center',justifyContent:'center' }}><ShieldAlert size={28} color="#ef4444" /></div>
+            <div style={{ width:60,height:60,borderRadius:'50%',background:'rgba(239,68,68,0.08)',display:'flex',alignItems:'center',justifyContent:'center' }}>
+              <ShieldAlert size={28} color="#ef4444" />
+            </div>
             <div style={{ maxWidth:280 }}>
               <p style={{ fontSize:16,fontWeight:700,color:'#0a0a0a',marginBottom:8 }}>{violation.reason}</p>
               {violation.details&&<p style={{ fontSize:13,color:'rgba(0,0,0,0.5)',lineHeight:1.6,marginBottom:12 }}>{violation.details}</p>}
@@ -343,7 +352,7 @@ const UploadModal = ({ onClose }: { onClose: ()=>void }) => {
             </>
           ) : (
             <>
-            {/* Offline banner */}
+              {/* Offline banner */}
               {isOffline&&(
                 <div style={{ display:'flex',alignItems:'center',gap:10,padding:'10px 14px',background:'rgba(239,68,68,0.06)',border:'1px solid rgba(239,68,68,0.15)',borderRadius:12 }}>
                   <WifiOff size={14} color="#ef4444" style={{ flexShrink:0 }} />
@@ -464,14 +473,12 @@ export const UploadModalProvider = ({ children }: { children: ReactNode }) => {
   const open  = useCallback(() => { window.location.hash = 'upload'; setVisible(true); }, []);
   const close = useCallback(() => { history.replaceState(null,'',window.location.pathname+window.location.search); setVisible(false); }, []);
 
-  // Sync hash ↔ modal
   useEffect(() => {
     const onHash = () => {
       if (window.location.hash === '#upload') setVisible(true);
       else setVisible(false);
     };
     window.addEventListener('hashchange', onHash);
-    // Open on initial load if hash present
     if (window.location.hash === '#upload') setVisible(true);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
