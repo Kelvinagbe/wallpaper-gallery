@@ -1,6 +1,7 @@
 // app/api/upload/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { put } from '@vercel/blob';
 import sharp from 'sharp';
 
 // ── Env (read lazily at request time, not at build time) ─────────
@@ -186,26 +187,20 @@ async function processImage(buffer: Buffer): Promise<{ main: Buffer; thumb: Buff
   return { main, thumb };
 }
 
-// ── Blob upload ──────────────────────────────────────────────────
+// ── Blob upload (Vercel Blob) ─────────────────────────────────────
 async function blobUpload(
   buffer: Buffer, filename: string, userId: string, folder: string,
 ): Promise<string> {
   if (!buffer || buffer.length === 0) throw new Error('blobUpload: buffer is empty or undefined');
   if (!filename) throw new Error('blobUpload: filename is empty or undefined');
-  const fd = new FormData();
-  fd.append('file',   new Blob([buffer], { type: 'image/jpeg' }), filename);
-  fd.append('userId', userId);
-  fd.append('folder', folder);
 
-  const res = await fetch(requireEnv('BLOB_UPLOAD_URL'), { method: 'POST', body: fd });
-  if (!res.ok) {
-    const e = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(`Blob upload failed: ${e.error ?? res.statusText}`);
-  }
+  const pathname = `${folder}/${userId}/${Date.now()}-${filename}`;
+  const { url } = await put(pathname, buffer, {
+    access: 'public',
+    contentType: 'image/jpeg',
+  });
 
-  const data = await res.json();
-  if (!data.success || !data.url) throw new Error('No URL returned from blob store');
-  return data.url as string;
+  return url;
 }
 
 // ── Report violation ─────────────────────────────────────────────
