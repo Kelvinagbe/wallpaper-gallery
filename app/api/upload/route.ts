@@ -3,18 +3,27 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import sharp from 'sharp';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { autoRefreshToken: false, persistSession: false } },
-);
+// ── Env validation ───────────────────────────────────────────────
+function requireEnv(name: string): string {
+  const val = process.env[name];
+  if (!val) throw new Error(`Missing required environment variable: ${name}`);
+  return val;
+}
 
-const BLOB_URL  = process.env.BLOB_UPLOAD_URL!;
-const SE_USER   = process.env.SIGHTENGINE_USER!;
-const SE_SECRET = process.env.SIGHTENGINE_SECRET!;
-const MAX_W     = 1920;
-const MAX_H     = 1080;
-const THUMB_W   = 400;
+const SUPABASE_URL    = requireEnv('NEXT_PUBLIC_SUPABASE_URL');
+const SUPABASE_KEY    = requireEnv('SUPABASE_SERVICE_ROLE_KEY');
+const BLOB_URL        = requireEnv('BLOB_UPLOAD_URL');
+const SE_USER         = process.env.SIGHTENGINE_USER   ?? '';
+const SE_SECRET       = process.env.SIGHTENGINE_SECRET ?? '';
+const APP_URL         = process.env.NEXT_PUBLIC_APP_URL ?? '';
+
+const MAX_W   = 1920;
+const MAX_H   = 1080;
+const THUMB_W = 400;
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+  auth: { autoRefreshToken: false, persistSession: false },
+});
 
 // ── Types ────────────────────────────────────────────────────────
 interface ModerationResult {
@@ -25,21 +34,18 @@ interface ModerationResult {
   scores?:    Record<string, number>;
 }
 
-// ── Moderation (server-side, secrets safe) ───────────────────────
+// ── Moderation ───────────────────────────────────────────────────
 async function moderateImage(buffer: Buffer, mimeType: string): Promise<ModerationResult> {
-  if (!SE_USER || !SE_SECRET) return { safe: true };
+  if (!SE_USER || !SE_SECRET) {
+    console.warn('[Moderation] Skipping — SIGHTENGINE_USER / SIGHTENGINE_SECRET not set');
+    return { safe: true };
+  }
 
   try {
     const fd = new FormData();
-    const blob = new Blob([buffer], { type: mimeType });
-    fd.append('media',      blob, 'image.jpg');
+    fd.append('media',      new Blob([buffer], { type: mimeType }), 'image.jpg');
     fd.append('api_user',   SE_USER);
     fd.append('api_secret', SE_SECRET);
-    // FIX: corrected model names per Sightengine docs
-    // - 'nudity-2.0'   → 'nudity-2.1'
-    // - 'gore'         → 'gore-2.0'
-    // - 'drugs'        → 'recreational_drug'  (was causing the API failure)
-    // - 'hate-symbols' → removed (covered by 'offensive')
     fd.append('models', [
       'nudity-2.1',
       'offensive',
@@ -54,14 +60,15 @@ async function moderateImage(buffer: Buffer, mimeType: string): Promise<Moderati
     const data = await res.json();
 
     if (!res.ok || data.status === 'failure') {
+      const apiMsg = data?.error?.message ?? `Moderation API error (HTTP ${res.status})`;
       console.error('[Moderation] API error:', data);
-      return { safe: true }; // fail open — don't block upload on API error
+      throw new Error(`Moderation failed: ${apiMsg}`);
     }
 
     const scores: Record<string, number> = {};
     const violations: string[] = [];
 
-    // ── Nudity ──────────────────────────────────────────────────
+    // ── Nudity ───────────────────────────────────────────────────
     const n = data.nudity;
     if (n) {
       scores.sexual_activity   = n.sexual_activity   ?? 0;
@@ -99,7 +106,6 @@ async function moderateImage(buffer: Buffer, mimeType: string): Promise<Moderati
     }
 
     // ── Drugs ────────────────────────────────────────────────────
-    // FIX: response key is 'recreational_drug', not 'drug'
     const drugs = data.recreational_drug;
     if (drugs) {
       scores.drugs = drugs.prob ?? 0;
@@ -108,7 +114,6 @@ async function moderateImage(buffer: Buffer, mimeType: string): Promise<Moderati
 
     if (violations.length === 0) return { safe: true, scores };
 
-    // Map violation → user-facing message
     const primaryViolation = violations[0];
     const messages: Record<string, { reason: string; details: string }> = {
       explicit_nudity: {
@@ -145,28 +150,24 @@ async function moderateImage(buffer: Buffer, mimeType: string): Promise<Moderati
     return { safe: false, violation: primaryViolation, scores, ...msg };
 
   } catch (err) {
+    const errMsg = err instanceof Error ? err.message : 'Unknown moderation error';
     console.error('[Moderation] Unexpected error:', err);
-    return { safe: true }; // fail open
+    throw new Error(errMsg);
   }
 }
 
-// ── Image processing (server-side with sharp) ────────────────────
-async function processImage(buffer: Buffer): Promise<{ main: Buffer; thumb: Buffer; mime: string }> {
-  const img = sharp(buffer).rotate(); // auto-rotate from EXIF
-
-  const meta = await img.metadata();
-  const w    = meta.width  ?? MAX_W;
-  const h    = meta.height ?? MAX_H;
-
+// ── Image processing ─────────────────────────────────────────────
+async function processImage(buffer: Buffer): Promise<{ main: Buffer; thumb: Buffer }> {
+  const meta   = await sharp(buffer).rotate().metadata();
+  const w      = meta.width  ?? MAX_W;
+  const h      = meta.height ?? MAX_H;
   const ratio  = Math.min(MAX_W / w, MAX_H / h, 1);
-  const newW   = Math.round(w * ratio);
-  const newH   = Math.round(h * ratio);
   const thumbH = Math.round((THUMB_W / w) * h);
 
   const [main, thumb] = await Promise.all([
     sharp(buffer)
       .rotate()
-      .resize(newW, newH, { fit: 'inside', withoutEnlargement: true })
+      .resize(Math.round(w * ratio), Math.round(h * ratio), { fit: 'inside', withoutEnlargement: true })
       .jpeg({ quality: 82, progressive: true, mozjpeg: true })
       .toBuffer(),
     sharp(buffer)
@@ -176,33 +177,34 @@ async function processImage(buffer: Buffer): Promise<{ main: Buffer; thumb: Buff
       .toBuffer(),
   ]);
 
-  return { main, thumb, mime: 'image/jpeg' };
+  return { main, thumb };
 }
 
-// ── Blob upload helper ───────────────────────────────────────────
+// ── Blob upload ──────────────────────────────────────────────────
 async function blobUpload(
   buffer: Buffer, filename: string, userId: string, folder: string,
 ): Promise<string> {
-  const fd   = new FormData();
-  const blob = new Blob([buffer], { type: 'image/jpeg' });
-  fd.append('file',   blob, filename);
+  const fd = new FormData();
+  fd.append('file',   new Blob([buffer], { type: 'image/jpeg' }), filename);
   fd.append('userId', userId);
   fd.append('folder', folder);
 
   const res = await fetch(BLOB_URL, { method: 'POST', body: fd });
   if (!res.ok) {
     const e = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(e.error || 'Blob upload failed');
+    throw new Error(`Blob upload failed: ${e.error ?? res.statusText}`);
   }
+
   const data = await res.json();
   if (!data.success || !data.url) throw new Error('No URL returned from blob store');
   return data.url as string;
 }
 
 // ── Report violation ─────────────────────────────────────────────
-async function reportViolation(userId: string, violation: string) {
+async function reportViolation(userId: string, violation: string): Promise<void> {
+  if (!APP_URL) return;
   try {
-    await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/report-violation`, {
+    await fetch(`${APP_URL}/api/report-violation`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ user_id: userId, reason: violation }),
@@ -221,11 +223,11 @@ async function saveToDatabase(payload: {
     .insert({
       user_id:       payload.userId,
       title:         payload.title.trim(),
-      description:   payload.description.trim()  || null,
+      description:   payload.description.trim() || null,
       image_url:     payload.imageUrl,
       thumbnail_url: payload.thumbnailUrl,
-      category:      payload.category.trim()     || 'Other',
-      type:          payload.wallType             || 'mobile',
+      category:      payload.category.trim()    || 'Other',
+      type:          payload.wallType           || 'mobile',
       tags:          [],
       is_public:     true,
       views:         0,
@@ -234,7 +236,7 @@ async function saveToDatabase(payload: {
     .select()
     .single();
 
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(`DB insert failed: ${error.message}`);
   return data;
 }
 
@@ -246,20 +248,28 @@ export async function POST(req: NextRequest) {
     const file        = form.get('file')        as File   | null;
     const userId      = form.get('userId')      as string | null;
     const title       = form.get('title')       as string | null;
-    const description = form.get('description') as string ?? '';
-    const category    = form.get('category')    as string ?? '';
-    const wallType    = form.get('wallType')    as string ?? 'mobile';
+    const description = (form.get('description') as string | null) ?? '';
+    const category    = (form.get('category')    as string | null) ?? '';
+    const wallType    = (form.get('wallType')    as string | null) ?? 'mobile';
 
     // ── Validation ───────────────────────────────────────────────
     if (!file || !userId || !title)
-      return NextResponse.json({ success: false, error: 'Missing required fields: file, userId, title' }, { status: 400 });
+      return NextResponse.json(
+        { success: false, error: 'Missing required fields: file, userId, title' },
+        { status: 400 },
+      );
 
     if (!file.type.startsWith('image/'))
-      return NextResponse.json({ success: false, error: 'File must be an image' }, { status: 400 });
+      return NextResponse.json(
+        { success: false, error: 'File must be an image' },
+        { status: 400 },
+      );
 
-    const MAX_SIZE = 30 * 1024 * 1024; // 30 MB
-    if (file.size > MAX_SIZE)
-      return NextResponse.json({ success: false, error: 'File too large. Maximum size is 30MB.' }, { status: 400 });
+    if (file.size > 30 * 1024 * 1024)
+      return NextResponse.json(
+        { success: false, error: 'File too large. Maximum size is 30MB.' },
+        { status: 400 },
+      );
 
     const buffer = Buffer.from(await file.arrayBuffer());
 
@@ -267,19 +277,16 @@ export async function POST(req: NextRequest) {
     const mod = await moderateImage(buffer, file.type);
     if (!mod.safe) {
       await reportViolation(userId, mod.violation ?? 'policy');
-      return NextResponse.json({
-        success:   false,
-        violation: true,
-        error:     mod.reason,
-        details:   mod.details,
-        scores:    mod.scores,
-      }, { status: 422 });
+      return NextResponse.json(
+        { success: false, violation: true, error: mod.reason, details: mod.details, scores: mod.scores },
+        { status: 422 },
+      );
     }
 
     // ── Step 2: Process image ────────────────────────────────────
     const { main, thumb } = await processImage(buffer);
 
-    // ── Step 3: Upload both to blob store ────────────────────────
+    // ── Step 3: Upload to blob store ─────────────────────────────
     const [imageUrl, thumbnailUrl] = await Promise.all([
       blobUpload(main,  file.name,            userId, 'wallpapers'),
       blobUpload(thumb, `thumb_${file.name}`, userId, 'wallpapers/thumbnails'),
@@ -292,7 +299,10 @@ export async function POST(req: NextRequest) {
 
   } catch (err: any) {
     console.error('[/api/upload] Error:', err);
-    return NextResponse.json({ success: false, error: err.message ?? 'Internal server error' }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: err.message ?? 'Internal server error' },
+      { status: 500 },
+    );
   }
 }
 
